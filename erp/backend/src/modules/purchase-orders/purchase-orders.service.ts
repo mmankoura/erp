@@ -4,6 +4,8 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In, MoreThanOrEqual } from 'typeorm';
@@ -14,6 +16,7 @@ import {
 import { PurchaseOrderLine } from '../../entities/purchase-order-line.entity';
 import { Material } from '../../entities/material.entity';
 import { Supplier } from '../../entities/supplier.entity';
+import { ReceivingInspection } from '../../entities/receiving-inspection.entity';
 import {
   InventoryTransaction,
   TransactionType,
@@ -28,6 +31,7 @@ import {
   UpdateLineDto,
 } from './dto';
 import { AuditService } from '../audit/audit.service';
+import { ReceivingInspectionService } from '../receiving-inspection/receiving-inspection.service';
 
 // Open statuses for quantity_on_order calculation
 const OPEN_PO_STATUSES = [
@@ -43,7 +47,7 @@ export interface QuantityOnOrder {
 
 export interface ReceiptResult {
   purchase_order: PurchaseOrder;
-  transactions: InventoryTransaction[];
+  inspections: ReceivingInspection[];
   lines_updated: number;
   status_changed: boolean;
 }
@@ -73,6 +77,8 @@ export class PurchaseOrdersService {
     private readonly transactionRepository: Repository<InventoryTransaction>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    @Inject(forwardRef(() => ReceivingInspectionService))
+    private readonly receivingInspectionService: ReceivingInspectionService,
   ) {}
 
   // ==================== CRUD OPERATIONS ====================
@@ -487,7 +493,8 @@ export class PurchaseOrdersService {
 
   /**
    * Receive materials against a PO
-   * Creates inventory transactions and updates line qty_received
+   * Creates receiving inspections (items go to inspection queue, not directly to inventory)
+   * Updates line qty_received to track that receiving has occurred
    */
   async receiveAgainstPO(
     poId: string,
@@ -509,7 +516,7 @@ export class PurchaseOrdersService {
       );
     }
 
-    const transactions: InventoryTransaction[] = [];
+    const inspections: ReceivingInspection[] = [];
     let linesUpdated = 0;
 
     await this.dataSource.transaction(async (manager) => {
@@ -534,27 +541,39 @@ export class PurchaseOrdersService {
           );
         }
 
-        // Update the PO line
+        // Update the PO line qty_received
         poLine.quantity_received = qtyReceived + receiptLine.quantity;
         await manager.save(PurchaseOrderLine, poLine);
         linesUpdated++;
 
-        // Create inventory transaction
-        const unitCost = receiptLine.unit_cost ?? poLine.unit_cost;
-        const transaction = manager.create(InventoryTransaction, {
-          material_id: poLine.material_id,
-          transaction_type: TransactionType.RECEIPT,
-          quantity: receiptLine.quantity, // Positive for receipts
-          reference_type: ReferenceType.PO_RECEIPT,
-          reference_id: poLine.id, // Reference the PO line
-          reason: `Receipt against PO ${po.po_number}, Line ${poLine.line_number}`,
-          created_by: dto.received_by ?? null,
-          bucket: InventoryBucket.RAW,
-          unit_cost: unitCost ?? null,
+        // Get the material for IPN
+        const material = await this.materialRepository.findOne({
+          where: { id: poLine.material_id },
         });
 
-        const savedTx = await manager.save(InventoryTransaction, transaction);
-        transactions.push(savedTx);
+        if (!material) {
+          throw new NotFoundException(
+            `Material with ID "${poLine.material_id}" not found`,
+          );
+        }
+
+        // Create receiving inspection (items go to inspection queue)
+        const unitCost = receiptLine.unit_cost ?? poLine.unit_cost;
+        const inspection = await this.receivingInspectionService.create({
+          po_line_id: poLine.id,
+          material_id: poLine.material_id,
+          received_ipn: material.internal_part_number,
+          received_manufacturer: receiptLine.received_manufacturer,
+          received_mpn: receiptLine.received_mpn,
+          quantity_received: receiptLine.quantity,
+          unit_cost: unitCost ? parseFloat(String(unitCost)) : undefined,
+          received_by: dto.received_by,
+          notes: dto.notes
+            ? `${dto.notes} | PO: ${po.po_number}, Line: ${poLine.line_number}`
+            : `Receipt against PO ${po.po_number}, Line ${poLine.line_number}`,
+        });
+
+        inspections.push(inspection);
       }
 
       // Update PO status based on receipt completion
@@ -593,7 +612,7 @@ export class PurchaseOrdersService {
       {
         po_number: po.po_number,
         lines_received: dto.lines.length,
-        transactions_created: transactions.length,
+        inspections_created: inspections.length,
       },
       dto.received_by,
       { notes: dto.notes },
@@ -603,7 +622,7 @@ export class PurchaseOrdersService {
     const updatedPO = await this.findOne(poId);
     return {
       purchase_order: updatedPO,
-      transactions,
+      inspections,
       lines_updated: linesUpdated,
       status_changed: updatedPO.status !== originalStatus,
     };

@@ -7,6 +7,7 @@ import {
   IsString,
   IsArray,
   ValidateNested,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -23,6 +24,16 @@ export class ReceiveLineDto {
   @IsOptional()
   @Min(0)
   unit_cost?: number; // Override unit cost if different from PO
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  received_manufacturer?: string; // Manufacturer of the received item
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  received_mpn?: string; // Manufacturer Part Number of the received item
 }
 
 export class ReceiveAgainstPODto {

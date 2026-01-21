@@ -12,6 +12,8 @@ import { MrpModule } from './modules/mrp/mrp.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
+import { AmlModule } from './modules/aml/aml.module';
+import { ReceivingInspectionModule } from './modules/receiving-inspection/receiving-inspection.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.
     OrdersModule,
     InventoryModule,
     SuppliersModule,
+    AmlModule, // Approved Manufacturer List - must be before ReceivingInspectionModule
+    ReceivingInspectionModule, // Receiving inspection workflow
     PurchaseOrdersModule,
     MrpModule,
   ],
