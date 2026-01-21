@@ -23,7 +23,9 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Manufacturing ERP System MVP - Backend API built with NestJS, TypeORM, and PostgreSQL.
+
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for WSL2 development setup and troubleshooting.
 
 ## Project setup
 
