@@ -1,0 +1,13 @@
+(YES) parts look up
+(YES) parts labeling
+(YES) API to extract unit cost or description from major vendors automatically
+look up historical costing based on data we have
+
+RETURN STOCK TO CLIENTS
+LOOK AT WASTE (COMPARE ALLOCATION TO RETURN)
+SHIPPING (CLOSE ORDERS) + PACKING SLIP + BOX LABELS
+
+QUESTIONS
+1) ADD QTY_ON_ORDER
+2) BOM line keys
+3) Single active revision source
