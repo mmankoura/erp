@@ -12,7 +12,7 @@
 - [x] ValidationPipe configured (whitelist, forbidNonWhitelisted, transform)
 - [x] Environment validation (fail-fast on missing DATABASE_URL)
 
-#### Entities (12 complete)
+#### Entities (14 complete)
 - [x] **Materials** entity with soft delete + partial unique index + costing fields
 - [x] **Products** entity with soft delete + partial unique index
 - [x] **Customers** entity with soft delete
@@ -25,8 +25,10 @@
 - [x] **Supplier** entity with soft delete + partial unique index
 - [x] **PurchaseOrder** entity (PurchaseOrderStatus: 7 states) + soft delete
 - [x] **PurchaseOrderLine** entity (quantity_ordered, quantity_received tracking)
+- [x] **ApprovedManufacturer** entity (AML - tracks approved MPN/manufacturer combinations per material)
+- [x] **ReceivingInspection** entity (staging area for received items pending validation)
 
-#### Migrations (17 applied)
+#### Migrations (18 applied)
 - [x] Initial schema (materials, products)
 - [x] AddSoftDeleteToMaterials
 - [x] AddSoftDeleteToProducts
@@ -44,8 +46,9 @@
 - [x] AddFutureProofingColumns (costing_method, standard_cost on materials; quoted_price, currency on orders; reason on allocations)
 - [x] AddOrdersCompositeIndex (status + due_date for filtered queries)
 - [x] CreatePurchaseOrders (suppliers, purchase_orders, purchase_order_lines tables with indexes)
+- [x] CreateReceivingInspection (approved_manufacturers, receiving_inspections tables with enums and indexes)
 
-#### Backend Modules (11 complete) - ~100 API Endpoints Total
+#### Backend Modules (13 complete) - ~122 API Endpoints Total
 - [x] **Materials Module** (7 endpoints) - CRUD + bulk create + restore
 - [x] **Products Module** (6 endpoints) - CRUD + restore
 - [x] **Customers Module** (6 endpoints) - CRUD + search + restore
@@ -57,6 +60,8 @@
 - [x] **Health Module** (3 endpoints) - Health check, liveness probe, readiness probe
 - [x] **Suppliers Module** (6 endpoints) - CRUD + search + restore
 - [x] **Purchase Orders Module** (15 endpoints) - CRUD, lines, status workflow, receiving, quantity_on_order queries
+- [x] **AML Module** (11 endpoints) - Approved Manufacturer List CRUD + status transitions (approve, suspend, reinstate, obsolete) + validation
+- [x] **Receiving Inspection Module** (11 endpoints) - Inspection workflow (validate, approve, reject, hold, release) + bulk release
 
 ### In Progress 🔄
 - [ ] **Frontend (Next.js)** ← CURRENT PRIORITY
@@ -79,6 +84,8 @@
 - [x] **Suppliers Module (Jan 20)** - Full CRUD for supplier management with soft delete
 - [x] **Purchase Orders Module (Jan 20)** - Complete PO lifecycle (DRAFT→SUBMITTED→CONFIRMED→RECEIVED→CLOSED), receiving workflow, quantity_on_order tracking
 - [x] **MRP Integration with POs (Jan 20)** - Shortage calculations now factor in quantity_on_order from open POs
+- [x] **Receiving Inspection Module (Jan 20)** - Validation gate between PO receiving and inventory: IPN validation, MPN validation against AML, quantity documentation
+- [x] **Approved Manufacturer List Module (Jan 20)** - Track approved manufacturer/MPN combinations per material with status workflow (PENDING→APPROVED→SUSPENDED→OBSOLETE)
 
 ### Not Started ⬚
 - [ ] User authentication/authorization
@@ -344,7 +351,37 @@ CREATE TABLE purchase_order_lines (
 - `GET /purchase-orders/:id` - Get PO with lines
 - `PATCH /purchase-orders/:id` - Update PO
 - `POST /purchase-orders/:id/lines` - Add line item
-- `PATCH /purchase-orders/:id/receive` - Record receipt against PO
+- `PATCH /purchase-orders/:id/receive` - Record receipt against PO (now creates inspections)
+
+#### 3.1.1 Receiving Inspection with AML Validation ✅ COMPLETE (Jan 20, 2026)
+
+**Purpose:** Validate received items BEFORE moving to available inventory. Prevents incorrect parts from entering stock.
+
+**Flow:**
+```
+PO Receive → Inspection (PENDING) → Validate (IPN, MPN vs AML) → Approve → Release to Inventory
+```
+
+**New Entities:**
+- `ApprovedManufacturer` - Tracks approved manufacturer/MPN combinations per material (AML)
+- `ReceivingInspection` - Staging area for received items pending validation
+
+**Status Workflows:**
+- AML: PENDING → APPROVED → SUSPENDED → OBSOLETE
+- Inspection: PENDING → IN_PROGRESS → APPROVED/REJECTED/ON_HOLD → RELEASED
+
+**Validation Logic:**
+1. **IPN Validation** - Compare received IPN with material's internal_part_number
+2. **MPN Validation** - Check if manufacturer/MPN is on the Approved Manufacturer List
+3. **Quantity Documentation** - Record variance from expected quantity
+
+**Endpoints (22 new):**
+- `/aml` - AML CRUD + status transitions (approve, suspend, reinstate, obsolete) + validation
+- `/receiving-inspections` - Workflow (validate, approve, reject, hold, release) + bulk operations
+
+**Key Behavior Change:**
+- PO receiving now creates `ReceivingInspection` records instead of direct inventory transactions
+- Inventory transactions only created when inspections are released (RELEASED status)
 
 #### 3.2 Work Orders Module (~4 hours)
 
