@@ -64,7 +64,15 @@
 - [x] **Receiving Inspection Module** (11 endpoints) - Inspection workflow (validate, approve, reject, hold, release) + bulk release
 
 ### In Progress 🔄
-- [ ] **Frontend (Next.js)** ← CURRENT PRIORITY (~40% complete)
+- [ ] **Ownership Dimension (Phase 3.0)** ← NEXT PRIORITY (~4 hours)
+  - [ ] Migration: Add `owner_type`, `owner_id` to `inventory_transactions`
+  - [ ] Migration: Add `owner_type`, `owner_id` to `inventory_allocations`
+  - [ ] Update InventoryService with owner-aware stock queries
+  - [ ] Update allocation logic to respect ownership (TURNKEY vs CONSIGNMENT)
+  - [ ] Update receiving to capture ownership from shipment/PO
+  - [ ] Add owner filters to inventory endpoints
+  - [ ] Test consignment vs company stock isolation
+- [ ] **Frontend (Next.js)** (~40% complete)
   - [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
   - [x] shadcn/ui component library integrated
   - [x] Layout: Collapsible sidebar navigation, header with breadcrumbs
@@ -81,8 +89,8 @@
   - [ ] AML page (placeholder)
   - [ ] Audit Log page (placeholder)
   - [ ] Settings page (placeholder)
-- [ ] BOM Import module (after frontend)
-- [ ] BOM Validation module (after frontend)
+- [ ] BOM Import module (after ownership dimension)
+- [ ] BOM Validation module (after ownership dimension)
 
 #### Recently Completed
 - [x] **Seed Script** - 4 customers, 20 materials, 4 products with BOMs, 5 sample orders
@@ -117,7 +125,31 @@
 
 ## Recommended Next Steps
 
-### Phase 1: Frontend Development ← **CURRENT PRIORITY**
+### Phase 0: Ownership Dimension ← **CURRENT PRIORITY** 🔴 CRITICAL
+
+**Purpose:** Prevent cross-customer material contamination. Required before go-live with consignment customers.
+
+**Problem Without This:**
+- Customer A sends 1000 resistors (consignment) → Mixed pool
+- Customer B sends 500 resistors (consignment) → Mixed pool
+- Risk: Customer A's order might consume Customer B's parts ❌
+
+**Implementation Steps:**
+1. [ ] Create migration: Add `owner_type`, `owner_id` to `inventory_transactions`
+2. [ ] Create migration: Add `owner_type`, `owner_id` to `inventory_allocations`
+3. [ ] Update `InventoryService.getAvailableStockForOrder()` - owner-aware queries
+4. [ ] Update `InventoryService.allocateForOrder()` - respect ownership scope
+5. [ ] Update receiving workflow to capture ownership from order type
+6. [ ] Add `?owner_type=` and `?owner_id=` filters to inventory endpoints
+7. [ ] Test: Verify consignment stock isolated from company stock
+
+**Estimated Effort:** ~4 hours
+
+See **Phase 3.0** section below for detailed schema and service changes.
+
+---
+
+### Phase 1: Frontend Development (In Progress ~40%)
 
 The backend is feature-complete for MVP. Frontend development enables:
 - Visual testing of all backend functionality
@@ -129,15 +161,15 @@ The backend is feature-complete for MVP. Frontend development enables:
 2. ~~**Build layout** - Navigation sidebar, header, responsive design~~ ✅ Complete
 3. ~~**Core CRUD pages** - Materials, Products, Customers, Suppliers~~ ✅ Complete (4 pages)
 4. ~~**Order management** - Order list with computed material status~~ ✅ Complete
-5. **Purchase Orders page** - PO list, create/edit, receiving workflow ← NEXT
-6. **Inventory page** - Stock levels, allocation visibility, transaction history
+5. **Purchase Orders page** - PO list, create/edit, receiving workflow
+6. **Inventory page** - Stock levels, allocation visibility, transaction history (will show ownership after Phase 0)
 7. **MRP/Shortages** - Material requirements and shortage reporting
 8. **Receiving Inspection page** - Validation workflow, approve/reject/hold
 9. **AML page** - Approved manufacturer list management
 10. **BOM viewer** - View BOM revisions, compare diffs
 11. **Audit log viewer** - View system activity and history
 
-### Phase 2: BOM Import Module (After Frontend)
+### Phase 2: BOM Import Module (After Ownership Dimension)
 
 Once the frontend is operational, add BOM import capabilities:
 
