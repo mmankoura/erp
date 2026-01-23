@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: January 20, 2026
+> **Last Updated**: January 22, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -64,7 +64,23 @@
 - [x] **Receiving Inspection Module** (11 endpoints) - Inspection workflow (validate, approve, reject, hold, release) + bulk release
 
 ### In Progress 🔄
-- [ ] **Frontend (Next.js)** ← CURRENT PRIORITY
+- [ ] **Frontend (Next.js)** ← CURRENT PRIORITY (~40% complete)
+  - [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
+  - [x] shadcn/ui component library integrated
+  - [x] Layout: Collapsible sidebar navigation, header with breadcrumbs
+  - [x] Dashboard: Stats cards, recent orders, shortages display
+  - [x] Full CRUD pages: Materials, Products, Customers, Suppliers
+  - [x] Orders page with computed Material Status (Option A implementation)
+  - [x] Reusable DataTable component with search/pagination
+  - [x] API client with TypeScript types (`lib/api.ts`)
+  - [x] Custom data fetching hooks (`useApi`, `useMutation`)
+  - [ ] Purchase Orders page (placeholder)
+  - [ ] Inventory page (placeholder)
+  - [ ] MRP/Shortages page (placeholder)
+  - [ ] Receiving Inspection page (placeholder)
+  - [ ] AML page (placeholder)
+  - [ ] Audit Log page (placeholder)
+  - [ ] Settings page (placeholder)
 - [ ] BOM Import module (after frontend)
 - [ ] BOM Validation module (after frontend)
 
@@ -87,6 +103,9 @@
 - [x] **Receiving Inspection Module (Jan 20)** - Validation gate between PO receiving and inventory: IPN validation, MPN validation against AML, quantity documentation
 - [x] **Approved Manufacturer List Module (Jan 20)** - Track approved manufacturer/MPN combinations per material with status workflow (PENDING→APPROVED→SUSPENDED→OBSOLETE)
 - [x] **WSL2 Development Guide (Jan 20)** - DEVELOPMENT.md documenting port conflict issue (orphaned node.exe), helper scripts (`npm run dev`, `npm run kill-node`)
+- [x] **Frontend Initial Setup (Jan 22)** - Next.js 14 with App Router, Tailwind CSS v4, shadcn/ui, TypeScript
+- [x] **Frontend Core Pages (Jan 22)** - Dashboard, Materials, Products, Customers, Suppliers, Orders with full CRUD
+- [x] **Material Status Feature (Jan 22)** - Computed material status on Orders page (READY, PURCHASING, AWAITING_RECEIPT, PARTIAL, NEEDS_REVIEW) based on MRP shortages
 
 ### Not Started ⬚
 - [ ] User authentication/authorization
@@ -106,14 +125,17 @@ The backend is feature-complete for MVP. Frontend development enables:
 - Usable system for day-to-day operations
 
 **Frontend Implementation Steps:**
-1. **Initialize Next.js** with Tailwind CSS and App Router
-2. **Build layout** - Navigation sidebar, header, responsive design
-3. **Core CRUD pages** - Materials, Products, Customers (3 pages)
-4. **Order management** - Order list, new order form with BOM selection
-5. **Inventory page** - Stock levels, allocation visibility, transaction history
-6. **MRP/Shortages** - Material requirements and shortage reporting
-7. **BOM viewer** - View BOM revisions, compare diffs
-8. **Audit log viewer** - View system activity and history
+1. ~~**Initialize Next.js** with Tailwind CSS and App Router~~ ✅ Complete
+2. ~~**Build layout** - Navigation sidebar, header, responsive design~~ ✅ Complete
+3. ~~**Core CRUD pages** - Materials, Products, Customers, Suppliers~~ ✅ Complete (4 pages)
+4. ~~**Order management** - Order list with computed material status~~ ✅ Complete
+5. **Purchase Orders page** - PO list, create/edit, receiving workflow ← NEXT
+6. **Inventory page** - Stock levels, allocation visibility, transaction history
+7. **MRP/Shortages** - Material requirements and shortage reporting
+8. **Receiving Inspection page** - Validation workflow, approve/reject/hold
+9. **AML page** - Approved manufacturer list management
+10. **BOM viewer** - View BOM revisions, compare diffs
+11. **Audit log viewer** - View system activity and history
 
 ### Phase 2: BOM Import Module (After Frontend)
 
@@ -1680,7 +1702,9 @@ Common Dymo template object names to map:
 
 ---
 
-**Current Status**: Backend is ~98% complete for MVP. All 11 modules (~100 endpoints) are working:
+**Current Status**: Backend is ~98% complete for MVP. Frontend is ~40% complete.
+
+**Backend (13 modules, ~122 endpoints):**
 - Full CRUD for Materials, Products, Customers, Suppliers
 - Complete BOM management with revisions, diffing, and copy
 - Order lifecycle with automatic allocation handling
@@ -1688,6 +1712,17 @@ Common Dymo template object names to map:
 - **Purchase Orders module** with full lifecycle (DRAFT→SUBMITTED→CONFIRMED→RECEIVED→CLOSED)
 - MRP requirements and shortage calculations **now factor in quantity_on_order**
 - **Audit system with full event tracking** (tested Jan 16, 2026)
+- **Receiving Inspection module** with AML validation
+- **Approved Manufacturer List module** with status workflow
+
+**Frontend (Next.js 14 + shadcn/ui):**
+- Dashboard with stats cards, recent orders, shortages
+- Full CRUD pages: Materials, Products, Customers, Suppliers
+- Orders page with computed Material Status feature
+- Reusable DataTable component with search/pagination
+- API client with TypeScript types
+- Collapsible sidebar navigation, header with breadcrumbs
+- Placeholder pages for remaining modules
 
 Architecture has been reviewed and refined:
 - Unified traceability model (single source of truth)
@@ -1698,7 +1733,7 @@ Architecture has been reviewed and refined:
 - **Audit trail** (all order/inventory events tracked)
 - **Four-quantity stock model** (`quantity_on_hand`, `quantity_allocated`, `quantity_available`, `quantity_on_order`)
 
-Seed data available for testing. Ready for frontend development or BOM import module.
+Seed data available for testing. Frontend development in progress.
 
 ### Order Lifecycle Testing ✅ VERIFIED
 Full end-to-end testing completed on January 13, 2026:
