@@ -86,6 +86,7 @@
 - [x] **MRP Integration with POs (Jan 20)** - Shortage calculations now factor in quantity_on_order from open POs
 - [x] **Receiving Inspection Module (Jan 20)** - Validation gate between PO receiving and inventory: IPN validation, MPN validation against AML, quantity documentation
 - [x] **Approved Manufacturer List Module (Jan 20)** - Track approved manufacturer/MPN combinations per material with status workflow (PENDING→APPROVED→SUSPENDED→OBSOLETE)
+- [x] **WSL2 Development Guide (Jan 20)** - DEVELOPMENT.md documenting port conflict issue (orphaned node.exe), helper scripts (`npm run dev`, `npm run kill-node`)
 
 ### Not Started ⬚
 - [ ] User authentication/authorization
