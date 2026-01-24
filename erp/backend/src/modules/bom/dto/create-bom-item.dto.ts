@@ -15,6 +15,10 @@ export class CreateBomItemDto {
   @IsNotEmpty()
   material_id: string;
 
+  @IsString()
+  @IsOptional()
+  alternate_ipn?: string;
+
   @IsNumber()
   @IsOptional()
   line_number?: number;

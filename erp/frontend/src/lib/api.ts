@@ -415,6 +415,7 @@ export interface BomItem {
   bom_revision_id: string
   material_id: string
   material?: Material
+  alternate_ipn: string | null
   bom_line_key: string | null
   line_number: number | null
   reference_designators: string | null
@@ -437,6 +438,7 @@ export interface CreateBomRevisionDto {
 
 export interface CreateBomItemDto {
   material_id: string
+  alternate_ipn?: string
   line_number?: number
   reference_designators?: string
   quantity_required: number

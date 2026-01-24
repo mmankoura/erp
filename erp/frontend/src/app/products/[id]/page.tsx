@@ -378,79 +378,79 @@ export default function ProductDetailPage() {
           </CardHeader>
           <CardContent>
             {selectedRevision.items && selectedRevision.items.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[60px]">Line</TableHead>
-                    <TableHead>Material</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-[80px]">Qty</TableHead>
-                    <TableHead className="w-[100px]">Type</TableHead>
-                    <TableHead>Reference Designators</TableHead>
-                    <TableHead className="w-[80px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {selectedRevision.items
-                    .sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
-                    .map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-mono text-sm">
-                          {item.line_number || "-"}
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-medium">
-                            {item.material?.internal_part_number || item.material_id}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                          {item.material?.description || "-"}
-                        </TableCell>
-                        <TableCell className="font-mono">
-                          {item.quantity_required}
-                        </TableCell>
-                        <TableCell>
-                          {item.resource_type ? (
-                            <Badge variant="outline" className="text-xs">
-                              {resourceTypeLabels[item.resource_type]}
-                            </Badge>
-                          ) : (
-                            "-"
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm font-mono max-w-[200px] truncate" title={item.reference_designators || ""}>
-                          {item.reference_designators || "-"}
-                        </TableCell>
-                        <TableCell>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Remove Item?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Remove {item.material?.internal_part_number} from this BOM revision?
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => deleteItemMutation.mutate(item.id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Remove
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[50px]">Line</TableHead>
+                      <TableHead>Internal P/N</TableHead>
+                      <TableHead>Alternate IPN</TableHead>
+                      <TableHead>Manufacturer</TableHead>
+                      <TableHead>Manufacturer P/N</TableHead>
+                      <TableHead className="w-[80px]">Qty Per</TableHead>
+                      <TableHead>Ref Des</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedRevision.items
+                      .sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
+                      .map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-mono text-sm">
+                            {item.line_number || "-"}
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-medium">
+                              {item.material?.internal_part_number || "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {item.alternate_ipn || "-"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {item.material?.manufacturer || "-"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {item.material?.manufacturer_pn || "-"}
+                          </TableCell>
+                          <TableCell className="font-mono">
+                            {item.quantity_required}
+                          </TableCell>
+                          <TableCell className="text-sm font-mono max-w-[150px] truncate" title={item.reference_designators || ""}>
+                            {item.reference_designators || "-"}
+                          </TableCell>
+                          <TableCell>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Remove Item?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Remove {item.material?.internal_part_number} from this BOM revision?
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deleteItemMutation.mutate(item.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Remove
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <p>No items in this BOM revision</p>
@@ -603,6 +603,7 @@ function AddItemDialog({
 }) {
   const [formData, setFormData] = useState({
     material_id: "",
+    alternate_ipn: "",
     quantity_required: 1,
     reference_designators: "",
     resource_type: "" as ResourceType | "",
@@ -618,6 +619,7 @@ function AddItemDialog({
         toast.success("Item added to BOM")
         setFormData({
           material_id: "",
+          alternate_ipn: "",
           quantity_required: 1,
           reference_designators: "",
           resource_type: "",
@@ -633,6 +635,7 @@ function AddItemDialog({
     e.preventDefault()
     createMutation.mutate({
       material_id: formData.material_id,
+      alternate_ipn: formData.alternate_ipn || undefined,
       quantity_required: Number(formData.quantity_required),
       reference_designators: formData.reference_designators || undefined,
       resource_type: formData.resource_type || undefined,
@@ -658,7 +661,7 @@ function AddItemDialog({
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="material">Material *</Label>
+              <Label htmlFor="material">Internal Part Number *</Label>
               <Select
                 value={formData.material_id}
                 onValueChange={(value) => setFormData({ ...formData, material_id: value })}
@@ -675,9 +678,18 @@ function AddItemDialog({
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="alternate_ipn">Alternate Internal P/N</Label>
+              <Input
+                id="alternate_ipn"
+                value={formData.alternate_ipn}
+                onChange={(e) => setFormData({ ...formData, alternate_ipn: e.target.value })}
+                placeholder="Optional alternate part number"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="quantity_required">Quantity *</Label>
+                <Label htmlFor="quantity_required">Qty Per *</Label>
                 <Input
                   id="quantity_required"
                   type="number"

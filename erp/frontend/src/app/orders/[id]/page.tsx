@@ -1,7 +1,7 @@
 "use client"
 
 import { useApi, useMutation } from "@/hooks/use-api"
-import { api, type Order, type OrderStatus } from "@/lib/api"
+import { api, type Order, type OrderStatus, type BomRevision } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -33,7 +33,15 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, Save, Truck, XCircle, Pencil, Package } from "lucide-react"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { ArrowLeft, Save, Truck, XCircle, Pencil, Package, FileText } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
@@ -66,6 +74,12 @@ export default function OrderDetailPage() {
   const [shipQuantity, setShipQuantity] = useState(0)
 
   const { data: order, isLoading, refetch } = useApi<Order>(`/orders/${orderId}`)
+
+  // Fetch BOM revision for this order
+  const { data: bomRevision } = useApi<BomRevision>(
+    order?.bom_revision_id ? `/bom/revision/${order.bom_revision_id}` : "",
+    { enabled: !!order?.bom_revision_id }
+  )
 
   const [formData, setFormData] = useState({
     po_number: "",
@@ -442,6 +456,105 @@ export default function OrderDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* BOM / Material Requirements */}
+      {bomRevision && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Bill of Materials
+                </CardTitle>
+                <CardDescription>
+                  Revision {bomRevision.revision_number} - {bomRevision.items?.length || 0} line items
+                </CardDescription>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-muted-foreground">Order Quantity</p>
+                <p className="text-2xl font-bold">{order.quantity.toLocaleString()}</p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {bomRevision.items && bomRevision.items.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[50px]">Line</TableHead>
+                      <TableHead>Internal P/N</TableHead>
+                      <TableHead>Alternate IPN</TableHead>
+                      <TableHead>Manufacturer</TableHead>
+                      <TableHead>Manufacturer P/N</TableHead>
+                      <TableHead className="text-right w-[100px]">Qty Per</TableHead>
+                      <TableHead className="text-right w-[120px]">Total Qty Req</TableHead>
+                      <TableHead>Ref Des</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {bomRevision.items
+                      .sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
+                      .map((item) => {
+                        const totalQty = item.quantity_required * order.quantity
+                        return (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-mono text-sm">
+                              {item.line_number || "-"}
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-medium">
+                                {item.material?.internal_part_number || "-"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {item.alternate_ipn || "-"}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {item.material?.manufacturer || "-"}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {item.material?.manufacturer_pn || "-"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {item.quantity_required}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-bold">
+                              {totalQty.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-sm font-mono max-w-[150px] truncate" title={item.reference_designators || ""}>
+                              {item.reference_designators || "-"}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No items in this BOM revision</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No BOM Warning */}
+      {order && !order.bom_revision_id && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="py-6">
+            <div className="flex items-center gap-3 text-yellow-800">
+              <FileText className="h-5 w-5" />
+              <div>
+                <p className="font-medium">No BOM Revision Linked</p>
+                <p className="text-sm">This order does not have a bill of materials attached.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

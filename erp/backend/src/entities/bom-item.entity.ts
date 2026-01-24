@@ -38,6 +38,9 @@ export class BomItem {
   @JoinColumn({ name: 'material_id' })
   material: Material;
 
+  @Column({ type: 'varchar', nullable: true })
+  alternate_ipn: string | null;
+
   @Index()
   @Column({ type: 'varchar', nullable: true })
   bom_line_key: string | null;
