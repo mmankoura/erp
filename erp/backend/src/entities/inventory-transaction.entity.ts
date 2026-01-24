@@ -8,6 +8,7 @@ import {
   Index,
 } from 'typeorm';
 import { Material } from './material.entity';
+import { Customer } from './customer.entity';
 
 export enum TransactionType {
   ADJUSTMENT = 'ADJUSTMENT',
@@ -35,6 +36,11 @@ export enum ReferenceType {
   PO_RECEIPT = 'PO_RECEIPT',
   CYCLE_COUNT = 'CYCLE_COUNT',
   INITIAL_STOCK = 'INITIAL_STOCK',
+}
+
+export enum OwnerType {
+  COMPANY = 'COMPANY',   // Materials owned by us (purchased, turnkey jobs)
+  CUSTOMER = 'CUSTOMER', // Consignment materials owned by customer
 }
 
 @Entity('inventory_transactions')
@@ -97,6 +103,23 @@ export class InventoryTransaction {
   @Index()
   @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true })
   unit_cost: number | null; // Cost per unit at time of transaction (capture on RECEIPT)
+
+  // ============ Ownership Dimension ============
+
+  @Column({
+    type: 'enum',
+    enum: OwnerType,
+    default: OwnerType.COMPANY,
+  })
+  owner_type: OwnerType;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  owner_id: string | null; // customer_id when owner_type=CUSTOMER, NULL when owner_type=COMPANY
+
+  @ManyToOne(() => Customer)
+  @JoinColumn({ name: 'owner_id' })
+  owner: Customer | null;
 
   @Index()
   @CreateDateColumn()

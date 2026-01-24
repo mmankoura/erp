@@ -11,6 +11,8 @@ import {
 } from 'typeorm';
 import { Material } from './material.entity';
 import { Order } from './order.entity';
+import { Customer } from './customer.entity';
+import { OwnerType } from './inventory-transaction.entity';
 
 export enum AllocationStatus {
   ACTIVE = 'ACTIVE',       // Reserved, still in stock
@@ -67,6 +69,23 @@ export class InventoryAllocation {
 
   @Column({ type: 'text', nullable: true })
   reason: string | null; // Reason for allocation change (for audit trail)
+
+  // ============ Ownership Dimension ============
+
+  @Column({
+    type: 'enum',
+    enum: OwnerType,
+    default: OwnerType.COMPANY,
+  })
+  owner_type: OwnerType;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  owner_id: string | null; // customer_id when owner_type=CUSTOMER, NULL when owner_type=COMPANY
+
+  @ManyToOne(() => Customer)
+  @JoinColumn({ name: 'owner_id' })
+  owner: Customer | null;
 
   @CreateDateColumn()
   created_at: Date;

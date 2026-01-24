@@ -14,6 +14,7 @@ import {
   TransactionType,
   ReferenceType,
   InventoryBucket,
+  OwnerType,
 } from '../../entities/inventory-transaction.entity';
 import {
   InventoryAllocation,
@@ -41,6 +42,13 @@ export interface MaterialStock {
   quantity_allocated: number;
   quantity_available: number;
   quantity_on_order: number;
+  owner_type?: OwnerType;
+  owner_id?: string | null;
+}
+
+export interface OwnerFilter {
+  owner_type?: OwnerType;
+  owner_id?: string | null;
 }
 
 export interface StockLevel {
@@ -212,6 +220,155 @@ export class InventoryService {
     return quantityOnHand - quantityAllocated;
   }
 
+  // ==================== OWNER-AWARE STOCK QUERIES ====================
+
+  /**
+   * Get quantity on hand for a material filtered by owner
+   */
+  async getQuantityOnHandByOwner(
+    materialId: string,
+    ownerType: OwnerType,
+    ownerId: string | null,
+  ): Promise<number> {
+    const query = this.transactionRepository
+      .createQueryBuilder('t')
+      .select('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
+      .where('t.material_id = :materialId', { materialId })
+      .andWhere('t.owner_type = :ownerType', { ownerType });
+
+    if (ownerType === OwnerType.CUSTOMER && ownerId) {
+      query.andWhere('t.owner_id = :ownerId', { ownerId });
+    } else {
+      query.andWhere('t.owner_id IS NULL');
+    }
+
+    const result = await query.getRawOne<{ quantity_on_hand: string }>();
+    return parseFloat(result?.quantity_on_hand ?? '0');
+  }
+
+  /**
+   * Get allocated quantity for a material filtered by owner
+   */
+  async getAllocatedQuantityByOwner(
+    materialId: string,
+    ownerType: OwnerType,
+    ownerId: string | null,
+  ): Promise<number> {
+    const query = this.allocationRepository
+      .createQueryBuilder('a')
+      .select('COALESCE(SUM(a.quantity), 0)', 'quantity_allocated')
+      .where('a.material_id = :materialId', { materialId })
+      .andWhere('a.status = :status', { status: AllocationStatus.ACTIVE })
+      .andWhere('a.owner_type = :ownerType', { ownerType });
+
+    if (ownerType === OwnerType.CUSTOMER && ownerId) {
+      query.andWhere('a.owner_id = :ownerId', { ownerId });
+    } else {
+      query.andWhere('a.owner_id IS NULL');
+    }
+
+    const result = await query.getRawOne<{ quantity_allocated: string }>();
+    return parseFloat(result?.quantity_allocated ?? '0');
+  }
+
+  /**
+   * Get available quantity for a material filtered by owner (on hand - allocated)
+   */
+  async getAvailableQuantityByOwner(
+    materialId: string,
+    ownerType: OwnerType,
+    ownerId: string | null,
+  ): Promise<number> {
+    const quantityOnHand = await this.getQuantityOnHandByOwner(materialId, ownerType, ownerId);
+    const quantityAllocated = await this.getAllocatedQuantityByOwner(materialId, ownerType, ownerId);
+    return quantityOnHand - quantityAllocated;
+  }
+
+  /**
+   * Get available quantity for an order based on its order type
+   * - TURNKEY orders: Use COMPANY inventory
+   * - CONSIGNMENT orders: Use only the customer's own inventory
+   */
+  async getAvailableQuantityForOrder(
+    materialId: string,
+    order: Order,
+  ): Promise<number> {
+    if (order.order_type === 'CONSIGNMENT') {
+      return this.getAvailableQuantityByOwner(materialId, OwnerType.CUSTOMER, order.customer_id);
+    } else {
+      return this.getAvailableQuantityByOwner(materialId, OwnerType.COMPANY, null);
+    }
+  }
+
+  /**
+   * Get available quantities for multiple materials filtered by owner
+   */
+  async getAvailableQuantitiesByOwner(
+    materialIds: string[],
+    ownerType: OwnerType,
+    ownerId: string | null,
+  ): Promise<Map<string, number>> {
+    if (materialIds.length === 0) {
+      return new Map();
+    }
+
+    // Get on-hand quantities for this owner
+    const stockQuery = this.transactionRepository
+      .createQueryBuilder('t')
+      .select('t.material_id', 'material_id')
+      .addSelect('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
+      .where('t.material_id IN (:...materialIds)', { materialIds })
+      .andWhere('t.owner_type = :ownerType', { ownerType });
+
+    if (ownerType === OwnerType.CUSTOMER && ownerId) {
+      stockQuery.andWhere('t.owner_id = :ownerId', { ownerId });
+    } else {
+      stockQuery.andWhere('t.owner_id IS NULL');
+    }
+
+    const stockLevels = await stockQuery
+      .groupBy('t.material_id')
+      .getRawMany<StockLevel>();
+
+    // Get allocated quantities for this owner
+    const allocationQuery = this.allocationRepository
+      .createQueryBuilder('a')
+      .select('a.material_id', 'material_id')
+      .addSelect('COALESCE(SUM(a.quantity), 0)', 'quantity_allocated')
+      .where('a.material_id IN (:...materialIds)', { materialIds })
+      .andWhere('a.status = :status', { status: AllocationStatus.ACTIVE })
+      .andWhere('a.owner_type = :ownerType', { ownerType });
+
+    if (ownerType === OwnerType.CUSTOMER && ownerId) {
+      allocationQuery.andWhere('a.owner_id = :ownerId', { ownerId });
+    } else {
+      allocationQuery.andWhere('a.owner_id IS NULL');
+    }
+
+    const allocations = await allocationQuery
+      .groupBy('a.material_id')
+      .getRawMany<AllocationSummary>();
+
+    const stockMap = new Map<string, number>();
+    for (const level of stockLevels) {
+      stockMap.set(level.material_id, parseFloat(String(level.quantity_on_hand)));
+    }
+
+    const allocationMap = new Map<string, number>();
+    for (const alloc of allocations) {
+      allocationMap.set(alloc.material_id, parseFloat(String(alloc.quantity_allocated)));
+    }
+
+    const availableMap = new Map<string, number>();
+    for (const materialId of materialIds) {
+      const onHand = stockMap.get(materialId) ?? 0;
+      const allocated = allocationMap.get(materialId) ?? 0;
+      availableMap.set(materialId, onHand - allocated);
+    }
+
+    return availableMap;
+  }
+
   /**
    * Get available quantities for multiple materials in a single query
    */
@@ -341,6 +498,9 @@ export class InventoryService {
       bucket: dto.bucket ?? InventoryBucket.RAW,
       // Costing support (optional)
       unit_cost: dto.unit_cost ?? null,
+      // Ownership dimension
+      owner_type: dto.owner_type ?? OwnerType.COMPANY,
+      owner_id: dto.owner_id ?? null,
     });
 
     const saved = await this.transactionRepository.save(transaction);
@@ -496,6 +656,9 @@ export class InventoryService {
       quantity: dto.quantity,
       status: AllocationStatus.ACTIVE,
       created_by: dto.created_by ?? null,
+      // Ownership dimension
+      owner_type: dto.owner_type ?? OwnerType.COMPANY,
+      owner_id: dto.owner_id ?? null,
     });
 
     const saved = await this.allocationRepository.save(allocation);
@@ -612,6 +775,10 @@ export class InventoryService {
   /**
    * Allocate materials for an entire order based on its BOM
    * Returns what was allocated and what couldn't be allocated
+   *
+   * Ownership rules:
+   * - TURNKEY orders: Use COMPANY inventory only
+   * - CONSIGNMENT orders: Use only the customer's own inventory
    */
   async allocateForOrder(
     orderId: string,
@@ -628,6 +795,10 @@ export class InventoryService {
       throw new NotFoundException(`Order with ID "${orderId}" not found`);
     }
 
+    // Determine ownership scope based on order type
+    const ownerType = order.order_type === 'CONSIGNMENT' ? OwnerType.CUSTOMER : OwnerType.COMPANY;
+    const ownerId = order.order_type === 'CONSIGNMENT' ? order.customer_id : null;
+
     // Get BOM items for the order's locked BOM revision
     const bomItems = await this.bomItemRepository.find({
       where: { bom_revision_id: order.bom_revision_id },
@@ -635,9 +806,9 @@ export class InventoryService {
       order: { line_number: 'ASC' },
     });
 
-    // Calculate requirements and available quantities
+    // Calculate requirements and available quantities FOR THIS OWNER ONLY
     const materialIds = bomItems.map((item) => item.material_id);
-    const availableQuantities = await this.getAvailableQuantities(materialIds);
+    const availableQuantities = await this.getAvailableQuantitiesByOwner(materialIds, ownerType, ownerId);
 
     // Get existing active allocations for this order
     const existingAllocations = await this.allocationRepository.find({
@@ -697,13 +868,15 @@ export class InventoryService {
                 await manager.save(InventoryAllocation, existing);
               }
             } else {
-              // Create new allocation
+              // Create new allocation with ownership
               const newAllocation = manager.create(InventoryAllocation, {
                 material_id: item.material_id,
                 order_id: orderId,
                 quantity: toAllocate,
                 status: AllocationStatus.ACTIVE,
                 created_by: createdBy ?? null,
+                owner_type: ownerType,
+                owner_id: ownerId,
               });
               await manager.save(InventoryAllocation, newAllocation);
             }
@@ -834,7 +1007,7 @@ export class InventoryService {
         updatedAllocation = await manager.save(InventoryAllocation, allocation);
       }
 
-      // Create consumption transaction
+      // Create consumption transaction with preserved ownership
       const newTransaction = manager.create(InventoryTransaction, {
         material_id: allocation.material_id,
         transaction_type: TransactionType.CONSUMPTION,
@@ -843,6 +1016,9 @@ export class InventoryService {
         reference_id: allocation.order_id,
         reason: `Consumed from allocation ${allocationId}`,
         created_by: createdBy ?? null,
+        // Preserve ownership from allocation
+        owner_type: allocation.owner_type,
+        owner_id: allocation.owner_id,
       });
       transaction = await manager.save(InventoryTransaction, newTransaction);
     });
@@ -880,7 +1056,7 @@ export class InventoryService {
         allocation.status = AllocationStatus.CONSUMED;
         await manager.save(InventoryAllocation, allocation);
 
-        // Create consumption transaction
+        // Create consumption transaction with preserved ownership
         const transaction = manager.create(InventoryTransaction, {
           material_id: allocation.material_id,
           transaction_type: TransactionType.CONSUMPTION,
@@ -889,6 +1065,9 @@ export class InventoryService {
           reference_id: orderId,
           reason: `Order completed - consumed ${consumeQuantity} ${allocation.material?.internal_part_number ?? 'units'}`,
           created_by: createdBy ?? null,
+          // Preserve ownership from allocation
+          owner_type: allocation.owner_type,
+          owner_id: allocation.owner_id,
         });
         const saved = await manager.save(InventoryTransaction, transaction);
         transactions.push(saved);

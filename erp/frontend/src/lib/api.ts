@@ -269,6 +269,9 @@ export type TransactionType =
   | "ISSUE_TO_WO"
   | "RETURN_FROM_WO"
 
+// Ownership types for inventory
+export type OwnerType = "COMPANY" | "CUSTOMER"
+
 export interface InventoryTransaction {
   id: string
   material_id: string
@@ -282,6 +285,9 @@ export interface InventoryTransaction {
   reason: string | null
   created_by: string | null
   created_at: string
+  // Ownership dimension
+  owner_type: OwnerType
+  owner_id: string | null
 }
 
 export interface InventoryAllocation {
@@ -296,6 +302,9 @@ export interface InventoryAllocation {
   created_by: string | null
   created_at: string
   updated_at: string
+  // Ownership dimension
+  owner_type: OwnerType
+  owner_id: string | null
 }
 
 export interface MrpShortage {

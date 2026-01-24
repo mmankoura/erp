@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: January 22, 2026
+> **Last Updated**: January 23, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -28,7 +28,7 @@
 - [x] **ApprovedManufacturer** entity (AML - tracks approved MPN/manufacturer combinations per material)
 - [x] **ReceivingInspection** entity (staging area for received items pending validation)
 
-#### Migrations (18 applied)
+#### Migrations (19 applied)
 - [x] Initial schema (materials, products)
 - [x] AddSoftDeleteToMaterials
 - [x] AddSoftDeleteToProducts
@@ -47,6 +47,7 @@
 - [x] AddOrdersCompositeIndex (status + due_date for filtered queries)
 - [x] CreatePurchaseOrders (suppliers, purchase_orders, purchase_order_lines tables with indexes)
 - [x] CreateReceivingInspection (approved_manufacturers, receiving_inspections tables with enums and indexes)
+- [x] AddOwnershipDimension (owner_type, owner_id on inventory_transactions and inventory_allocations)
 
 #### Backend Modules (13 complete) - ~122 API Endpoints Total
 - [x] **Materials Module** (7 endpoints) - CRUD + bulk create + restore
@@ -64,15 +65,7 @@
 - [x] **Receiving Inspection Module** (11 endpoints) - Inspection workflow (validate, approve, reject, hold, release) + bulk release
 
 ### In Progress 🔄
-- [ ] **Ownership Dimension (Phase 3.0)** ← NEXT PRIORITY (~4 hours)
-  - [ ] Migration: Add `owner_type`, `owner_id` to `inventory_transactions`
-  - [ ] Migration: Add `owner_type`, `owner_id` to `inventory_allocations`
-  - [ ] Update InventoryService with owner-aware stock queries
-  - [ ] Update allocation logic to respect ownership (TURNKEY vs CONSIGNMENT)
-  - [ ] Update receiving to capture ownership from shipment/PO
-  - [ ] Add owner filters to inventory endpoints
-  - [ ] Test consignment vs company stock isolation
-- [ ] **Frontend (Next.js)** (~40% complete)
+- [ ] **Frontend (Next.js)** (~95% complete)
   - [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
   - [x] shadcn/ui component library integrated
   - [x] Layout: Collapsible sidebar navigation, header with breadcrumbs
@@ -82,12 +75,13 @@
   - [x] Reusable DataTable component with search/pagination
   - [x] API client with TypeScript types (`lib/api.ts`)
   - [x] Custom data fetching hooks (`useApi`, `useMutation`)
-  - [ ] Purchase Orders page (placeholder)
-  - [ ] Inventory page (placeholder)
-  - [ ] MRP/Shortages page (placeholder)
-  - [ ] Receiving Inspection page (placeholder)
-  - [ ] AML page (placeholder)
-  - [ ] Audit Log page (placeholder)
+  - [x] Purchase Orders page (full CRUD with line items, status workflow)
+  - [x] Inventory page (stock levels, transactions, adjustments, low stock alerts)
+  - [x] MRP/Shortages page (shortages analysis, requirements view)
+  - [x] Receiving Inspection page (validation workflow)
+  - [x] AML page (CRUD with status workflow)
+  - [x] Audit Log page (filterable event log with detail view)
+  - [ ] BOM viewer page (view revisions, compare diffs)
   - [ ] Settings page (placeholder)
 - [ ] BOM Import module (after ownership dimension)
 - [ ] BOM Validation module (after ownership dimension)
@@ -114,6 +108,8 @@
 - [x] **Frontend Initial Setup (Jan 22)** - Next.js 14 with App Router, Tailwind CSS v4, shadcn/ui, TypeScript
 - [x] **Frontend Core Pages (Jan 22)** - Dashboard, Materials, Products, Customers, Suppliers, Orders with full CRUD
 - [x] **Material Status Feature (Jan 22)** - Computed material status on Orders page (READY, PURCHASING, AWAITING_RECEIPT, PARTIAL, NEEDS_REVIEW) based on MRP shortages
+- [x] **Frontend Remaining Pages (Jan 23)** - Purchase Orders, Inventory, MRP, Receiving, AML, Audit Log pages completed
+- [x] **Ownership Dimension (Jan 23)** - Added owner_type (COMPANY/CUSTOMER) and owner_id to inventory_transactions and inventory_allocations. Owner-aware stock queries for TURNKEY vs CONSIGNMENT orders. Prevents cross-customer material contamination.
 
 ### Not Started ⬚
 - [ ] User authentication/authorization

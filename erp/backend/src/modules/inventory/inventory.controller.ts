@@ -17,6 +17,7 @@ import {
   UpdateAllocationDto,
   AllocateForOrderDto,
 } from './dto';
+import { OwnerType } from '../../entities/inventory-transaction.entity';
 
 @Controller('inventory')
 export class InventoryController {
@@ -51,6 +52,42 @@ export class InventoryController {
   async getRecentTransactions(@Query('limit') limit?: string) {
     const limitValue = limit ? parseInt(limit, 10) : 50;
     return this.inventoryService.getRecentTransactions(limitValue);
+  }
+
+  /**
+   * GET /inventory/by-owner?owner_type=CUSTOMER&owner_id=UUID
+   * Get stock level for a material filtered by owner
+   * - owner_type: COMPANY or CUSTOMER
+   * - owner_id: customer UUID (required when owner_type=CUSTOMER)
+   */
+  @Get('by-owner/:materialId')
+  async getStockByOwner(
+    @Param('materialId', ParseUUIDPipe) materialId: string,
+    @Query('owner_type') ownerType: string,
+    @Query('owner_id') ownerId?: string,
+  ) {
+    const validOwnerType = ownerType === 'CUSTOMER' ? OwnerType.CUSTOMER : OwnerType.COMPANY;
+    const validOwnerId = validOwnerType === OwnerType.CUSTOMER ? ownerId : null;
+
+    const quantityOnHand = await this.inventoryService.getQuantityOnHandByOwner(
+      materialId,
+      validOwnerType,
+      validOwnerId ?? null,
+    );
+    const quantityAllocated = await this.inventoryService.getAllocatedQuantityByOwner(
+      materialId,
+      validOwnerType,
+      validOwnerId ?? null,
+    );
+
+    return {
+      material_id: materialId,
+      owner_type: validOwnerType,
+      owner_id: validOwnerId,
+      quantity_on_hand: quantityOnHand,
+      quantity_allocated: quantityAllocated,
+      quantity_available: quantityOnHand - quantityAllocated,
+    };
   }
 
   /**

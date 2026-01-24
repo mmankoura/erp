@@ -10,6 +10,7 @@ import {
   TransactionType,
   ReferenceType,
   InventoryBucket,
+  OwnerType,
 } from '../../../entities/inventory-transaction.entity';
 
 export class CreateTransactionDto {
@@ -60,4 +61,14 @@ export class CreateTransactionDto {
   @IsNumber()
   @IsOptional()
   unit_cost?: number; // Cost per unit at time of transaction
+
+  // ============ Ownership Dimension ============
+
+  @IsEnum(OwnerType)
+  @IsOptional()
+  owner_type?: OwnerType; // COMPANY (default) or CUSTOMER
+
+  @IsUUID()
+  @IsOptional()
+  owner_id?: string; // customer_id when owner_type=CUSTOMER
 }

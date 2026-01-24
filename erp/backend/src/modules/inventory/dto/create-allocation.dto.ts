@@ -5,7 +5,9 @@ import {
   IsPositive,
   IsOptional,
   IsString,
+  IsEnum,
 } from 'class-validator';
+import { OwnerType } from '../../../entities/inventory-transaction.entity';
 
 export class CreateAllocationDto {
   @IsUUID()
@@ -34,4 +36,14 @@ export class CreateAllocationDto {
   @IsUUID()
   @IsOptional()
   lot_id?: string;
+
+  // ============ Ownership Dimension ============
+
+  @IsEnum(OwnerType)
+  @IsOptional()
+  owner_type?: OwnerType; // COMPANY (default) or CUSTOMER
+
+  @IsUUID()
+  @IsOptional()
+  owner_id?: string; // customer_id when owner_type=CUSTOMER
 }
