@@ -3,6 +3,7 @@ export * from './product.entity';
 export * from './customer.entity';
 export * from './bom-revision.entity';
 export * from './bom-item.entity';
+export * from './bom-import-mapping.entity';
 export * from './order.entity';
 export * from './inventory-transaction.entity';
 export * from './inventory-allocation.entity';

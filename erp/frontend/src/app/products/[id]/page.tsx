@@ -68,11 +68,13 @@ import {
   Trash2,
   Copy,
   RotateCcw,
+  Upload,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import { BomImportWizard } from "@/components/bom-import-wizard"
 
 const resourceTypeLabels: Record<ResourceType, string> = {
   SMT: "SMT",
@@ -89,6 +91,7 @@ export default function ProductDetailPage() {
   const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null)
   const [showNewRevisionDialog, setShowNewRevisionDialog] = useState(false)
   const [showAddItemDialog, setShowAddItemDialog] = useState(false)
+  const [showImportWizard, setShowImportWizard] = useState(false)
 
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = useApi<Product>(`/products/${productId}`)
   const { data: revisions, isLoading: loadingRevisions, refetch: refetchRevisions } = useApi<BomRevision[]>(`/bom/product/${productId}`)
@@ -240,15 +243,26 @@ export default function ProductDetailPage() {
               <CardTitle>BOM Revisions</CardTitle>
               <CardDescription>Manage bill of materials for this product</CardDescription>
             </div>
-            <NewRevisionDialog
-              productId={productId}
-              open={showNewRevisionDialog}
-              onOpenChange={setShowNewRevisionDialog}
-              onSuccess={() => {
-                refetchRevisions()
-                setShowNewRevisionDialog(false)
-              }}
-            />
+            <div className="flex items-center gap-2">
+              <BomImportWizard
+                productId={productId}
+                open={showImportWizard}
+                onOpenChange={setShowImportWizard}
+                onSuccess={() => {
+                  refetchRevisions()
+                  refetchProduct()
+                }}
+              />
+              <NewRevisionDialog
+                productId={productId}
+                open={showNewRevisionDialog}
+                onOpenChange={setShowNewRevisionDialog}
+                onSuccess={() => {
+                  refetchRevisions()
+                  setShowNewRevisionDialog(false)
+                }}
+              />
+            </div>
           </CardHeader>
           <CardContent>
             {loadingRevisions ? (

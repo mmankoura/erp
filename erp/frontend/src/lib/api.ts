@@ -457,3 +457,73 @@ export interface BomDiff {
     changes: string[]
   }>
 }
+
+// BOM Import types
+export type BomImportField =
+  | "internal_part_number"
+  | "alternate_ipn"
+  | "manufacturer"
+  | "manufacturer_pn"
+  | "quantity_required"
+  | "reference_designators"
+  | "line_number"
+  | "resource_type"
+  | "polarized"
+  | "notes"
+  | "ignore"
+
+export interface ColumnMapping {
+  source_column: string
+  target_field: BomImportField
+}
+
+export interface BomImportMapping {
+  id: string
+  name: string
+  description: string | null
+  column_mappings: ColumnMapping[]
+  has_header_row: boolean
+  skip_rows: number
+  multi_row_designators: boolean
+  ignore_columns: string[] | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BomImportPreviewResult {
+  headers: string[]
+  rows: string[][]
+  total_rows: number
+  preview_rows: number
+}
+
+export interface BomImportItemDto {
+  internal_part_number: string
+  alternate_ipn?: string
+  manufacturer?: string
+  manufacturer_pn?: string
+  quantity_required: number
+  reference_designators?: string
+  line_number?: number
+  resource_type?: string
+  polarized?: boolean
+  notes?: string
+}
+
+export interface BomImportParseResult {
+  items: BomImportItemDto[]
+  warnings: string[]
+  errors: string[]
+  unmatched_parts: string[]
+  matched_count: number
+  unmatched_count: number
+}
+
+export interface BomImportCommitDto {
+  product_id: string
+  revision_number: string
+  change_summary?: string
+  is_active?: boolean
+  source_filename?: string
+  items: BomImportItemDto[]
+}

@@ -6,22 +6,31 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { BomService } from './bom.service';
+import { BomImportService } from './bom-import.service';
 import {
   CreateBomRevisionDto,
   UpdateBomRevisionDto,
   CreateBomItemDto,
   UpdateBomItemDto,
   CreateFullBomRevisionDto,
+  CreateBomImportMappingDto,
+  UpdateBomImportMappingDto,
+  BomImportUploadDto,
+  BomImportCommitDto,
 } from './dto';
 
 @Controller('bom')
 export class BomController {
-  constructor(private readonly bomService: BomService) {}
+  constructor(
+    private readonly bomService: BomService,
+    private readonly bomImportService: BomImportService,
+  ) {}
 
   // ============ Revision Endpoints ============
 
@@ -129,5 +138,59 @@ export class BomController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeItem(@Param('itemId', ParseUUIDPipe) itemId: string) {
     await this.bomService.removeItem(itemId);
+  }
+
+  // ============ Import Mapping Endpoints ============
+
+  @Get('import/mappings')
+  async findAllMappings() {
+    return this.bomImportService.findAllMappings();
+  }
+
+  @Get('import/mappings/:id')
+  async findMapping(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bomImportService.findMapping(id);
+  }
+
+  @Post('import/mappings')
+  async createMapping(@Body() dto: CreateBomImportMappingDto) {
+    return this.bomImportService.createMapping(dto);
+  }
+
+  @Patch('import/mappings/:id')
+  async updateMapping(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBomImportMappingDto,
+  ) {
+    return this.bomImportService.updateMapping(id, dto);
+  }
+
+  @Delete('import/mappings/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMapping(@Param('id', ParseUUIDPipe) id: string) {
+    await this.bomImportService.deleteMapping(id);
+  }
+
+  // ============ Import Endpoints ============
+
+  @Post('import/preview')
+  async previewFile(
+    @Body() body: { file_content: string; has_header_row?: boolean; skip_rows?: number },
+  ) {
+    return this.bomImportService.previewFile(
+      body.file_content,
+      body.has_header_row,
+      body.skip_rows,
+    );
+  }
+
+  @Post('import/parse')
+  async parseAndMapFile(@Body() dto: BomImportUploadDto) {
+    return this.bomImportService.parseAndMapFile(dto);
+  }
+
+  @Post('import/commit')
+  async commitImport(@Body() dto: BomImportCommitDto) {
+    return this.bomImportService.commitImport(dto);
   }
 }

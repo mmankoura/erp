@@ -149,7 +149,7 @@ export default function OrderDetailPage() {
   )
 
   const cancelMutation = useMutation(
-    () => api.post<Order>(`/orders/${orderId}/cancel`, {}),
+    (_: void) => api.post<Order>(`/orders/${orderId}/cancel`, {}),
     {
       onSuccess: () => {
         toast.success("Order cancelled")
@@ -438,7 +438,7 @@ export default function OrderDetailPage() {
                   <AlertDialogFooter>
                     <AlertDialogCancel>Keep Order</AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={() => cancelMutation.mutate()}
+                      onClick={() => cancelMutation.mutate(undefined)}
                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
                       Cancel Order
