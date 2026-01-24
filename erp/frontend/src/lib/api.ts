@@ -391,3 +391,67 @@ export interface ApprovedManufacturer {
   updated_at: string
   deleted_at: string | null
 }
+
+// BOM types
+export type BomSource = "MANUAL" | "IMPORT_CLIENT" | "IMPORT_INTERNAL"
+export type ResourceType = "SMT" | "TH" | "MECH" | "PCB" | "DNP"
+
+export interface BomRevision {
+  id: string
+  product_id: string
+  product?: Product
+  revision_number: string
+  revision_date: string
+  change_summary: string | null
+  source: BomSource
+  source_filename: string | null
+  is_active: boolean
+  created_at: string
+  items?: BomItem[]
+}
+
+export interface BomItem {
+  id: string
+  bom_revision_id: string
+  material_id: string
+  material?: Material
+  bom_line_key: string | null
+  line_number: number | null
+  reference_designators: string | null
+  quantity_required: number
+  resource_type: ResourceType | null
+  polarized: boolean
+  scrap_factor: number
+  notes: string | null
+}
+
+export interface CreateBomRevisionDto {
+  product_id: string
+  revision_number: string
+  revision_date: string
+  change_summary?: string
+  source?: BomSource
+  source_filename?: string
+  is_active?: boolean
+}
+
+export interface CreateBomItemDto {
+  material_id: string
+  line_number?: number
+  reference_designators?: string
+  quantity_required: number
+  resource_type?: ResourceType
+  polarized?: boolean
+  scrap_factor?: number
+  notes?: string
+}
+
+export interface BomDiff {
+  added: BomItem[]
+  removed: BomItem[]
+  changed: Array<{
+    old: BomItem
+    new: BomItem
+    changes: string[]
+  }>
+}

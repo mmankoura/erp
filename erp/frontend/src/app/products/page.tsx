@@ -17,10 +17,11 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Pencil, Trash2, FileText } from "lucide-react"
+import { Plus, Pencil, Trash2, FileText, Eye } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 interface ProductFormData {
   part_number: string
@@ -154,6 +155,7 @@ function ProductDialog({
 }
 
 export default function ProductsPage() {
+  const router = useRouter()
   const { data: products, isLoading, refetch } = useApi<Product[]>("/products")
 
   const deleteMutation = useMutation(
@@ -205,9 +207,21 @@ export default function ProductsPage() {
     {
       key: "actions",
       header: "",
-      className: "w-[100px]",
+      className: "w-[130px]",
       cell: (product) => (
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={(e) => {
+              e.stopPropagation()
+              router.push(`/products/${product.id}`)
+            }}
+            title="View BOM"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
           <ProductDialog
             product={product}
             onSuccess={refetch}
@@ -262,6 +276,7 @@ export default function ProductsPage() {
         searchKey="part_number"
         searchPlaceholder="Search by part number..."
         emptyMessage="No products found. Add your first product to get started."
+        onRowClick={(product) => router.push(`/products/${product.id}`)}
       />
     </div>
   )
