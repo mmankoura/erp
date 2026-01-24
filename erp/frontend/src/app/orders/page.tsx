@@ -126,7 +126,7 @@ export default function OrdersPage() {
     {
       key: "product",
       header: "Product",
-      cell: (order) => order.product?.name || order.product?.sku || "Unknown",
+      cell: (order) => order.product?.name || order.product?.part_number || "Unknown",
     },
     {
       key: "quantity",

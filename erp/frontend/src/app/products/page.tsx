@@ -23,13 +23,13 @@ import { toast } from "sonner"
 import Link from "next/link"
 
 interface ProductFormData {
-  sku: string
+  part_number: string
   name: string
   description: string
 }
 
 const defaultFormData: ProductFormData = {
-  sku: "",
+  part_number: "",
   name: "",
   description: "",
 }
@@ -47,7 +47,7 @@ function ProductDialog({
   const [formData, setFormData] = useState<ProductFormData>(
     product
       ? {
-          sku: product.sku,
+          part_number: product.part_number,
           name: product.name,
           description: product.description || "",
         }
@@ -109,11 +109,11 @@ function ProductDialog({
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="sku">SKU *</Label>
+              <Label htmlFor="part_number">Part Number *</Label>
               <Input
-                id="sku"
-                value={formData.sku}
-                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                id="part_number"
+                value={formData.part_number}
+                onChange={(e) => setFormData({ ...formData, part_number: e.target.value })}
                 placeholder="e.g., PROD-001"
                 required
               />
@@ -171,9 +171,9 @@ export default function ProductsPage() {
 
   const columns: Column<Product>[] = [
     {
-      key: "sku",
-      header: "SKU",
-      cell: (product) => <span className="font-medium">{product.sku}</span>,
+      key: "part_number",
+      header: "Part Number",
+      cell: (product) => <span className="font-medium">{product.part_number}</span>,
     },
     {
       key: "name",
@@ -259,8 +259,8 @@ export default function ProductsPage() {
         data={products}
         columns={columns}
         isLoading={isLoading}
-        searchKey="sku"
-        searchPlaceholder="Search by SKU..."
+        searchKey="part_number"
+        searchPlaceholder="Search by part number..."
         emptyMessage="No products found. Add your first product to get started."
       />
     </div>

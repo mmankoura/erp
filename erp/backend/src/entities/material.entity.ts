@@ -37,10 +37,13 @@ export class Material {
   manufacturer: string;
 
   @Column({ nullable: true })
-  manufacturer_part_number: string;
+  manufacturer_pn: string;
 
-  @Column({ default: 'pcs' })
-  unit: string;
+  @Column({ nullable: true })
+  category: string;
+
+  @Column({ default: 'EA' })
+  uom: string;
 
   // ============ Costing Support (Phase: Future) ============
 

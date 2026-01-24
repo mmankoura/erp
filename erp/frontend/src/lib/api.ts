@@ -124,7 +124,7 @@ export interface Material {
 
 export interface Product {
   id: string
-  sku: string
+  part_number: string
   name: string
   description: string | null
   active_bom_revision_id: string | null

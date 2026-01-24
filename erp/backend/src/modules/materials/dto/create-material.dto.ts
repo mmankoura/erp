@@ -23,9 +23,13 @@ export class CreateMaterialDto {
 
   @IsString()
   @IsOptional()
-  manufacturer_part_number?: string;
+  manufacturer_pn?: string;
 
   @IsString()
   @IsOptional()
-  unit?: string;
+  category?: string;
+
+  @IsString()
+  @IsOptional()
+  uom?: string;
 }
