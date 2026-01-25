@@ -11,17 +11,24 @@ import {
   ParseBoolPipe,
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
+import { InventoryImportService } from './inventory-import.service';
 import {
   CreateTransactionDto,
   CreateAllocationDto,
   UpdateAllocationDto,
   AllocateForOrderDto,
+  InventoryImportPreviewDto,
+  InventoryImportParseDto,
+  InventoryImportCommitDto,
 } from './dto';
 import { OwnerType } from '../../entities/inventory-transaction.entity';
 
 @Controller('inventory')
 export class InventoryController {
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(
+    private readonly inventoryService: InventoryService,
+    private readonly inventoryImportService: InventoryImportService,
+  ) {}
 
   // ==================== STOCK ENDPOINTS ====================
 
@@ -52,6 +59,67 @@ export class InventoryController {
   async getRecentTransactions(@Query('limit') limit?: string) {
     const limitValue = limit ? parseInt(limit, 10) : 50;
     return this.inventoryService.getRecentTransactions(limitValue);
+  }
+
+  // ==================== IMPORT ENDPOINTS ====================
+
+  /**
+   * POST /inventory/import/preview
+   * Preview file content before mapping
+   */
+  @Post('import/preview')
+  async previewImportFile(@Body() dto: InventoryImportPreviewDto) {
+    return this.inventoryImportService.previewFile(dto);
+  }
+
+  /**
+   * POST /inventory/import/parse
+   * Parse file with column mappings, validate, and match materials
+   */
+  @Post('import/parse')
+  async parseImportFile(@Body() dto: InventoryImportParseDto) {
+    return this.inventoryImportService.parseAndMapFile(dto);
+  }
+
+  /**
+   * POST /inventory/import/commit
+   * Commit parsed import - create lots and receipt transactions
+   */
+  @Post('import/commit')
+  async commitImport(@Body() dto: InventoryImportCommitDto) {
+    return this.inventoryImportService.commitImport(dto);
+  }
+
+  // ==================== LOT ENDPOINTS ====================
+
+  /**
+   * GET /inventory/lots
+   * List all inventory lots
+   */
+  @Get('lots')
+  async findAllLots(
+    @Query('status') status?: string,
+    @Query('material_id') materialId?: string,
+  ) {
+    return this.inventoryImportService.findAllLots({ status, materialId });
+  }
+
+  /**
+   * GET /inventory/lots/by-uid/:uid
+   * Get a lot by its UID
+   */
+  @Get('lots/by-uid/:uid')
+  async getLotByUid(@Param('uid') uid: string) {
+    return this.inventoryImportService.findLotByUid(uid);
+  }
+
+  /**
+   * GET /inventory/lots/:id
+   * Get a specific lot by ID
+   */
+  @Get('lots/:id')
+  async getLot(@Param('id', ParseUUIDPipe) id: string) {
+    return this.inventoryImportService.findLot(id);
   }
 
   /**

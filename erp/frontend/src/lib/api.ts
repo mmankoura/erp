@@ -529,3 +529,83 @@ export interface BomImportCommitDto {
   source_filename?: string
   items: BomImportItemDto[]
 }
+
+// Inventory Lot types
+export type PackageType = "TR" | "REEL" | "TUBE" | "TRAY" | "BAG" | "BOX" | "BULK" | "OTHER"
+export type LotStatus = "ACTIVE" | "CONSUMED" | "EXPIRED" | "ON_HOLD"
+
+export interface InventoryLot {
+  id: string
+  uid: string
+  material_id: string
+  material?: Material
+  quantity: number
+  initial_quantity: number
+  package_type: PackageType
+  po_reference: string | null
+  supplier_id: string | null
+  supplier?: Supplier
+  unit_cost: number | null
+  received_date: string | null
+  expiration_date: string | null
+  status: LotStatus
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Inventory Import types
+export type InventoryImportField =
+  | "uid"
+  | "ipn"
+  | "quantity"
+  | "package_type"
+  | "po_reference"
+  | "unit_cost"
+  | "expiration_date"
+  | "notes"
+  | "ignore"
+
+export interface InventoryColumnMapping {
+  source_column: string
+  target_field: InventoryImportField
+}
+
+export interface InventoryImportPreviewResult {
+  headers: string[]
+  rows: string[][]
+  total_rows: number
+  preview_rows: number
+}
+
+export interface InventoryImportItemDto {
+  uid: string
+  ipn: string
+  quantity: number
+  package_type?: string
+  po_reference?: string
+  unit_cost?: number
+  expiration_date?: string
+  notes?: string
+  material_id?: string
+  material_matched?: boolean
+}
+
+export interface InventoryImportParseResult {
+  items: InventoryImportItemDto[]
+  warnings: string[]
+  errors: string[]
+  unmatched_ipns: string[]
+  matched_count: number
+  unmatched_count: number
+  duplicate_uids: string[]
+  total_quantity: number
+}
+
+export interface InventoryImportCommitResult {
+  lots_created: number
+  transactions_created: number
+  total_quantity: number
+  created_materials: string[]
+  lot_ids: string[]
+}

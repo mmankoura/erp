@@ -5,10 +5,13 @@ import {
   api,
   type InventoryStock,
   type InventoryTransaction,
+  type InventoryLot,
   type Material,
 } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
+import { InventoryImportWizard } from "@/components/inventory-import-wizard"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -44,6 +47,7 @@ import {
   History,
   AlertTriangle,
   Package,
+  Upload,
 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -427,12 +431,20 @@ function ReceiveStockDialog({
 // Extended type with id for DataTable
 type InventoryStockWithId = InventoryStock & { id: string }
 
+// Extended type for lots DataTable
+type InventoryLotWithId = InventoryLot & { id: string }
+
 export default function InventoryPage() {
   const { data: inventoryRaw, isLoading, refetch } = useApi<InventoryStock[]>("/inventory")
   const { data: lowStock } = useApi<InventoryStock[]>("/inventory/low-stock?threshold=10")
   const { data: recentTransactions } = useApi<InventoryTransaction[]>(
     "/inventory/transactions/recent?limit=20"
   )
+  const { data: lotsRaw, isLoading: lotsLoading, refetch: refetchLots } = useApi<InventoryLot[]>("/inventory/lots")
+  const [importWizardOpen, setImportWizardOpen] = useState(false)
+
+  // Transform lots for DataTable
+  const lots: InventoryLotWithId[] | null = lotsRaw || null
 
   // Transform to add id field for DataTable compatibility
   const inventory: InventoryStockWithId[] | null = inventoryRaw
@@ -546,16 +558,31 @@ export default function InventoryPage() {
           <h1 className="text-3xl font-bold tracking-tight">Inventory</h1>
           <p className="text-muted-foreground">Track stock levels and transactions</p>
         </div>
-        <ReceiveStockDialog
-          onSuccess={refetch}
-          trigger={
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Receive Stock
-            </Button>
-          }
-        />
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportWizardOpen(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import Inventory
+          </Button>
+          <ReceiveStockDialog
+            onSuccess={refetch}
+            trigger={
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Receive Stock
+              </Button>
+            }
+          />
+        </div>
       </div>
+
+      <InventoryImportWizard
+        open={importWizardOpen}
+        onOpenChange={setImportWizardOpen}
+        onSuccess={() => {
+          refetch()
+          refetchLots()
+        }}
+      />
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -604,6 +631,7 @@ export default function InventoryPage() {
       <Tabs defaultValue="stock" className="space-y-4">
         <TabsList>
           <TabsTrigger value="stock">Stock Levels</TabsTrigger>
+          <TabsTrigger value="lots">Lots/Reels</TabsTrigger>
           <TabsTrigger value="recent">Recent Activity</TabsTrigger>
           <TabsTrigger value="low-stock">Low Stock</TabsTrigger>
         </TabsList>
@@ -617,6 +645,77 @@ export default function InventoryPage() {
             searchPlaceholder="Search materials..."
             emptyMessage="No inventory found."
           />
+        </TabsContent>
+
+        <TabsContent value="lots" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Inventory Lots</CardTitle>
+              <CardDescription>Individual reels and lots with unique identifiers</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {lotsLoading ? (
+                <p className="text-center text-muted-foreground py-8">Loading...</p>
+              ) : lots && lots.length > 0 ? (
+                <div className="max-h-[500px] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>UID</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>IPN</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead>Package</TableHead>
+                        <TableHead>PO Ref</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Received</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lots.map((lot) => (
+                        <TableRow key={lot.id}>
+                          <TableCell className="font-mono font-medium">{lot.uid}</TableCell>
+                          <TableCell>{lot.material?.customer?.name || "-"}</TableCell>
+                          <TableCell>{lot.material?.internal_part_number}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {lot.quantity.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{lot.package_type}</Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {lot.po_reference || "-"}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                lot.status === "ACTIVE"
+                                  ? "default"
+                                  : lot.status === "CONSUMED"
+                                    ? "secondary"
+                                    : "destructive"
+                              }
+                            >
+                              {lot.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {lot.received_date
+                              ? new Date(lot.received_date).toLocaleDateString()
+                              : "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <p className="text-center text-muted-foreground py-8">
+                  No lots found. Import inventory to add lots.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="recent" className="space-y-4">
