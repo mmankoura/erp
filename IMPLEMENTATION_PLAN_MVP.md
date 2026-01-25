@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: January 23, 2026
+> **Last Updated**: January 24, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -65,7 +65,7 @@
 - [x] **Receiving Inspection Module** (11 endpoints) - Inspection workflow (validate, approve, reject, hold, release) + bulk release
 
 ### In Progress 🔄
-- [ ] **Frontend (Next.js)** (~95% complete)
+- [ ] **Frontend (Next.js)** (~99% complete)
   - [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
   - [x] shadcn/ui component library integrated
   - [x] Layout: Collapsible sidebar navigation, header with breadcrumbs
@@ -81,10 +81,10 @@
   - [x] Receiving Inspection page (validation workflow)
   - [x] AML page (CRUD with status workflow)
   - [x] Audit Log page (filterable event log with detail view)
-  - [ ] BOM viewer page (view revisions, compare diffs)
+  - [x] BOM viewer page (view revisions, compare diffs, filter by product)
+  - [x] BOM Import wizard (CSV + Excel support, column mapping, material matching)
+  - [x] BOM Validation page (compare uploaded file against stored revision)
   - [ ] Settings page (placeholder)
-- [ ] BOM Import module (after ownership dimension)
-- [ ] BOM Validation module (after ownership dimension)
 
 #### Recently Completed
 - [x] **Seed Script** - 4 customers, 20 materials, 4 products with BOMs, 5 sample orders
@@ -110,6 +110,9 @@
 - [x] **Material Status Feature (Jan 22)** - Computed material status on Orders page (READY, PURCHASING, AWAITING_RECEIPT, PARTIAL, NEEDS_REVIEW) based on MRP shortages
 - [x] **Frontend Remaining Pages (Jan 23)** - Purchase Orders, Inventory, MRP, Receiving, AML, Audit Log pages completed
 - [x] **Ownership Dimension (Jan 23)** - Added owner_type (COMPANY/CUSTOMER) and owner_id to inventory_transactions and inventory_allocations. Owner-aware stock queries for TURNKEY vs CONSIGNMENT orders. Prevents cross-customer material contamination.
+- [x] **BOM Viewer Page (Jan 24)** - View all BOM revisions, filter by product, search, view revision details with items, compare/diff between two revisions
+- [x] **BOM Import with Excel Support (Jan 24)** - Added xlsx library for Excel parsing (.xlsx, .xls), fixed UTF-8 encoding bug with btoa()
+- [x] **BOM Validation Page (Jan 24)** - 4-step wizard to compare uploaded BOM file against stored revision. Shows added/removed/changed items with visual diff
 
 ### Not Started ⬚
 - [ ] User authentication/authorization
@@ -1730,7 +1733,7 @@ Common Dymo template object names to map:
 
 ---
 
-**Current Status**: Backend is ~98% complete for MVP. Frontend is ~40% complete.
+**Current Status**: Backend is ~98% complete for MVP. Frontend is ~99% complete.
 
 **Backend (13 modules, ~122 endpoints):**
 - Full CRUD for Materials, Products, Customers, Suppliers
@@ -1747,10 +1750,18 @@ Common Dymo template object names to map:
 - Dashboard with stats cards, recent orders, shortages
 - Full CRUD pages: Materials, Products, Customers, Suppliers
 - Orders page with computed Material Status feature
+- Purchase Orders page with line items and receiving workflow
+- Inventory page with stock levels, transactions, adjustments
+- MRP/Shortages page with requirements analysis
+- Receiving Inspection page with validation workflow
+- AML page with status workflow
+- Audit Log page with filterable events
+- BOM Viewer page with revision comparison/diff
+- BOM Import wizard with CSV + Excel support
+- BOM Validation page for comparing uploaded files against stored revisions
 - Reusable DataTable component with search/pagination
 - API client with TypeScript types
 - Collapsible sidebar navigation, header with breadcrumbs
-- Placeholder pages for remaining modules
 
 Architecture has been reviewed and refined:
 - Unified traceability model (single source of truth)
@@ -1761,7 +1772,7 @@ Architecture has been reviewed and refined:
 - **Audit trail** (all order/inventory events tracked)
 - **Four-quantity stock model** (`quantity_on_hand`, `quantity_allocated`, `quantity_available`, `quantity_on_order`)
 
-Seed data available for testing. Frontend development in progress.
+Seed data available for testing. Frontend is feature-complete for MVP (only Settings page placeholder remains).
 
 ### Order Lifecycle Testing ✅ VERIFIED
 Full end-to-end testing completed on January 13, 2026:
