@@ -235,8 +235,20 @@ export function InventoryImportWizard({
 
     setIsLoading(true)
     try {
+      // Strip out material_id and material_matched - only send allowed fields
+      const cleanItems = parseResult.items.map(({ uid, ipn, quantity, package_type, po_reference, unit_cost, expiration_date, notes }) => ({
+        uid,
+        ipn,
+        quantity,
+        ...(package_type && { package_type }),
+        ...(po_reference && { po_reference }),
+        ...(unit_cost !== undefined && { unit_cost }),
+        ...(expiration_date && { expiration_date }),
+        ...(notes && { notes }),
+      }))
+
       const result = await api.post<InventoryImportCommitResult>("/inventory/import/commit", {
-        items: parseResult.items,
+        items: cleanItems,
         source_filename: fileName || undefined,
       })
       toast.success(`Imported ${result.lots_created} lots successfully!`)
