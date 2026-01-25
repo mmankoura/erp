@@ -1,7 +1,7 @@
 "use client"
 
 import { useApi, useMutation } from "@/hooks/use-api"
-import { useToast } from "@/hooks/use-toast"
+import { toast } from "sonner"
 import { api, type Order, type MrpShortage, type MaterialStatus } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
@@ -99,7 +99,6 @@ function computeMaterialStatus(
 
 export default function OrdersPage() {
   const router = useRouter()
-  const { toast } = useToast()
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
   const { data: orders, isLoading, refetch } = useApi<Order[]>("/orders")
@@ -108,22 +107,22 @@ export default function OrdersPage() {
   const deleteMutation = useMutation<void, string>({
     mutationFn: (id) => api.delete(`/orders/${id}`),
     onSuccess: () => {
-      toast({ title: "Order deleted successfully" })
+      toast.success("Order deleted successfully")
       refetch()
     },
     onError: (error) => {
-      toast({ title: "Failed to delete order", description: error.message, variant: "destructive" })
+      toast.error(error.message || "Failed to delete order")
     },
   })
 
   const bulkDeleteMutation = useMutation<{ deleted: number }, string[]>({
     mutationFn: (ids) => api.post("/orders/bulk-delete", { ids }),
     onSuccess: (data) => {
-      toast({ title: `${data.deleted} order(s) deleted successfully` })
+      toast.success(`${data.deleted} order(s) deleted successfully`)
       refetch()
     },
     onError: (error) => {
-      toast({ title: "Failed to delete orders", description: error.message, variant: "destructive" })
+      toast.error(error.message || "Failed to delete orders")
     },
   })
 
