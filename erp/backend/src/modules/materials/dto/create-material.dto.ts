@@ -1,6 +1,10 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateMaterialDto {
+  @IsUUID()
+  @IsNotEmpty()
+  customer_id: string;
+
   @IsString()
   @IsNotEmpty()
   internal_part_number: string;

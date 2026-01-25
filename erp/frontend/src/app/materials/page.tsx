@@ -1,7 +1,7 @@
 "use client"
 
 import { useApi, useMutation } from "@/hooks/use-api"
-import { api, type Material } from "@/lib/api"
+import { api, type Material, type Customer } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -42,6 +42,7 @@ const uomOptions = ["EA", "FT", "IN", "M", "CM", "MM", "KG", "G", "LB", "OZ", "L
 const categoryOptions = ["Resistors", "Capacitors", "Inductors", "ICs", "Connectors", "PCBs", "Mechanical", "Labels", "Other"]
 
 interface MaterialFormData {
+  customer_id: string
   internal_part_number: string
   manufacturer_pn: string
   manufacturer: string
@@ -51,6 +52,7 @@ interface MaterialFormData {
 }
 
 const defaultFormData: MaterialFormData = {
+  customer_id: "",
   internal_part_number: "",
   manufacturer_pn: "",
   manufacturer: "",
@@ -61,10 +63,12 @@ const defaultFormData: MaterialFormData = {
 
 function MaterialDialog({
   material,
+  customers,
   onSuccess,
   trigger,
 }: {
   material?: Material
+  customers: Customer[]
   onSuccess: () => void
   trigger: React.ReactNode
 }) {
@@ -72,6 +76,7 @@ function MaterialDialog({
   const [formData, setFormData] = useState<MaterialFormData>(
     material
       ? {
+          customer_id: material.customer_id || "",
           internal_part_number: material.internal_part_number,
           manufacturer_pn: material.manufacturer_pn || "",
           manufacturer: material.manufacturer || "",
@@ -136,6 +141,27 @@ function MaterialDialog({
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="customer_id">Customer *</Label>
+              <Select
+                value={formData.customer_id}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, customer_id: value })
+                }
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select customer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="internal_part_number">Internal Part Number *</Label>
               <Input
@@ -241,6 +267,7 @@ function MaterialDialog({
 
 export default function MaterialsPage() {
   const { data: materials, isLoading, refetch } = useApi<Material[]>("/materials")
+  const { data: customers } = useApi<Customer[]>("/customers")
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
@@ -290,6 +317,11 @@ export default function MaterialsPage() {
 
   const columns: Column<Material>[] = [
     {
+      key: "customer",
+      header: "Customer",
+      cell: (material) => material.customer?.name || "-",
+    },
+    {
       key: "internal_part_number",
       header: "IPN",
       cell: (material) => (
@@ -338,6 +370,7 @@ export default function MaterialsPage() {
         <div className="flex items-center gap-1">
           <MaterialDialog
             material={material}
+            customers={customers || []}
             onSuccess={refetch}
             trigger={
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -373,6 +406,7 @@ export default function MaterialsPage() {
           </p>
         </div>
         <MaterialDialog
+          customers={customers || []}
           onSuccess={refetch}
           trigger={
             <Button>

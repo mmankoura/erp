@@ -6,7 +6,10 @@ import {
   UpdateDateColumn,
   DeleteDateColumn,
   Index,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { Customer } from './customer.entity';
 
 export enum CostingMethod {
   FIFO = 'FIFO',
@@ -44,6 +47,15 @@ export class Material {
 
   @Column({ default: 'EA' })
   uom: string;
+
+  // ============ Customer Ownership ============
+
+  @Column({ type: 'uuid', nullable: true })
+  customer_id: string | null;
+
+  @ManyToOne(() => Customer, { nullable: true })
+  @JoinColumn({ name: 'customer_id' })
+  customer: Customer | null;
 
   // ============ Costing Support (Phase: Future) ============
 

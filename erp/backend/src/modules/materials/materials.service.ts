@@ -11,22 +11,32 @@ import {
   UpdateMaterialDto,
   BulkCreateMaterialDto,
 } from './dto';
+import { AuditService } from '../audit/audit.service';
+import {
+  AuditEventType,
+  AuditEntityType,
+} from '../../entities/audit-event.entity';
 
 @Injectable()
 export class MaterialsService {
   constructor(
     @InjectRepository(Material)
     private readonly materialRepository: Repository<Material>,
+    private readonly auditService: AuditService,
   ) {}
 
   async findAll(): Promise<Material[]> {
     return this.materialRepository.find({
+      relations: ['customer'],
       order: { internal_part_number: 'ASC' },
     });
   }
 
   async findOne(id: string): Promise<Material> {
-    const material = await this.materialRepository.findOne({ where: { id } });
+    const material = await this.materialRepository.findOne({
+      where: { id },
+      relations: ['customer'],
+    });
     if (!material) {
       throw new NotFoundException(`Material with ID "${id}" not found`);
     }
@@ -120,9 +130,24 @@ export class MaterialsService {
     return this.materialRepository.save(material);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actor?: string): Promise<void> {
     const material = await this.findOne(id);
     await this.materialRepository.softRemove(material);
+
+    // Emit audit event
+    await this.auditService.emitDelete(
+      AuditEventType.MATERIAL_DELETED,
+      AuditEntityType.MATERIAL,
+      id,
+      {
+        internal_part_number: material.internal_part_number,
+        manufacturer_pn: material.manufacturer_pn,
+        manufacturer: material.manufacturer,
+        description: material.description,
+        customer_id: material.customer_id,
+      },
+      actor,
+    );
   }
 
   async restore(id: string): Promise<Material> {

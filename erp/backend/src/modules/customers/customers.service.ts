@@ -7,12 +7,18 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from '../../entities/customer.entity';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto';
+import { AuditService } from '../audit/audit.service';
+import {
+  AuditEventType,
+  AuditEntityType,
+} from '../../entities/audit-event.entity';
 
 @Injectable()
 export class CustomersService {
   constructor(
     @InjectRepository(Customer)
     private readonly customerRepository: Repository<Customer>,
+    private readonly auditService: AuditService,
   ) {}
 
   async findAll(): Promise<Customer[]> {
@@ -43,9 +49,22 @@ export class CustomersService {
     return this.customerRepository.save(customer);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actor?: string): Promise<void> {
     const customer = await this.findOne(id);
     await this.customerRepository.softRemove(customer);
+
+    // Emit audit event
+    await this.auditService.emitDelete(
+      AuditEventType.CUSTOMER_DELETED,
+      AuditEntityType.CUSTOMER,
+      id,
+      {
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+      },
+      actor,
+    );
   }
 
   async restore(id: string): Promise<Customer> {

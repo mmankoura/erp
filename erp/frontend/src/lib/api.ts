@@ -117,6 +117,8 @@ export interface Material {
   uom: string
   costing_method: string | null
   standard_cost: number | null
+  customer_id: string | null
+  customer?: Customer
   created_at: string
   updated_at: string
   deleted_at: string | null
