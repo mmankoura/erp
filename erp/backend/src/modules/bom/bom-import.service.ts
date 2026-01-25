@@ -194,17 +194,26 @@ export class BomImportService {
     // Validate all items have valid material references
     const materialIds = new Set<string>();
     const ipnToMaterial = new Map<string, Material>();
+    const createdMaterials: string[] = [];
 
-    // Look up all materials by IPN
+    // Look up all materials by IPN, creating if not found
     for (const item of dto.items) {
-      const material = await this.materialRepository.findOne({
+      let material = await this.materialRepository.findOne({
         where: { internal_part_number: item.internal_part_number },
       });
+
       if (!material) {
-        throw new BadRequestException(
-          `Material with IPN "${item.internal_part_number}" not found`,
-        );
+        // Auto-create the material with available data from import
+        material = this.materialRepository.create({
+          internal_part_number: item.internal_part_number,
+          manufacturer: item.manufacturer,
+          manufacturer_pn: item.manufacturer_pn,
+          description: item.notes, // Use notes as description if available
+        });
+        material = await this.materialRepository.save(material);
+        createdMaterials.push(item.internal_part_number);
       }
+
       materialIds.add(material.id);
       ipnToMaterial.set(item.internal_part_number, material);
     }
@@ -226,7 +235,7 @@ export class BomImportService {
       };
     });
 
-    return this.bomService.createFullRevision({
+    const revision = await this.bomService.createFullRevision({
       product_id: dto.product_id,
       revision_number: dto.revision_number,
       revision_date: new Date().toISOString(),
@@ -236,6 +245,11 @@ export class BomImportService {
       is_active: dto.is_active ?? false,
       items: bomItems,
     });
+
+    return {
+      ...revision,
+      created_materials: createdMaterials,
+    };
   }
 
   // ============ Helper Methods ============
@@ -400,7 +414,7 @@ export class BomImportService {
     matched_count: number;
     unmatched_count: number;
   }> {
-    const matchedItems: BomImportItemDto[] = [];
+    const allItems: BomImportItemDto[] = [];
     const unmatchedParts: string[] = [];
     let matchedCount = 0;
     let unmatchedCount = 0;
@@ -424,8 +438,10 @@ export class BomImportService {
         }
       }
 
+      // Include all items - unmatched ones will be created on commit
+      allItems.push(item);
+
       if (material) {
-        matchedItems.push(item);
         matchedCount++;
       } else {
         unmatchedParts.push(item.internal_part_number);
@@ -434,7 +450,7 @@ export class BomImportService {
     }
 
     return {
-      items: matchedItems,
+      items: allItems,
       unmatched_parts: unmatchedParts,
       matched_count: matchedCount,
       unmatched_count: unmatchedCount,

@@ -262,7 +262,7 @@ export function BomImportWizard({
       setStep("preview")
 
       if (result.unmatched_count > 0) {
-        toast.warning(`${result.unmatched_count} parts could not be matched to materials`)
+        toast.info(`${result.unmatched_count} new materials will be created`)
       }
     } catch (error) {
       toast.error((error as Error).message || "Failed to parse file")
@@ -284,7 +284,7 @@ export function BomImportWizard({
 
     setIsLoading(true)
     try {
-      await api.post<BomRevision>("/bom/import/commit", {
+      const result = await api.post<BomRevision & { created_materials?: string[] }>("/bom/import/commit", {
         product_id: productId,
         revision_number: revisionNumber,
         change_summary: changeSummary || undefined,
@@ -292,7 +292,11 @@ export function BomImportWizard({
         source_filename: fileName || undefined,
         items: parseResult.items,
       })
-      toast.success("BOM imported successfully!")
+      if (result.created_materials && result.created_materials.length > 0) {
+        toast.success(`BOM imported successfully! ${result.created_materials.length} new materials created.`)
+      } else {
+        toast.success("BOM imported successfully!")
+      }
       resetWizard()
       onOpenChange(false)
       onSuccess()
@@ -541,13 +545,13 @@ export function BomImportWizard({
                 <Card>
                   <CardContent className="pt-4">
                     <div className="text-2xl font-bold text-green-600">{parseResult.matched_count}</div>
-                    <p className="text-sm text-muted-foreground">Matched Parts</p>
+                    <p className="text-sm text-muted-foreground">Existing Materials</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4">
-                    <div className="text-2xl font-bold text-orange-600">{parseResult.unmatched_count}</div>
-                    <p className="text-sm text-muted-foreground">Unmatched Parts</p>
+                    <div className="text-2xl font-bold text-blue-600">{parseResult.unmatched_count}</div>
+                    <p className="text-sm text-muted-foreground">New Materials</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -601,18 +605,21 @@ export function BomImportWizard({
                 </Card>
               )}
 
-              {/* Unmatched parts */}
+              {/* Unmatched parts - will be auto-created */}
               {parseResult.unmatched_parts.length > 0 && (
-                <Card className="border-orange-200">
+                <Card className="border-blue-200">
                   <CardHeader className="py-3">
-                    <CardTitle className="text-sm">
-                      Unmatched Parts (will not be imported)
+                    <CardTitle className="text-sm flex items-center gap-2 text-blue-600">
+                      New Materials (will be created)
                     </CardTitle>
+                    <CardDescription>
+                      These parts were not found in materials and will be automatically created
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="py-2">
                     <div className="flex flex-wrap gap-2">
                       {parseResult.unmatched_parts.map((part, i) => (
-                        <Badge key={i} variant="outline" className="text-orange-600">
+                        <Badge key={i} variant="outline" className="text-blue-600 border-blue-300">
                           {part}
                         </Badge>
                       ))}
@@ -707,8 +714,8 @@ export function BomImportWizard({
                     <li>Source file: {fileName}</li>
                     <li>Items to import: {parseResult.items.length}</li>
                     {parseResult.unmatched_count > 0 && (
-                      <li className="text-orange-600">
-                        Skipped (unmatched): {parseResult.unmatched_count}
+                      <li className="text-blue-600">
+                        New materials to create: {parseResult.unmatched_count}
                       </li>
                     )}
                   </ul>
