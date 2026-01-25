@@ -17,6 +17,10 @@ export class Customer {
   @Column()
   name: string;
 
+  @Index({ unique: true })
+  @Column({ type: 'varchar', length: 50 })
+  code: string;
+
   @Column({ type: 'varchar', nullable: true })
   contact_person: string | null;
 
@@ -28,6 +32,9 @@ export class Customer {
 
   @Column({ type: 'text', nullable: true })
   address: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  notes: string | null;
 
   @CreateDateColumn()
   created_at: Date;
