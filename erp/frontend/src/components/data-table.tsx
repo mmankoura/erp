@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Search, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 
 export interface Column<T> {
   key: string
@@ -39,10 +39,13 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void
   emptyMessage?: string
   pageSize?: number
-  // Selection props
+  // Selection props (controlled mode)
   selectable?: boolean
   selectedIds?: string[]
   onSelectionChange?: (selectedIds: string[]) => void
+  // Selection props (uncontrolled mode with bulk delete)
+  enableSelection?: boolean
+  onBulkDelete?: (ids: string[]) => void
 }
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100]
@@ -57,12 +60,20 @@ export function DataTable<T extends { id: string }>({
   emptyMessage = "No data found",
   pageSize: initialPageSize = 20,
   selectable = false,
-  selectedIds = [],
+  selectedIds: controlledSelectedIds = [],
   onSelectionChange,
+  enableSelection = false,
+  onBulkDelete,
 }: DataTableProps<T>) {
   const [search, setSearch] = React.useState("")
   const [currentPage, setCurrentPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(initialPageSize)
+  const [internalSelectedIds, setInternalSelectedIds] = React.useState<string[]>([])
+
+  // Use internal state if enableSelection is true, otherwise use controlled state
+  const isSelectable = selectable || enableSelection
+  const selectedIds = enableSelection ? internalSelectedIds : controlledSelectedIds
+  const setSelectedIds = enableSelection ? setInternalSelectedIds : onSelectionChange
 
   // Filter data based on search
   const filteredData = React.useMemo(() => {
@@ -94,29 +105,36 @@ export function DataTable<T extends { id: string }>({
   // Selection helpers
   const allFilteredIds = React.useMemo(() => filteredData.map(item => item.id), [filteredData])
 
-  const isAllSelected = selectable && filteredData.length > 0 &&
+  const isAllSelected = isSelectable && filteredData.length > 0 &&
     allFilteredIds.every(id => selectedIds.includes(id))
-  const isSomeSelected = selectable && selectedIds.length > 0 &&
+  const isSomeSelected = isSelectable && selectedIds.length > 0 &&
     allFilteredIds.some(id => selectedIds.includes(id)) && !isAllSelected
 
   const toggleSelectAll = () => {
-    if (!onSelectionChange) return
+    if (!setSelectedIds) return
     if (isAllSelected) {
       // Deselect all filtered items
-      onSelectionChange(selectedIds.filter(id => !allFilteredIds.includes(id)))
+      setSelectedIds(selectedIds.filter(id => !allFilteredIds.includes(id)))
     } else {
       // Select all filtered items
       const newSelection = [...new Set([...selectedIds, ...allFilteredIds])]
-      onSelectionChange(newSelection)
+      setSelectedIds(newSelection)
     }
   }
 
   const toggleSelectItem = (id: string) => {
-    if (!onSelectionChange) return
+    if (!setSelectedIds) return
     if (selectedIds.includes(id)) {
-      onSelectionChange(selectedIds.filter(i => i !== id))
+      setSelectedIds(selectedIds.filter(i => i !== id))
     } else {
-      onSelectionChange([...selectedIds, id])
+      setSelectedIds([...selectedIds, id])
+    }
+  }
+
+  const handleBulkDelete = () => {
+    if (onBulkDelete && selectedIds.length > 0) {
+      onBulkDelete(selectedIds)
+      setInternalSelectedIds([])
     }
   }
 
@@ -130,7 +148,7 @@ export function DataTable<T extends { id: string }>({
           <Table>
             <TableHeader>
               <TableRow>
-                {selectable && (
+                {isSelectable && (
                   <TableHead className="w-[40px]">
                     <Skeleton className="h-4 w-4" />
                   </TableHead>
@@ -145,7 +163,7 @@ export function DataTable<T extends { id: string }>({
             <TableBody>
               {[...Array(5)].map((_, i) => (
                 <TableRow key={i}>
-                  {selectable && (
+                  {isSelectable && (
                     <TableCell>
                       <Skeleton className="h-4 w-4" />
                     </TableCell>
@@ -166,8 +184,8 @@ export function DataTable<T extends { id: string }>({
 
   return (
     <div className="space-y-4">
-      {searchKey && (
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
+        {searchKey && (
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -177,19 +195,34 @@ export function DataTable<T extends { id: string }>({
               className="pl-8"
             />
           </div>
-          {search && (
+        )}
+        {search && (
+          <span className="text-sm text-muted-foreground">
+            {filteredData.length} result{filteredData.length !== 1 ? "s" : ""}
+          </span>
+        )}
+        {enableSelection && selectedIds.length > 0 && (
+          <div className="flex items-center gap-2 ml-auto">
             <span className="text-sm text-muted-foreground">
-              {filteredData.length} result{filteredData.length !== 1 ? "s" : ""}
+              {selectedIds.length} selected
             </span>
-          )}
-        </div>
-      )}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBulkDelete}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
+            </Button>
+          </div>
+        )}
+      </div>
 
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              {selectable && (
+              {isSelectable && (
                 <TableHead className="w-[40px]">
                   <Checkbox
                     checked={isAllSelected}
@@ -213,7 +246,7 @@ export function DataTable<T extends { id: string }>({
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length + (selectable ? 1 : 0)} className="h-24 text-center">
+                <TableCell colSpan={columns.length + (isSelectable ? 1 : 0)} className="h-24 text-center">
                   {emptyMessage}
                 </TableCell>
               </TableRow>
@@ -222,9 +255,9 @@ export function DataTable<T extends { id: string }>({
                 <TableRow
                   key={item.id}
                   onClick={() => onRowClick?.(item)}
-                  className={`${onRowClick ? "cursor-pointer hover:bg-accent/50" : ""} ${selectable && selectedIds.includes(item.id) ? "bg-accent/30" : ""}`}
+                  className={`${onRowClick ? "cursor-pointer hover:bg-accent/50" : ""} ${isSelectable && selectedIds.includes(item.id) ? "bg-accent/30" : ""}`}
                 >
-                  {selectable && (
+                  {isSelectable && (
                     <TableCell>
                       <Checkbox
                         checked={selectedIds.includes(item.id)}
