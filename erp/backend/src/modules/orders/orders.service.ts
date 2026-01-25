@@ -403,6 +403,24 @@ export class OrdersService {
     );
   }
 
+  async bulkDelete(ids: string[], createdBy?: string): Promise<{ deleted: number }> {
+    if (!ids || ids.length === 0) {
+      return { deleted: 0 };
+    }
+
+    let deletedCount = 0;
+    for (const id of ids) {
+      try {
+        await this.remove(id, createdBy);
+        deletedCount++;
+      } catch (error) {
+        this.logger.warn(`Failed to delete order ${id}: ${(error as Error).message}`);
+      }
+    }
+
+    return { deleted: deletedCount };
+  }
+
   async restore(id: string): Promise<Order> {
     const order = await this.orderRepository.findOne({
       where: { id },

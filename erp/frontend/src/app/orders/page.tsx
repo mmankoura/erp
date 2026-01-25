@@ -1,6 +1,7 @@
 "use client"
 
-import { useApi } from "@/hooks/use-api"
+import { useApi, useMutation } from "@/hooks/use-api"
+import { useToast } from "@/hooks/use-toast"
 import { api, type Order, type MrpShortage, type MaterialStatus } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
@@ -18,7 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Plus, Eye, ShoppingCart, Package, Clock, CheckCircle } from "lucide-react"
+import { Plus, Eye, ShoppingCart, Package, Clock, CheckCircle, Trash2 } from "lucide-react"
 import { useState, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -98,10 +99,45 @@ function computeMaterialStatus(
 
 export default function OrdersPage() {
   const router = useRouter()
+  const { toast } = useToast()
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
-  const { data: orders, isLoading } = useApi<Order[]>("/orders")
+  const { data: orders, isLoading, refetch } = useApi<Order[]>("/orders")
   const { data: shortages } = useApi<MrpShortage[]>("/mrp/shortages")
+
+  const deleteMutation = useMutation<void, string>({
+    mutationFn: (id) => api.delete(`/orders/${id}`),
+    onSuccess: () => {
+      toast({ title: "Order deleted successfully" })
+      refetch()
+    },
+    onError: (error) => {
+      toast({ title: "Failed to delete order", description: error.message, variant: "destructive" })
+    },
+  })
+
+  const bulkDeleteMutation = useMutation<{ deleted: number }, string[]>({
+    mutationFn: (ids) => api.post("/orders/bulk-delete", { ids }),
+    onSuccess: (data) => {
+      toast({ title: `${data.deleted} order(s) deleted successfully` })
+      refetch()
+    },
+    onError: (error) => {
+      toast({ title: "Failed to delete orders", description: error.message, variant: "destructive" })
+    },
+  })
+
+  const handleDelete = (id: string, orderNumber: string) => {
+    if (confirm(`Are you sure you want to delete order ${orderNumber}?`)) {
+      deleteMutation.mutate(id)
+    }
+  }
+
+  const handleBulkDelete = (ids: string[]) => {
+    if (confirm(`Are you sure you want to delete ${ids.length} order(s)?`)) {
+      bulkDeleteMutation.mutate(ids)
+    }
+  }
 
   // Filter orders by status
   const filteredOrders = useMemo(() => {
@@ -180,19 +216,32 @@ export default function OrdersPage() {
     {
       key: "actions",
       header: "",
-      className: "w-[80px]",
+      className: "w-[100px]",
       cell: (order) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={(e) => {
-            e.stopPropagation()
-            router.push(`/orders/${order.id}`)
-          }}
-        >
-          <Eye className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={(e) => {
+              e.stopPropagation()
+              router.push(`/orders/${order.id}`)
+            }}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-destructive hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleDelete(order.id, order.order_number)
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       ),
     },
   ]
@@ -282,6 +331,8 @@ export default function OrdersPage() {
         searchPlaceholder="Search by order number..."
         emptyMessage="No orders found"
         onRowClick={(order) => router.push(`/orders/${order.id}`)}
+        enableSelection
+        onBulkDelete={handleBulkDelete}
       />
     </div>
   )

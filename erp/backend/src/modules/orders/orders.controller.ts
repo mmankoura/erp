@@ -93,6 +93,11 @@ export class OrdersController {
     return this.ordersService.cancel(id);
   }
 
+  @Post('bulk-delete')
+  async bulkDelete(@Body() body: { ids: string[] }) {
+    return this.ordersService.bulkDelete(body.ids);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id', ParseUUIDPipe) id: string) {
