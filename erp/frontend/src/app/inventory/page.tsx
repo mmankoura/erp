@@ -48,6 +48,7 @@ import {
   AlertTriangle,
   Package,
   Upload,
+  Trash2,
 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -443,6 +444,34 @@ export default function InventoryPage() {
   const { data: lotsRaw, isLoading: lotsLoading, refetch: refetchLots } = useApi<InventoryLot[]>("/inventory/lots")
   const [importWizardOpen, setImportWizardOpen] = useState(false)
 
+  const deleteLotMutation = useMutation(
+    (id: string) => api.delete(`/inventory/lots/${id}`),
+    {
+      onSuccess: () => {
+        toast.success("Lot deleted successfully")
+        refetchLots()
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to delete lot")
+      },
+    }
+  )
+
+  const bulkDeleteLotsMutation = useMutation(
+    (ids: string[]) => api.post<{ deleted: number }>("/inventory/lots/bulk-delete", { ids }),
+    {
+      onSuccess: (result) => {
+        toast.success(`Deleted ${result.deleted} lots`)
+        refetchLots()
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to delete lots")
+      },
+    }
+  )
+
   // Transform lots for DataTable
   const lots: InventoryLotWithId[] | null = lotsRaw || null
 
@@ -456,6 +485,85 @@ export default function InventoryPage() {
   const totalOnHand = inventory?.reduce((sum, item) => sum + item.quantity_on_hand, 0) || 0
   const totalAllocated = inventory?.reduce((sum, item) => sum + item.quantity_allocated, 0) || 0
   const lowStockCount = lowStock?.length || 0
+
+  const lotColumns: Column<InventoryLotWithId>[] = [
+    {
+      key: "uid",
+      header: "UID",
+      cell: (lot) => <span className="font-mono font-medium">{lot.uid}</span>,
+    },
+    {
+      key: "customer",
+      header: "Customer",
+      cell: (lot) => lot.material?.customer?.name || "-",
+    },
+    {
+      key: "ipn",
+      header: "IPN",
+      cell: (lot) => lot.material?.internal_part_number,
+    },
+    {
+      key: "quantity",
+      header: "Quantity",
+      className: "text-right",
+      cell: (lot) => <span className="font-mono">{lot.quantity.toLocaleString()}</span>,
+    },
+    {
+      key: "package_type",
+      header: "Package",
+      cell: (lot) => <Badge variant="outline">{lot.package_type}</Badge>,
+    },
+    {
+      key: "po_reference",
+      header: "PO Ref",
+      cell: (lot) => <span className="text-muted-foreground">{lot.po_reference || "-"}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (lot) => (
+        <Badge
+          variant={
+            lot.status === "ACTIVE"
+              ? "default"
+              : lot.status === "CONSUMED"
+                ? "secondary"
+                : "destructive"
+          }
+        >
+          {lot.status}
+        </Badge>
+      ),
+    },
+    {
+      key: "received_date",
+      header: "Received",
+      cell: (lot) => (
+        <span className="text-sm text-muted-foreground">
+          {lot.received_date ? new Date(lot.received_date).toLocaleDateString() : "-"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      className: "w-[60px]",
+      cell: (lot) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive hover:text-destructive"
+          onClick={() => {
+            if (confirm(`Delete lot ${lot.uid}?`)) {
+              deleteLotMutation.mutate(lot.id)
+            }
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ),
+    },
+  ]
 
   const columns: Column<InventoryStockWithId>[] = [
     {
@@ -648,74 +756,20 @@ export default function InventoryPage() {
         </TabsContent>
 
         <TabsContent value="lots" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Inventory Lots</CardTitle>
-              <CardDescription>Individual reels and lots with unique identifiers</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {lotsLoading ? (
-                <p className="text-center text-muted-foreground py-8">Loading...</p>
-              ) : lots && lots.length > 0 ? (
-                <div className="max-h-[500px] overflow-y-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>UID</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>IPN</TableHead>
-                        <TableHead className="text-right">Quantity</TableHead>
-                        <TableHead>Package</TableHead>
-                        <TableHead>PO Ref</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Received</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {lots.map((lot) => (
-                        <TableRow key={lot.id}>
-                          <TableCell className="font-mono font-medium">{lot.uid}</TableCell>
-                          <TableCell>{lot.material?.customer?.name || "-"}</TableCell>
-                          <TableCell>{lot.material?.internal_part_number}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {lot.quantity.toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{lot.package_type}</Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {lot.po_reference || "-"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                lot.status === "ACTIVE"
-                                  ? "default"
-                                  : lot.status === "CONSUMED"
-                                    ? "secondary"
-                                    : "destructive"
-                              }
-                            >
-                              {lot.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {lot.received_date
-                              ? new Date(lot.received_date).toLocaleDateString()
-                              : "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <p className="text-center text-muted-foreground py-8">
-                  No lots found. Import inventory to add lots.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          <DataTable
+            data={lots}
+            columns={lotColumns}
+            isLoading={lotsLoading}
+            searchKey="uid"
+            searchPlaceholder="Search by UID..."
+            emptyMessage="No lots found. Import inventory to add lots."
+            enableSelection
+            onBulkDelete={(ids) => {
+              if (confirm(`Delete ${ids.length} selected lots?`)) {
+                bulkDeleteLotsMutation.mutate(ids)
+              }
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="recent" className="space-y-4">

@@ -293,6 +293,36 @@ export class InventoryImportService {
     return lot;
   }
 
+  async deleteLot(id: string): Promise<void> {
+    const lot = await this.lotRepository.findOne({ where: { id } });
+    if (!lot) {
+      throw new NotFoundException(`Lot with ID "${id}" not found`);
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      // Delete associated transactions
+      await manager.delete(InventoryTransaction, { lot_id: id });
+      // Delete the lot
+      await manager.delete(InventoryLot, { id });
+    });
+  }
+
+  async deleteLots(ids: string[]): Promise<{ deleted: number }> {
+    if (!ids || ids.length === 0) {
+      return { deleted: 0 };
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      // Delete associated transactions
+      await manager.delete(InventoryTransaction, { lot_id: In(ids) });
+      // Delete the lots
+      const deleteResult = await manager.delete(InventoryLot, { id: In(ids) });
+      return deleteResult.affected || 0;
+    });
+
+    return { deleted: result };
+  }
+
   // ==================== HELPER METHODS ====================
 
   private decodeBase64(content: string): string {

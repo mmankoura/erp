@@ -123,6 +123,25 @@ export class InventoryController {
   }
 
   /**
+   * DELETE /inventory/lots/:id
+   * Delete a specific lot
+   */
+  @Delete('lots/:id')
+  async deleteLot(@Param('id', ParseUUIDPipe) id: string) {
+    await this.inventoryImportService.deleteLot(id);
+    return { success: true };
+  }
+
+  /**
+   * POST /inventory/lots/bulk-delete
+   * Delete multiple lots
+   */
+  @Post('lots/bulk-delete')
+  async deleteLots(@Body() body: { ids: string[] }) {
+    return this.inventoryImportService.deleteLots(body.ids);
+  }
+
+  /**
    * GET /inventory/by-owner?owner_type=CUSTOMER&owner_id=UUID
    * Get stock level for a material filtered by owner
    * - owner_type: COMPANY or CUSTOMER
