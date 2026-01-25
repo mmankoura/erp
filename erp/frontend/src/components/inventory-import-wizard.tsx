@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import * as XLSX from "xlsx"
 import {
   api,
+  type Customer,
   type InventoryImportPreviewResult,
   type InventoryImportParseResult,
   type InventoryColumnMapping,
@@ -90,6 +91,15 @@ export function InventoryImportWizard({
   const [columnMappings, setColumnMappings] = useState<InventoryColumnMapping[]>([])
   const [parseResult, setParseResult] = useState<InventoryImportParseResult | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
+
+  // Fetch customers when dialog opens
+  useEffect(() => {
+    if (open) {
+      api.get<Customer[]>("/customers").then(setCustomers).catch(() => {})
+    }
+  }, [open])
 
   const resetWizard = useCallback(() => {
     setStep("upload")
@@ -100,6 +110,7 @@ export function InventoryImportWizard({
     setPreviewResult(null)
     setColumnMappings([])
     setParseResult(null)
+    setSelectedCustomerId(null)
   }, [])
 
   const handleClose = useCallback(() => {
@@ -250,6 +261,10 @@ export function InventoryImportWizard({
       const result = await api.post<InventoryImportCommitResult>("/inventory/import/commit", {
         items: cleanItems,
         source_filename: fileName || undefined,
+        ...(selectedCustomerId && {
+          owner_type: "CUSTOMER",
+          owner_id: selectedCustomerId,
+        }),
       })
       toast.success(`Imported ${result.lots_created} lots successfully!`)
       if (result.created_materials.length > 0) {
@@ -357,6 +372,29 @@ export function InventoryImportWizard({
                       className="w-20"
                     />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Customer (Optional)</Label>
+                  <Select
+                    value={selectedCustomerId || "company"}
+                    onValueChange={(value) => setSelectedCustomerId(value === "company" ? null : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Company owned (default)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="company">Company owned (default)</SelectItem>
+                      {customers.map((customer) => (
+                        <SelectItem key={customer.id} value={customer.id}>
+                          {customer.name} ({customer.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Select a customer if this is consignment inventory
+                  </p>
                 </div>
               </CardContent>
             </Card>
