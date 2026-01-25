@@ -113,6 +113,7 @@
 - [x] **BOM Viewer Page (Jan 24)** - View all BOM revisions, filter by product, search, view revision details with items, compare/diff between two revisions
 - [x] **BOM Import with Excel Support (Jan 24)** - Added xlsx library for Excel parsing (.xlsx, .xls), fixed UTF-8 encoding bug with btoa()
 - [x] **BOM Validation Page (Jan 24)** - 4-step wizard to compare uploaded BOM file against stored revision. Shows added/removed/changed items with visual diff
+- [x] **Auto-Create Materials on BOM Import (Jan 25)** - Materials not found during BOM import are now automatically created using IPN, manufacturer, and MPN from the import. UI updated to show "New Materials (will be created)" instead of errors
 
 ### Not Started ⬚
 - [ ] User authentication/authorization
@@ -2573,15 +2574,16 @@ Audit trail of BOM validation checks.
 
 ### Handling Unknown Materials
 
-When importing a BOM with materials not in the system:
+When importing a BOM with materials not in the system, they are **automatically created** using data from the import:
 
-| Option | Behavior |
-|--------|----------|
-| **Auto-create** | Create new material with part_number from import, name from import |
-| **Skip** | Ignore line, log warning |
-| **Fail** | Reject entire import until materials are added |
+| Field | Source |
+|-------|--------|
+| `internal_part_number` | IPN from import (required) |
+| `manufacturer` | Manufacturer column if mapped |
+| `manufacturer_pn` | MPN column if mapped |
+| `description` | Notes column if mapped |
 
-User selects behavior per import. Default: Preview unknown materials, let user decide.
+The preview step shows "New Materials (will be created)" in blue, and the success toast reports how many materials were created.
 
 ### Standard Fields for Import
 
