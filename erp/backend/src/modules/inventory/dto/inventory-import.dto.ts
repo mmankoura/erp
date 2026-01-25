@@ -102,7 +102,12 @@ export class InventoryImportItemDto {
   @IsOptional()
   notes?: string;
 
+  @IsString()
+  @IsOptional()
   material_id?: string;
+
+  @IsBoolean()
+  @IsOptional()
   material_matched?: boolean;
 }
 
