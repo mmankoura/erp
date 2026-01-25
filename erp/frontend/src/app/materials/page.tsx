@@ -24,9 +24,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Pencil, Trash2 } from "lucide-react"
+import { Plus, Pencil, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 const uomOptions = ["EA", "FT", "IN", "M", "CM", "MM", "KG", "G", "LB", "OZ", "L", "ML", "GAL"]
 const categoryOptions = ["Resistors", "Capacitors", "Inductors", "ICs", "Connectors", "PCBs", "Mechanical", "Labels", "Other"]
@@ -231,6 +241,8 @@ function MaterialDialog({
 
 export default function MaterialsPage() {
   const { data: materials, isLoading, refetch } = useApi<Material[]>("/materials")
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/materials/${id}`),
@@ -244,6 +256,37 @@ export default function MaterialsPage() {
       },
     }
   )
+
+  const bulkDeleteMutation = useMutation(
+    async (ids: string[]) => {
+      // Delete sequentially to avoid overwhelming the server
+      for (const id of ids) {
+        await api.delete(`/materials/${id}`)
+      }
+    },
+    {
+      onSuccess: () => {
+        toast.success(`${selectedIds.length} material(s) deleted successfully`)
+        setSelectedIds([])
+        setShowDeleteDialog(false)
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to delete materials")
+        setShowDeleteDialog(false)
+        refetch() // Refetch to show current state after partial failure
+      },
+    }
+  )
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return
+    setShowDeleteDialog(true)
+  }
+
+  const confirmBulkDelete = () => {
+    bulkDeleteMutation.mutate(selectedIds)
+  }
 
   const columns: Column<Material>[] = [
     {
@@ -340,6 +383,32 @@ export default function MaterialsPage() {
         />
       </div>
 
+      {/* Selection toolbar */}
+      {selectedIds.length > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+          <span className="text-sm font-medium">
+            {selectedIds.length} selected
+          </span>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleBulkDelete}
+            disabled={bulkDeleteMutation.isLoading}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete Selected"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSelectedIds([])}
+          >
+            <X className="h-4 w-4 mr-2" />
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
       <DataTable
         data={materials}
         columns={columns}
@@ -347,7 +416,31 @@ export default function MaterialsPage() {
         searchKey="internal_part_number"
         searchPlaceholder="Search by IPN..."
         emptyMessage="No materials found. Add your first material to get started."
+        selectable
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
       />
+
+      {/* Bulk delete confirmation dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.length} material(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The selected materials will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

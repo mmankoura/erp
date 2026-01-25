@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Search, ChevronLeft, ChevronRight } from "lucide-react"
 
 export interface Column<T> {
@@ -31,6 +32,10 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void
   emptyMessage?: string
   pageSize?: number
+  // Selection props
+  selectable?: boolean
+  selectedIds?: string[]
+  onSelectionChange?: (selectedIds: string[]) => void
 }
 
 export function DataTable<T extends { id: string }>({
@@ -42,6 +47,9 @@ export function DataTable<T extends { id: string }>({
   onRowClick,
   emptyMessage = "No data found",
   pageSize = 10,
+  selectable = false,
+  selectedIds = [],
+  onSelectionChange,
 }: DataTableProps<T>) {
   const [search, setSearch] = React.useState("")
   const [currentPage, setCurrentPage] = React.useState(1)
@@ -73,6 +81,35 @@ export function DataTable<T extends { id: string }>({
     setCurrentPage(1)
   }, [search])
 
+  // Selection helpers
+  const allFilteredIds = React.useMemo(() => filteredData.map(item => item.id), [filteredData])
+
+  const isAllSelected = selectable && filteredData.length > 0 &&
+    allFilteredIds.every(id => selectedIds.includes(id))
+  const isSomeSelected = selectable && selectedIds.length > 0 &&
+    allFilteredIds.some(id => selectedIds.includes(id)) && !isAllSelected
+
+  const toggleSelectAll = () => {
+    if (!onSelectionChange) return
+    if (isAllSelected) {
+      // Deselect all filtered items
+      onSelectionChange(selectedIds.filter(id => !allFilteredIds.includes(id)))
+    } else {
+      // Select all filtered items
+      const newSelection = [...new Set([...selectedIds, ...allFilteredIds])]
+      onSelectionChange(newSelection)
+    }
+  }
+
+  const toggleSelectItem = (id: string) => {
+    if (!onSelectionChange) return
+    if (selectedIds.includes(id)) {
+      onSelectionChange(selectedIds.filter(i => i !== id))
+    } else {
+      onSelectionChange([...selectedIds, id])
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -83,6 +120,11 @@ export function DataTable<T extends { id: string }>({
           <Table>
             <TableHeader>
               <TableRow>
+                {selectable && (
+                  <TableHead className="w-[40px]">
+                    <Skeleton className="h-4 w-4" />
+                  </TableHead>
+                )}
                 {columns.map((column) => (
                   <TableHead key={column.key}>
                     <Skeleton className="h-4 w-20" />
@@ -93,6 +135,11 @@ export function DataTable<T extends { id: string }>({
             <TableBody>
               {[...Array(5)].map((_, i) => (
                 <TableRow key={i}>
+                  {selectable && (
+                    <TableCell>
+                      <Skeleton className="h-4 w-4" />
+                    </TableCell>
+                  )}
                   {columns.map((column) => (
                     <TableCell key={column.key}>
                       <Skeleton className="h-4 w-full" />
@@ -132,6 +179,20 @@ export function DataTable<T extends { id: string }>({
         <Table>
           <TableHeader>
             <TableRow>
+              {selectable && (
+                <TableHead className="w-[40px]">
+                  <Checkbox
+                    checked={isAllSelected}
+                    ref={(el) => {
+                      if (el) {
+                        (el as HTMLButtonElement).dataset.state = isSomeSelected ? "indeterminate" : (isAllSelected ? "checked" : "unchecked")
+                      }
+                    }}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all"
+                  />
+                </TableHead>
+              )}
               {columns.map((column) => (
                 <TableHead key={column.key} className={column.className}>
                   {column.header}
@@ -142,7 +203,7 @@ export function DataTable<T extends { id: string }>({
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
+                <TableCell colSpan={columns.length + (selectable ? 1 : 0)} className="h-24 text-center">
                   {emptyMessage}
                 </TableCell>
               </TableRow>
@@ -151,8 +212,18 @@ export function DataTable<T extends { id: string }>({
                 <TableRow
                   key={item.id}
                   onClick={() => onRowClick?.(item)}
-                  className={onRowClick ? "cursor-pointer hover:bg-accent/50" : ""}
+                  className={`${onRowClick ? "cursor-pointer hover:bg-accent/50" : ""} ${selectable && selectedIds.includes(item.id) ? "bg-accent/30" : ""}`}
                 >
+                  {selectable && (
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.includes(item.id)}
+                        onCheckedChange={() => toggleSelectItem(item.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Select row`}
+                      />
+                    </TableCell>
+                  )}
                   {columns.map((column) => (
                     <TableCell key={column.key} className={column.className}>
                       {column.cell

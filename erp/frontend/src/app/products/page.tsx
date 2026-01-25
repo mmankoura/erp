@@ -17,11 +17,21 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Pencil, Trash2, FileText, Eye } from "lucide-react"
+import { Plus, Pencil, Trash2, FileText, Eye, X } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface ProductFormData {
   part_number: string
@@ -157,6 +167,8 @@ function ProductDialog({
 export default function ProductsPage() {
   const router = useRouter()
   const { data: products, isLoading, refetch } = useApi<Product[]>("/products")
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/products/${id}`),
@@ -170,6 +182,36 @@ export default function ProductsPage() {
       },
     }
   )
+
+  const bulkDeleteMutation = useMutation(
+    async (ids: string[]) => {
+      for (const id of ids) {
+        await api.delete(`/products/${id}`)
+      }
+    },
+    {
+      onSuccess: () => {
+        toast.success(`${selectedIds.length} product(s) deleted successfully`)
+        setSelectedIds([])
+        setShowDeleteDialog(false)
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to delete products")
+        setShowDeleteDialog(false)
+        refetch()
+      },
+    }
+  )
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return
+    setShowDeleteDialog(true)
+  }
+
+  const confirmBulkDelete = () => {
+    bulkDeleteMutation.mutate(selectedIds)
+  }
 
   const columns: Column<Product>[] = [
     {
@@ -269,6 +311,31 @@ export default function ProductsPage() {
         />
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+          <span className="text-sm font-medium">
+            {selectedIds.length} selected
+          </span>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleBulkDelete}
+            disabled={bulkDeleteMutation.isLoading}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete Selected"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSelectedIds([])}
+          >
+            <X className="h-4 w-4 mr-2" />
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
       <DataTable
         data={products}
         columns={columns}
@@ -277,7 +344,30 @@ export default function ProductsPage() {
         searchPlaceholder="Search by part number..."
         emptyMessage="No products found. Add your first product to get started."
         onRowClick={(product) => router.push(`/products/${product.id}`)}
+        selectable
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
       />
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.length} product(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The selected products will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

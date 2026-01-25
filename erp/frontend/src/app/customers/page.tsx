@@ -16,9 +16,19 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Pencil, Trash2 } from "lucide-react"
+import { Plus, Pencil, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface CustomerFormData {
   name: string
@@ -195,6 +205,8 @@ function CustomerDialog({
 
 export default function CustomersPage() {
   const { data: customers, isLoading, refetch } = useApi<Customer[]>("/customers")
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/customers/${id}`),
@@ -208,6 +220,36 @@ export default function CustomersPage() {
       },
     }
   )
+
+  const bulkDeleteMutation = useMutation(
+    async (ids: string[]) => {
+      for (const id of ids) {
+        await api.delete(`/customers/${id}`)
+      }
+    },
+    {
+      onSuccess: () => {
+        toast.success(`${selectedIds.length} customer(s) deleted successfully`)
+        setSelectedIds([])
+        setShowDeleteDialog(false)
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to delete customers")
+        setShowDeleteDialog(false)
+        refetch()
+      },
+    }
+  )
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return
+    setShowDeleteDialog(true)
+  }
+
+  const confirmBulkDelete = () => {
+    bulkDeleteMutation.mutate(selectedIds)
+  }
 
   const columns: Column<Customer>[] = [
     {
@@ -283,6 +325,31 @@ export default function CustomersPage() {
         />
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+          <span className="text-sm font-medium">
+            {selectedIds.length} selected
+          </span>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleBulkDelete}
+            disabled={bulkDeleteMutation.isLoading}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete Selected"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSelectedIds([])}
+          >
+            <X className="h-4 w-4 mr-2" />
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
       <DataTable
         data={customers}
         columns={columns}
@@ -290,7 +357,30 @@ export default function CustomersPage() {
         searchKey="name"
         searchPlaceholder="Search by name..."
         emptyMessage="No customers found. Add your first customer to get started."
+        selectable
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
       />
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.length} customer(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. The selected customers will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
