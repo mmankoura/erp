@@ -104,9 +104,10 @@ export class InventoryService {
    * Get all materials with their current stock levels including allocation info
    */
   async findAllStock(): Promise<MaterialStock[]> {
-    // Get all materials
+    // Get all materials with customer relation
     const materials = await this.materialRepository.find({
       where: { deleted_at: undefined },
+      relations: ['customer'],
       order: { internal_part_number: 'ASC' },
     });
 
@@ -438,7 +439,7 @@ export class InventoryService {
       where: { material_id: materialId },
       order: { created_at: 'DESC' },
       take: limit,
-      relations: ['material'],
+      relations: ['material', 'material.customer'],
     });
   }
 
@@ -601,7 +602,7 @@ export class InventoryService {
     return this.transactionRepository.find({
       order: { created_at: 'DESC' },
       take: limit,
-      relations: ['material'],
+      relations: ['material', 'material.customer'],
     });
   }
 

@@ -447,6 +447,11 @@ export default function InventoryPage() {
 
   const columns: Column<InventoryStockWithId>[] = [
     {
+      key: "customer",
+      header: "Customer",
+      cell: (stock) => stock.material?.customer?.name || "-",
+    },
+    {
       key: "material",
       header: "Material",
       cell: (stock) => (
@@ -626,6 +631,7 @@ export default function InventoryPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
+                      <TableHead>Customer</TableHead>
                       <TableHead>Material</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Quantity</TableHead>
@@ -643,6 +649,7 @@ export default function InventoryPage() {
                           <TableCell className="text-sm">
                             {new Date(tx.created_at).toLocaleString()}
                           </TableCell>
+                          <TableCell>{tx.material?.customer?.name || "-"}</TableCell>
                           <TableCell className="font-medium">
                             {tx.material?.internal_part_number}
                           </TableCell>
@@ -690,6 +697,7 @@ export default function InventoryPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Customer</TableHead>
                       <TableHead>Material</TableHead>
                       <TableHead className="text-right">On Hand</TableHead>
                       <TableHead className="text-right">Allocated</TableHead>
@@ -700,6 +708,7 @@ export default function InventoryPage() {
                   <TableBody>
                     {lowStock.map((stock) => (
                       <TableRow key={stock.material_id}>
+                        <TableCell>{stock.material?.customer?.name || "-"}</TableCell>
                         <TableCell>
                           <span className="font-medium">{stock.material?.internal_part_number}</span>
                         </TableCell>
