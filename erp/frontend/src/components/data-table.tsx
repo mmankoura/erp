@@ -13,6 +13,13 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Search, ChevronLeft, ChevronRight } from "lucide-react"
 
 export interface Column<T> {
@@ -38,6 +45,8 @@ interface DataTableProps<T> {
   onSelectionChange?: (selectedIds: string[]) => void
 }
 
+const PAGE_SIZE_OPTIONS = [20, 50, 100]
+
 export function DataTable<T extends { id: string }>({
   data,
   columns,
@@ -46,13 +55,14 @@ export function DataTable<T extends { id: string }>({
   searchKey,
   onRowClick,
   emptyMessage = "No data found",
-  pageSize = 10,
+  pageSize: initialPageSize = 20,
   selectable = false,
   selectedIds = [],
   onSelectionChange,
 }: DataTableProps<T>) {
   const [search, setSearch] = React.useState("")
   const [currentPage, setCurrentPage] = React.useState(1)
+  const [pageSize, setPageSize] = React.useState(initialPageSize)
 
   // Filter data based on search
   const filteredData = React.useMemo(() => {
@@ -76,10 +86,10 @@ export function DataTable<T extends { id: string }>({
 
   const totalPages = Math.ceil(filteredData.length / pageSize)
 
-  // Reset to page 1 when search changes
+  // Reset to page 1 when search or page size changes
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [search])
+  }, [search, pageSize])
 
   // Selection helpers
   const allFilteredIds = React.useMemo(() => filteredData.map(item => item.id), [filteredData])
@@ -238,12 +248,32 @@ export function DataTable<T extends { id: string }>({
         </Table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
           <p className="text-sm text-muted-foreground">
-            Showing {(currentPage - 1) * pageSize + 1} to{" "}
+            Showing {filteredData.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{" "}
             {Math.min(currentPage * pageSize, filteredData.length)} of {filteredData.length}
           </p>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Rows per page:</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => setPageSize(Number(value))}
+            >
+              <SelectTrigger className="h-8 w-[70px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {totalPages > 1 && (
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -267,8 +297,8 @@ export function DataTable<T extends { id: string }>({
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
