@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import * as XLSX from "xlsx"
 import { useApi, useMutation } from "@/hooks/use-api"
 import {
   api,
@@ -125,15 +126,44 @@ export function BomImportWizard({
     if (!file) return
 
     setFileName(file.name)
+    const fileExtension = file.name.split(".").pop()?.toLowerCase()
 
-    const reader = new FileReader()
-    reader.onload = async (event) => {
-      const content = event.target?.result as string
-      // Convert to base64
-      const base64 = btoa(content)
-      setFileContent(base64)
+    if (fileExtension === "xlsx" || fileExtension === "xls") {
+      // Handle Excel files
+      const reader = new FileReader()
+      reader.onload = async (event) => {
+        try {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer)
+          const workbook = XLSX.read(data, { type: "array" })
+
+          // Get the first sheet
+          const firstSheetName = workbook.SheetNames[0]
+          const worksheet = workbook.Sheets[firstSheetName]
+
+          // Convert to CSV
+          const csvContent = XLSX.utils.sheet_to_csv(worksheet)
+
+          // Convert to base64 (UTF-8 safe encoding)
+          const base64 = btoa(unescape(encodeURIComponent(csvContent)))
+          setFileContent(base64)
+        } catch (error) {
+          toast.error("Failed to parse Excel file")
+          console.error("Excel parse error:", error)
+        }
+      }
+      reader.readAsArrayBuffer(file)
+    } else {
+      // Handle CSV files
+      const reader = new FileReader()
+      reader.onload = async (event) => {
+        const content = event.target?.result as string
+        // Convert to base64 (UTF-8 safe encoding)
+        // encodeURIComponent handles UTF-8 chars, unescape converts to Latin1 for btoa
+        const base64 = btoa(unescape(encodeURIComponent(content)))
+        setFileContent(base64)
+      }
+      reader.readAsText(file)
     }
-    reader.readAsText(file)
   }
 
   const handlePreview = async () => {
@@ -295,9 +325,9 @@ export function BomImportWizard({
       </DialogTrigger>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Import BOM from CSV</DialogTitle>
+          <DialogTitle>Import BOM</DialogTitle>
           <DialogDescription>
-            {step === "upload" && "Upload a CSV file containing your bill of materials"}
+            {step === "upload" && "Upload a CSV or Excel file containing your bill of materials"}
             {step === "mapping" && "Map the columns in your file to BOM fields"}
             {step === "preview" && "Review the parsed data before importing"}
             {step === "commit" && "Configure and create the BOM revision"}
@@ -349,12 +379,12 @@ export function BomImportWizard({
                   >
                     Click to upload or drag and drop
                   </Label>
-                  <p className="text-sm text-muted-foreground">CSV files only</p>
+                  <p className="text-sm text-muted-foreground">CSV or Excel files (.csv, .xlsx, .xls)</p>
                 </div>
                 <Input
                   id="file-upload"
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.xlsx,.xls"
                   className="hidden"
                   onChange={handleFileChange}
                 />

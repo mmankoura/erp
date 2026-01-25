@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   History,
   Settings,
+  Layers,
 } from "lucide-react"
 
 import {
@@ -50,6 +51,11 @@ const navigation = {
       title: "Products",
       url: "/products",
       icon: Box,
+    },
+    {
+      title: "BOMs",
+      url: "/bom",
+      icon: Layers,
     },
     {
       title: "Customers",
