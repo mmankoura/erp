@@ -24,8 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Pencil, Trash2, X } from "lucide-react"
-import { useState } from "react"
+import { Plus, Pencil, Trash2, X, Search, Filter } from "lucide-react"
+import { useState, useMemo } from "react"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -271,6 +271,62 @@ export default function MaterialsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
+  // Search and filter state
+  const [search, setSearch] = useState("")
+  const [customerFilter, setCustomerFilter] = useState<string>("all")
+  const [ipnFilter, setIpnFilter] = useState("")
+  const [mpnFilter, setMpnFilter] = useState("")
+  const [descriptionFilter, setDescriptionFilter] = useState("")
+  const [showFilters, setShowFilters] = useState(false)
+
+  // Filter materials based on search and filters
+  const filteredMaterials = useMemo(() => {
+    if (!materials) return null
+
+    return materials.filter((material) => {
+      // Search across IPN, MPN, and description
+      if (search) {
+        const searchLower = search.toLowerCase()
+        const matchesSearch =
+          material.internal_part_number.toLowerCase().includes(searchLower) ||
+          (material.manufacturer_pn?.toLowerCase().includes(searchLower) ?? false) ||
+          (material.description?.toLowerCase().includes(searchLower) ?? false)
+        if (!matchesSearch) return false
+      }
+
+      // Filter by customer
+      if (customerFilter !== "all" && material.customer_id !== customerFilter) {
+        return false
+      }
+
+      // Filter by IPN
+      if (ipnFilter && !material.internal_part_number.toLowerCase().includes(ipnFilter.toLowerCase())) {
+        return false
+      }
+
+      // Filter by MPN
+      if (mpnFilter && !(material.manufacturer_pn?.toLowerCase().includes(mpnFilter.toLowerCase()) ?? false)) {
+        return false
+      }
+
+      // Filter by description
+      if (descriptionFilter && !(material.description?.toLowerCase().includes(descriptionFilter.toLowerCase()) ?? false)) {
+        return false
+      }
+
+      return true
+    })
+  }, [materials, search, customerFilter, ipnFilter, mpnFilter, descriptionFilter])
+
+  const hasActiveFilters = customerFilter !== "all" || ipnFilter || mpnFilter || descriptionFilter
+
+  const clearFilters = () => {
+    setCustomerFilter("all")
+    setIpnFilter("")
+    setMpnFilter("")
+    setDescriptionFilter("")
+  }
+
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/materials/${id}`),
     {
@@ -417,6 +473,101 @@ export default function MaterialsPage() {
         />
       </div>
 
+      {/* Search and Filters */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          {/* Search box */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by IPN, MPN, or description..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+
+          {/* Filter toggle button */}
+          <Button
+            variant={showFilters || hasActiveFilters ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filters
+            {hasActiveFilters && (
+              <Badge variant="default" className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                {[customerFilter !== "all", ipnFilter, mpnFilter, descriptionFilter].filter(Boolean).length}
+              </Badge>
+            )}
+          </Button>
+
+          {/* Clear filters */}
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              <X className="h-4 w-4 mr-1" />
+              Clear filters
+            </Button>
+          )}
+
+          {/* Results count */}
+          {(search || hasActiveFilters) && filteredMaterials && (
+            <span className="text-sm text-muted-foreground">
+              {filteredMaterials.length} result{filteredMaterials.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        {/* Filter panel */}
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg border">
+            <div className="space-y-2">
+              <Label htmlFor="filter-customer" className="text-sm font-medium">Customer</Label>
+              <Select value={customerFilter} onValueChange={setCustomerFilter}>
+                <SelectTrigger id="filter-customer">
+                  <SelectValue placeholder="All customers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All customers</SelectItem>
+                  {customers?.map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="filter-ipn" className="text-sm font-medium">IPN</Label>
+              <Input
+                id="filter-ipn"
+                placeholder="Filter by IPN..."
+                value={ipnFilter}
+                onChange={(e) => setIpnFilter(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="filter-mpn" className="text-sm font-medium">Manufacturer P/N</Label>
+              <Input
+                id="filter-mpn"
+                placeholder="Filter by MPN..."
+                value={mpnFilter}
+                onChange={(e) => setMpnFilter(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="filter-description" className="text-sm font-medium">Description</Label>
+              <Input
+                id="filter-description"
+                placeholder="Filter by description..."
+                value={descriptionFilter}
+                onChange={(e) => setDescriptionFilter(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Selection toolbar */}
       {selectedIds.length > 0 && (
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
@@ -444,11 +595,9 @@ export default function MaterialsPage() {
       )}
 
       <DataTable
-        data={materials}
+        data={filteredMaterials}
         columns={columns}
         isLoading={isLoading}
-        searchKey="internal_part_number"
-        searchPlaceholder="Search by IPN..."
         emptyMessage="No materials found. Add your first material to get started."
         selectable
         selectedIds={selectedIds}

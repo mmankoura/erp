@@ -126,6 +126,8 @@ export interface Material {
 
 export interface Product {
   id: string
+  customer_id: string
+  customer?: Customer
   part_number: string
   name: string
   description: string | null
@@ -312,10 +314,19 @@ export interface InventoryAllocation {
 export interface MrpShortage {
   material_id: string
   material: Material
-  required_quantity: number
-  available_quantity: number
-  on_order_quantity: number
+  quantity_on_hand: number
+  quantity_allocated: number
+  quantity_available: number
+  quantity_on_order: number
+  total_required: number
   shortage: number
+}
+
+export interface MrpShortagesResponse {
+  generated_at: string
+  total_materials_with_shortage: number
+  total_orders_analyzed: number
+  shortages: MrpShortage[]
 }
 
 export interface MrpRequirement {
@@ -327,6 +338,12 @@ export interface MrpRequirement {
   quantity_available: number
   quantity_on_order: number
   net_requirement: number
+}
+
+export interface MrpRequirementsResponse {
+  generated_at: string
+  total_orders: number
+  materials: MrpRequirement[]
 }
 
 export interface AuditEvent {

@@ -1,7 +1,7 @@
 "use client"
 
 import { useApi } from "@/hooks/use-api"
-import { type MrpShortage, type MrpRequirement } from "@/lib/api"
+import { type MrpShortage, type MrpRequirement, type MrpShortagesResponse, type MrpRequirementsResponse } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -27,10 +27,14 @@ type MrpShortageWithId = MrpShortage & { id: string }
 type MrpRequirementWithId = MrpRequirement & { id: string }
 
 export default function MRPPage() {
-  const { data: shortagesRaw, isLoading: shortagesLoading } =
-    useApi<MrpShortage[]>("/mrp/shortages")
-  const { data: requirementsRaw, isLoading: requirementsLoading } =
-    useApi<MrpRequirement[]>("/mrp/requirements")
+  const { data: shortagesResponse, isLoading: shortagesLoading } =
+    useApi<MrpShortagesResponse>("/mrp/shortages")
+  const { data: requirementsResponse, isLoading: requirementsLoading } =
+    useApi<MrpRequirementsResponse>("/mrp/requirements")
+
+  // Extract arrays from wrapper responses
+  const shortagesRaw = shortagesResponse?.shortages || null
+  const requirementsRaw = requirementsResponse?.materials || null
 
   // Transform to add id fields
   const shortages: MrpShortageWithId[] | null = shortagesRaw
@@ -180,7 +184,7 @@ export default function MRPPage() {
                   <TableBody>
                     {shortages.map((item) => {
                       const severityPercent =
-                        (Math.abs(item.shortage) / item.required_quantity) * 100
+                        (Math.abs(item.shortage) / item.total_required) * 100
                       const severity =
                         severityPercent > 50
                           ? "critical"
@@ -203,13 +207,13 @@ export default function MRPPage() {
                             </div>
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {item.required_quantity.toLocaleString()}
+                            {item.total_required.toLocaleString()}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {item.available_quantity.toLocaleString()}
+                            {item.quantity_available.toLocaleString()}
                           </TableCell>
                           <TableCell className="text-right font-mono text-blue-600">
-                            {item.on_order_quantity.toLocaleString()}
+                            {item.quantity_on_order.toLocaleString()}
                           </TableCell>
                           <TableCell className="text-right font-mono font-bold text-red-600">
                             {Math.abs(item.shortage).toLocaleString()}
