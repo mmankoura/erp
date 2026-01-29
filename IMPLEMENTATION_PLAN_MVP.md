@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: January 24, 2026
+> **Last Updated**: January 28, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -14,7 +14,7 @@
 
 #### Entities (14 complete)
 - [x] **Materials** entity with soft delete + partial unique index + costing fields
-- [x] **Products** entity with soft delete + partial unique index
+- [x] **Products** entity with soft delete + partial unique index + customer association (required)
 - [x] **Customers** entity with soft delete
 - [x] **BomRevision** entity (BomSource enum: MANUAL, IMPORT_CLIENT, IMPORT_INTERNAL)
 - [x] **BomItem** entity (ResourceType enum, bom_line_key for stable diffing)
@@ -28,7 +28,7 @@
 - [x] **ApprovedManufacturer** entity (AML - tracks approved MPN/manufacturer combinations per material)
 - [x] **ReceivingInspection** entity (staging area for received items pending validation)
 
-#### Migrations (19 applied)
+#### Migrations (20 applied)
 - [x] Initial schema (materials, products)
 - [x] AddSoftDeleteToMaterials
 - [x] AddSoftDeleteToProducts
@@ -48,6 +48,7 @@
 - [x] CreatePurchaseOrders (suppliers, purchase_orders, purchase_order_lines tables with indexes)
 - [x] CreateReceivingInspection (approved_manufacturers, receiving_inspections tables with enums and indexes)
 - [x] AddOwnershipDimension (owner_type, owner_id on inventory_transactions and inventory_allocations)
+- [x] AddCustomerToProduct (customer_id on products with foreign key to customers)
 
 #### Backend Modules (13 complete) - ~122 API Endpoints Total
 - [x] **Materials Module** (7 endpoints) - CRUD + bulk create + restore
@@ -114,6 +115,12 @@
 - [x] **BOM Import with Excel Support (Jan 24)** - Added xlsx library for Excel parsing (.xlsx, .xls), fixed UTF-8 encoding bug with btoa()
 - [x] **BOM Validation Page (Jan 24)** - 4-step wizard to compare uploaded BOM file against stored revision. Shows added/removed/changed items with visual diff
 - [x] **Auto-Create Materials on BOM Import (Jan 25)** - Materials not found during BOM import are now automatically created using IPN, manufacturer, and MPN from the import. UI updated to show "New Materials (will be created)" instead of errors
+- [x] **Inventory Import with Lot Tracking (Jan 28)** - Added `/inventory/import/commit` endpoint for importing inventory with lot/reel tracking (UID, package type, PO reference). Inventory lots maintain traceability from receipt to consumption
+- [x] **Customer Association for Products (Jan 28)** - Products now require customer_id (foreign key). All products must belong to a customer. Migration updates existing products to link to first customer
+- [x] **Materials Page Search/Filter (Jan 28)** - Multi-field search (IPN, MPN, description) and filter panel (customer, IPN, MPN, description) added to materials page
+- [x] **Products Page Search/Filter (Jan 28)** - Multi-field search (part number, name, description) and customer filter added to products page. Customer column displayed in table
+- [x] **MRP Page Fixes (Jan 28)** - Fixed API response handling (wrapper objects vs arrays), corrected field name mismatches (total_required, quantity_available, quantity_on_order)
+- [x] **DNP Filtering in BOM Import (Jan 28)** - "Do Not Populate" entries automatically filtered out during BOM import to prevent false shortage reports
 
 ### Not Started ⬚
 - [ ] User authentication/authorization
@@ -125,9 +132,16 @@
 
 ## Recommended Next Steps
 
-### Phase 0: Ownership Dimension ← **CURRENT PRIORITY** 🔴 CRITICAL
+### Phase 0: Ownership Dimension ✅ COMPLETED
 
-**Purpose:** Prevent cross-customer material contamination. Required before go-live with consignment customers.
+**Status:** Completed on January 23, 2026. Inventory transactions and allocations now support owner_type (COMPANY/CUSTOMER) and owner_id for consignment material isolation.
+
+### Current Priority: Production Readiness 🔴
+
+**Remaining for MVP Go-Live:**
+- [ ] User authentication/authorization
+- [ ] Production deployment configuration (Docker, environment variables)
+- [ ] Settings page (placeholder)
 
 **Problem Without This:**
 - Customer A sends 1000 resistors (consignment) → Mixed pool
