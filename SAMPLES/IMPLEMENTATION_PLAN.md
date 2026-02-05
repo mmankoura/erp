@@ -3394,3 +3394,79 @@ User authentication and role-based access control will be implemented when:
 - Barcode scanning
 
 These can be added incrementally after core functionality is stable and tested.
+
+---
+
+## Implementation Progress
+
+### February 4, 2026 - MRP Shortage Reports Enhancement
+
+**Completed: Comprehensive MRP Shortage Reporting System**
+
+#### Backend Changes (mrp.service.ts, mrp.controller.ts)
+
+**New API Endpoints:**
+- `GET /mrp/shortages/enhanced` - Shortages with customer info, resource types, and affected products
+- `GET /mrp/shortages/by-customer` - Shortages grouped by customer
+- `GET /mrp/shortages/by-resource-type` - Shortages grouped by SMT/TH/MECH/PCB
+- `GET /mrp/orders/buildability` - Orders categorized as CAN_BUILD/PARTIAL/BLOCKED
+
+**New Interfaces:**
+- `EnhancedMaterialShortage` - Adds customer info, resource type usages, affected products
+- `CustomerShortage` - Shortages grouped by customer with order details
+- `ResourceTypeShortage` - Shortages grouped by part type (SMT, TH, MECH, PCB)
+- `OrderBuildability` - Order status with both per-order and global shortage calculations
+
+**Key Implementation Details:**
+- Global shortage calculation: total demand across ALL orders vs total supply (on_hand + on_order)
+- Per-order shortage calculation: can THIS specific order be fulfilled from current supply
+- Orders flagged as short if EITHER global shortage > 0 OR per-order shortage > 0
+- Materials can appear in multiple resource type categories if used different ways in BOMs
+
+#### Frontend Changes
+
+**New Components (`/components/shortage-reports/`):**
+- `shortage-report-toolbar.tsx` - View selector dropdown + Print/Export buttons
+- `shortage-by-customer.tsx` - Collapsible customer cards with order details and shortages
+- `shortage-by-resource-type.tsx` - Part type summary cards (SMT/TH/MECH/PCB) with detail tables
+- `order-buildability.tsx` - Order status cards (Can Build/Partial/Blocked) with filtering
+- `affected-assemblies.tsx` - Products affected by shortages with materials list
+
+**New Utilities (`/lib/export-utils.ts`):**
+- Excel export for all 5 report views using xlsx library
+- Multi-sheet workbooks with summary and detail sheets
+
+**Updated MRP Page (`/app/mrp/page.tsx`):**
+- View dropdown selector with 5 views:
+  1. By Material (default) - Existing table view
+  2. By Customer - Customer-centric shortage view
+  3. By Part Type - Resource type grouping (SMT/TH/MECH/PCB)
+  4. Order Buildability - Production planning view
+  5. Affected Assemblies - Product-centric view
+- Print button triggers browser print dialog
+- Export Excel button generates timestamped .xlsx files
+- CSS print styles for proper page layout
+
+**DataTable Enhancement (`/components/data-table.tsx`):**
+- Added `searchFilter` prop for custom multi-field search
+- Supports both single key, array of keys, or custom filter function
+
+**Inventory Page Update (`/app/inventory/page.tsx`):**
+- Stock Levels tab: Search by IPN or description
+- Lots/Reels tab: Search by UID or IPN
+
+#### Order Buildability Dual Calculation
+
+The Order Buildability view now shows BOTH perspectives:
+
+| Column | Meaning |
+|--------|---------|
+| **Order Short** | How much THIS specific order is short (can this order be built right now?) |
+| **Global Short** | How much we're short across ALL orders (do we need to order more?) |
+
+**Use cases:**
+- `Order Short = 0`, `Global Short = 50`: This order CAN be built now, but doing so would leave other orders short
+- `Order Short = 30`, `Global Short = 50`: This order CANNOT be built - not enough supply
+- Both = 0: Material is fine for this order
+
+---
