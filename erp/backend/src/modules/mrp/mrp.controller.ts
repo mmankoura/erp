@@ -12,6 +12,18 @@ import { OrderStatus } from '../../entities/order.entity';
 export class MrpController {
   constructor(private readonly mrpService: MrpService) {}
 
+  // Helper to parse status query parameter
+  private parseStatuses(statuses?: string): OrderStatus[] | undefined {
+    if (!statuses) return undefined;
+    return statuses.split(',').map((s) => {
+      const status = s.trim().toUpperCase() as OrderStatus;
+      if (!Object.values(OrderStatus).includes(status)) {
+        throw new Error(`Invalid status: ${s}`);
+      }
+      return status;
+    });
+  }
+
   /**
    * GET /mrp/order/:orderId
    * Get material requirements for a specific order
@@ -32,19 +44,43 @@ export class MrpController {
    */
   @Get('shortages')
   async getShortages(@Query('statuses') statuses?: string) {
-    let statusList: OrderStatus[] | undefined;
+    return this.mrpService.getShortages(this.parseStatuses(statuses));
+  }
 
-    if (statuses) {
-      statusList = statuses.split(',').map((s) => {
-        const status = s.trim().toUpperCase() as OrderStatus;
-        if (!Object.values(OrderStatus).includes(status)) {
-          throw new Error(`Invalid status: ${s}`);
-        }
-        return status;
-      });
-    }
+  /**
+   * GET /mrp/shortages/enhanced
+   * Get shortages with customer info, resource types, and affected products
+   */
+  @Get('shortages/enhanced')
+  async getEnhancedShortages(@Query('statuses') statuses?: string) {
+    return this.mrpService.getEnhancedShortages(this.parseStatuses(statuses));
+  }
 
-    return this.mrpService.getShortages(statusList);
+  /**
+   * GET /mrp/shortages/by-customer
+   * Get shortages grouped by customer
+   */
+  @Get('shortages/by-customer')
+  async getShortagesByCustomer(@Query('statuses') statuses?: string) {
+    return this.mrpService.getShortagesByCustomer(this.parseStatuses(statuses));
+  }
+
+  /**
+   * GET /mrp/shortages/by-resource-type
+   * Get shortages grouped by resource type (SMT, TH, MECH, PCB)
+   */
+  @Get('shortages/by-resource-type')
+  async getShortagesByResourceType(@Query('statuses') statuses?: string) {
+    return this.mrpService.getShortagesByResourceType(this.parseStatuses(statuses));
+  }
+
+  /**
+   * GET /mrp/orders/buildability
+   * Get order buildability status - which orders can be built, are partial, or blocked
+   */
+  @Get('orders/buildability')
+  async getOrderBuildability(@Query('statuses') statuses?: string) {
+    return this.mrpService.getOrderBuildability(this.parseStatuses(statuses));
   }
 
   /**

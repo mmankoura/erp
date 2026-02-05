@@ -346,6 +346,137 @@ export interface MrpRequirementsResponse {
   materials: MrpRequirement[]
 }
 
+// Enhanced shortage types for new views
+export interface EnhancedOrderInfo {
+  order_id: string
+  order_number: string
+  product_id: string
+  product_name: string
+  customer_id: string
+  customer_name: string
+  customer_code: string
+  required_quantity: number
+  allocated_quantity: number
+  due_date: string
+}
+
+export interface ResourceTypeUsage {
+  resource_type: string
+  quantity_required: number
+  reference_designators: string | null
+}
+
+export interface EnhancedMaterialShortage {
+  material_id: string
+  material: Material
+  quantity_on_hand: number
+  quantity_allocated: number
+  quantity_available: number
+  quantity_on_order: number
+  total_required: number
+  shortage: number
+  orders: EnhancedOrderInfo[]
+  resource_type_usages: ResourceTypeUsage[]
+  affected_products: Array<{
+    product_id: string
+    product_name: string
+    quantity_required: number
+  }>
+}
+
+export interface EnhancedShortageReport {
+  generated_at: string
+  total_materials_with_shortage: number
+  total_orders_analyzed: number
+  shortages: EnhancedMaterialShortage[]
+}
+
+export interface CustomerShortageOrder {
+  order_id: string
+  order_number: string
+  product_name: string
+  due_date: string
+  shortages: Array<{
+    material_id: string
+    ipn: string
+    description: string | null
+    shortage: number
+  }>
+}
+
+export interface CustomerShortage {
+  customer_id: string
+  customer_name: string
+  customer_code: string
+  total_orders_affected: number
+  total_shortage_items: number
+  orders: CustomerShortageOrder[]
+}
+
+export interface ShortagesByCustomerResponse {
+  generated_at: string
+  total_customers_affected: number
+  customers: CustomerShortage[]
+}
+
+export interface ResourceTypeShortage {
+  resource_type: string
+  total_materials_short: number
+  total_shortage_quantity: number
+  materials: Array<{
+    material_id: string
+    ipn: string
+    description: string | null
+    shortage: number
+    total_required: number
+    quantity_available: number
+    quantity_on_order: number
+    affected_orders_count: number
+  }>
+}
+
+export interface ShortagesByResourceTypeResponse {
+  generated_at: string
+  resource_types: ResourceTypeShortage[]
+}
+
+export type BuildabilityStatus = "CAN_BUILD" | "PARTIAL" | "BLOCKED"
+
+export interface OrderBuildability {
+  order_id: string
+  order_number: string
+  customer_id: string
+  customer_name: string
+  customer_code: string
+  product_id: string
+  product_name: string
+  due_date: string
+  quantity: number
+  status: BuildabilityStatus
+  materials_ready: number
+  materials_short: number
+  materials_total: number
+  critical_shortages: Array<{
+    material_id: string
+    ipn: string
+    description: string | null
+    required: number
+    available: number
+    on_order: number
+    shortage: number        // Per-order shortage: how much THIS order is short
+    global_shortage: number // Global shortage: total demand - total supply across ALL orders
+  }>
+}
+
+export interface OrderBuildabilityResponse {
+  generated_at: string
+  total_orders: number
+  can_build_count: number
+  partial_count: number
+  blocked_count: number
+  orders: OrderBuildability[]
+}
+
 export interface AuditEvent {
   id: string
   event_type: string

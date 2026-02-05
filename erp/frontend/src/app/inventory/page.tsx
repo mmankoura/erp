@@ -569,16 +569,18 @@ export default function InventoryPage() {
     {
       key: "customer",
       header: "Customer",
+      defaultWidth: 140,
       cell: (stock) => stock.material?.customer?.name || "-",
     },
     {
       key: "material",
       header: "Material",
+      defaultWidth: 220,
       cell: (stock) => (
         <div>
           <span className="font-medium">{stock.material?.internal_part_number}</span>
           {stock.material?.description && (
-            <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+            <p className="text-xs text-muted-foreground truncate">
               {stock.material.description}
             </p>
           )}
@@ -588,6 +590,7 @@ export default function InventoryPage() {
     {
       key: "quantity_on_hand",
       header: "On Hand",
+      defaultWidth: 100,
       className: "text-right",
       cell: (stock) => (
         <span className="font-mono">{stock.quantity_on_hand.toLocaleString()}</span>
@@ -596,6 +599,7 @@ export default function InventoryPage() {
     {
       key: "quantity_allocated",
       header: "Allocated",
+      defaultWidth: 100,
       className: "text-right",
       cell: (stock) => (
         <span className={`font-mono ${stock.quantity_allocated > 0 ? "text-yellow-600" : ""}`}>
@@ -606,6 +610,7 @@ export default function InventoryPage() {
     {
       key: "quantity_available",
       header: "Available",
+      defaultWidth: 100,
       className: "text-right",
       cell: (stock) => (
         <span
@@ -624,6 +629,7 @@ export default function InventoryPage() {
     {
       key: "quantity_on_order",
       header: "On Order",
+      defaultWidth: 100,
       className: "text-right",
       cell: (stock) => (
         <span className={`font-mono ${stock.quantity_on_order > 0 ? "text-blue-600" : ""}`}>
@@ -634,6 +640,8 @@ export default function InventoryPage() {
     {
       key: "actions",
       header: "",
+      defaultWidth: 120,
+      resizable: false,
       className: "w-[120px]",
       cell: (stock) => (
         <div className="flex items-center gap-1">
@@ -749,9 +757,17 @@ export default function InventoryPage() {
             data={inventory}
             columns={columns}
             isLoading={isLoading}
-            searchKey="material_id"
-            searchPlaceholder="Search materials..."
+            searchFilter={(stock, search) => {
+              const searchLower = search.toLowerCase()
+              // Search by IPN
+              if (stock.material?.internal_part_number?.toLowerCase().includes(searchLower)) return true
+              // Search by description
+              if (stock.material?.description?.toLowerCase().includes(searchLower)) return true
+              return false
+            }}
+            searchPlaceholder="Search by IPN or description..."
             emptyMessage="No inventory found."
+            storageKey="inventory-stock"
           />
         </TabsContent>
 
@@ -760,8 +776,15 @@ export default function InventoryPage() {
             data={lots}
             columns={lotColumns}
             isLoading={lotsLoading}
-            searchKey="uid"
-            searchPlaceholder="Search by UID..."
+            searchFilter={(lot, search) => {
+              const searchLower = search.toLowerCase()
+              // Search by UID
+              if (lot.uid.toLowerCase().includes(searchLower)) return true
+              // Search by IPN
+              if (lot.material?.internal_part_number?.toLowerCase().includes(searchLower)) return true
+              return false
+            }}
+            searchPlaceholder="Search by UID or IPN..."
             emptyMessage="No lots found. Import inventory to add lots."
             enableSelection
             onBulkDelete={(ids) => {
@@ -769,6 +792,7 @@ export default function InventoryPage() {
                 bulkDeleteLotsMutation.mutate(ids)
               }
             }}
+            storageKey="inventory-lots"
           />
         </TabsContent>
 
