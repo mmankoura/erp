@@ -63,4 +63,24 @@ export class MaterialsController {
   async restore(@Param('id', ParseUUIDPipe) id: string) {
     return this.materialsService.restore(id);
   }
+
+  // ============ Where-Used Analysis ============
+
+  @Get(':id/where-used')
+  async getWhereUsed(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('activeOnly') activeOnly?: string,
+  ) {
+    const activeRevisionsOnly = activeOnly !== 'false';
+    const [products, orders] = await Promise.all([
+      this.materialsService.getWhereUsedProducts(id, activeRevisionsOnly),
+      this.materialsService.getWhereUsedOrders(id),
+    ]);
+    return { products, orders };
+  }
+
+  @Get(':id/usage-summary')
+  async getUsageSummary(@Param('id', ParseUUIDPipe) id: string) {
+    return this.materialsService.getUsageSummary(id);
+  }
 }

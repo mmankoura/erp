@@ -124,6 +124,41 @@ export interface Material {
   deleted_at: string | null
 }
 
+// Where-Used Analysis types
+export interface WhereUsedProduct {
+  product_id: string
+  product_name: string
+  product_part_number: string
+  bom_revision_id: string
+  revision_number: string
+  is_active_revision: boolean
+  quantity_per_unit: number
+  resource_type: string | null
+}
+
+export interface WhereUsedOrder {
+  order_id: string
+  order_number: string
+  customer_name: string
+  product_name: string
+  order_quantity: number
+  total_required: number
+  status: OrderStatus
+  due_date: string
+}
+
+export interface WhereUsedResponse {
+  products: WhereUsedProduct[]
+  orders: WhereUsedOrder[]
+}
+
+export interface UsageSummary {
+  total_products: number
+  active_bom_count: number
+  open_orders_count: number
+  total_qty_required_by_open_orders: number
+}
+
 export interface Product {
   id: string
   customer_id: string
@@ -164,7 +199,8 @@ export interface Supplier {
 }
 
 export type OrderType = "TURNKEY" | "CONSIGNMENT"
-export type OrderStatus = "PENDING" | "CONFIRMED" | "IN_PRODUCTION" | "SHIPPED" | "COMPLETED" | "CANCELLED"
+export type OrderStatus = "ENTERED" | "KITTING" | "SMT" | "TH" | "SHIPPED" | "ON_HOLD" | "CANCELLED"
+export type OrderProductionType = "SMT_ONLY" | "TH_ONLY" | "SMT_AND_TH"
 
 export interface Order {
   id: string
@@ -181,6 +217,8 @@ export interface Order {
   due_date: string
   order_type: OrderType
   status: OrderStatus
+  previous_status: OrderStatus | null
+  production_type: OrderProductionType | null
   notes: string | null
   quoted_price: number | null
   currency: string

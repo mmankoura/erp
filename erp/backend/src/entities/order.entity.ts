@@ -19,12 +19,19 @@ export enum OrderType {
 }
 
 export enum OrderStatus {
-  PENDING = 'PENDING',
-  CONFIRMED = 'CONFIRMED',
-  IN_PRODUCTION = 'IN_PRODUCTION',
+  ENTERED = 'ENTERED',
+  KITTING = 'KITTING',
+  SMT = 'SMT',
+  TH = 'TH',
   SHIPPED = 'SHIPPED',
-  COMPLETED = 'COMPLETED',
+  ON_HOLD = 'ON_HOLD',
   CANCELLED = 'CANCELLED',
+}
+
+export enum OrderProductionType {
+  SMT_ONLY = 'SMT_ONLY',
+  TH_ONLY = 'TH_ONLY',
+  SMT_AND_TH = 'SMT_AND_TH',
 }
 
 @Entity('orders')
@@ -85,9 +92,23 @@ export class Order {
   @Column({
     type: 'enum',
     enum: OrderStatus,
-    default: OrderStatus.PENDING,
+    default: OrderStatus.ENTERED,
   })
   status: OrderStatus;
+
+  @Column({
+    type: 'enum',
+    enum: OrderStatus,
+    nullable: true,
+  })
+  previous_status: OrderStatus | null;
+
+  @Column({
+    type: 'enum',
+    enum: OrderProductionType,
+    nullable: true,
+  })
+  production_type: OrderProductionType | null;
 
   @Column({ type: 'text', nullable: true })
   notes: string | null;

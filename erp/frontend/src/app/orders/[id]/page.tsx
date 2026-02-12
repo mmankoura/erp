@@ -48,20 +48,22 @@ import Link from "next/link"
 import { useRouter, useParams } from "next/navigation"
 
 const orderStatusColors: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  CONFIRMED: "bg-blue-100 text-blue-800 border-blue-200",
-  IN_PRODUCTION: "bg-purple-100 text-purple-800 border-purple-200",
+  ENTERED: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  KITTING: "bg-blue-100 text-blue-800 border-blue-200",
+  SMT: "bg-purple-100 text-purple-800 border-purple-200",
+  TH: "bg-indigo-100 text-indigo-800 border-indigo-200",
   SHIPPED: "bg-green-100 text-green-800 border-green-200",
-  COMPLETED: "bg-gray-100 text-gray-800 border-gray-200",
+  ON_HOLD: "bg-orange-100 text-orange-800 border-orange-200",
   CANCELLED: "bg-red-100 text-red-800 border-red-200",
 }
 
 const statusTransitions: Record<string, OrderStatus[]> = {
-  PENDING: ["CONFIRMED", "CANCELLED"],
-  CONFIRMED: ["IN_PRODUCTION", "CANCELLED"],
-  IN_PRODUCTION: ["SHIPPED", "CANCELLED"],
-  SHIPPED: ["COMPLETED"],
-  COMPLETED: [],
+  ENTERED: ["KITTING", "ON_HOLD", "CANCELLED"],
+  KITTING: ["SMT", "TH", "ON_HOLD", "CANCELLED"],
+  SMT: ["TH", "SHIPPED", "ON_HOLD"],
+  TH: ["SHIPPED", "ON_HOLD"],
+  SHIPPED: [],
+  ON_HOLD: [], // Resume handled separately
   CANCELLED: [],
 }
 
@@ -190,9 +192,9 @@ export default function OrderDetailPage() {
     )
   }
 
-  const canEdit = !["SHIPPED", "COMPLETED", "CANCELLED"].includes(order.status)
-  const canShip = order.status === "IN_PRODUCTION" && order.quantity_shipped < order.quantity
-  const canCancel = !["SHIPPED", "COMPLETED", "CANCELLED"].includes(order.status)
+  const canEdit = !["SHIPPED", "CANCELLED"].includes(order.status)
+  const canShip = ["SMT", "TH"].includes(order.status) && order.quantity_shipped < order.quantity
+  const canCancel = ["ENTERED", "KITTING"].includes(order.status) // Can only cancel before production
   const availableTransitions = statusTransitions[order.status] || []
 
   return (

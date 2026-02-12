@@ -7,7 +7,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Order, OrderStatus } from '../../entities/order.entity';
+import { Order, OrderStatus, OrderProductionType } from '../../entities/order.entity';
+import { BomItem, ResourceType } from '../../entities/bom-item.entity';
 import { Product } from '../../entities/product.entity';
 import { Customer } from '../../entities/customer.entity';
 import { BomRevision } from '../../entities/bom-revision.entity';
@@ -30,15 +31,22 @@ export interface OrderFilters {
 
 // Statuses that require materials (allocations matter)
 const ACTIVE_STATUSES = [
-  OrderStatus.PENDING,
-  OrderStatus.CONFIRMED,
-  OrderStatus.IN_PRODUCTION,
+  OrderStatus.ENTERED,
+  OrderStatus.KITTING,
+  OrderStatus.SMT,
+  OrderStatus.TH,
 ];
 
 // Terminal statuses where allocations should be cleaned up
 const TERMINAL_STATUSES = [
-  OrderStatus.COMPLETED,
+  OrderStatus.SHIPPED,
   OrderStatus.CANCELLED,
+];
+
+// Production statuses (on the floor)
+const PRODUCTION_STATUSES = [
+  OrderStatus.SMT,
+  OrderStatus.TH,
 ];
 
 @Injectable()
@@ -184,11 +192,15 @@ export class OrdersService {
     // Generate order number
     const orderNumber = await this.generateOrderNumber();
 
+    // Determine production type from BOM
+    const productionType = await this.determineProductionType(bomRevisionId);
+
     const order = this.orderRepository.create({
       ...dto,
       order_number: orderNumber,
       bom_revision_id: bomRevisionId,
       due_date: new Date(dto.due_date),
+      production_type: productionType,
     });
 
     const saved = await this.orderRepository.save(order);
@@ -246,9 +258,10 @@ export class OrdersService {
    *
    * Status transitions and allocation behavior:
    * - → CANCELLED: Deallocate all materials (release back to available)
-   * - → COMPLETED: Consume all remaining allocations (create consumption transactions)
-   * - → SHIPPED: No automatic action (partial shipments may still need materials)
-   * - → IN_PRODUCTION: No automatic action (consumption happens via consumeAllocation calls)
+   * - → SHIPPED: Consume all remaining allocations (create consumption transactions)
+   * - → ON_HOLD: Save previous status for resume
+   * - ON_HOLD → Previous: Restore previous status
+   * - → SMT/TH: Issue materials to production floor
    */
   async updateStatus(
     id: string,
@@ -260,6 +273,20 @@ export class OrdersService {
 
     // Validate status transition
     this.validateStatusTransition(previousStatus, status);
+
+    // Handle ON_HOLD special cases
+    if (status === OrderStatus.ON_HOLD) {
+      // Save current status to restore later
+      order.previous_status = previousStatus;
+    } else if (previousStatus === OrderStatus.ON_HOLD && order.previous_status) {
+      // Resuming from ON_HOLD - validate we're returning to previous status
+      if (status !== order.previous_status) {
+        throw new BadRequestException(
+          `When resuming from ON_HOLD, must return to previous status (${order.previous_status}), not ${status}`,
+        );
+      }
+      order.previous_status = null;
+    }
 
     order.status = status;
     await this.orderRepository.save(order);
@@ -283,7 +310,7 @@ export class OrdersService {
 
   /**
    * Ship a quantity and handle allocations appropriately
-   * When fully shipped, order moves to COMPLETED and allocations are consumed
+   * Order should already be in SMT or TH status before shipping
    */
   async shipQuantity(
     id: string,
@@ -294,6 +321,13 @@ export class OrdersService {
 
     if (quantityToShip <= 0) {
       throw new BadRequestException('Quantity to ship must be positive');
+    }
+
+    // Validate order is in a shippable state
+    if (!PRODUCTION_STATUSES.includes(order.status) && order.status !== OrderStatus.SHIPPED) {
+      throw new BadRequestException(
+        `Cannot ship order in ${order.status} status. Order must be in SMT, TH, or SHIPPED status.`,
+      );
     }
 
     const newShippedTotal = order.quantity_shipped + quantityToShip;
@@ -307,10 +341,8 @@ export class OrdersService {
     order.quantity_shipped = newShippedTotal;
     const previousStatus = order.status;
 
-    // Auto-update status based on shipment
-    if (newShippedTotal === order.quantity) {
-      order.status = OrderStatus.COMPLETED;
-    } else if (newShippedTotal > 0 && order.status === OrderStatus.CONFIRMED) {
+    // Auto-update status to SHIPPED when first shipment occurs or when fully shipped
+    if (newShippedTotal > 0 && order.status !== OrderStatus.SHIPPED) {
       order.status = OrderStatus.SHIPPED;
     }
 
@@ -331,9 +363,9 @@ export class OrdersService {
       },
     );
 
-    // If status changed to COMPLETED, handle allocations
-    if (order.status === OrderStatus.COMPLETED && previousStatus !== OrderStatus.COMPLETED) {
-      await this.handleStatusChange(order.id, previousStatus, OrderStatus.COMPLETED, createdBy);
+    // If status changed to SHIPPED, handle the transition
+    if (order.status === OrderStatus.SHIPPED && previousStatus !== OrderStatus.SHIPPED) {
+      await this.handleStatusChange(order.id, previousStatus, OrderStatus.SHIPPED, createdBy);
     }
 
     return this.findOne(id);
@@ -341,6 +373,7 @@ export class OrdersService {
 
   /**
    * Cancel an order and release all allocations
+   * Can only cancel orders in ENTERED or KITTING status (before production)
    */
   async cancel(id: string, createdBy?: string): Promise<Order> {
     const order = await this.findOne(id);
@@ -349,8 +382,15 @@ export class OrdersService {
       throw new BadRequestException('Order is already cancelled');
     }
 
-    if (order.status === OrderStatus.COMPLETED) {
-      throw new BadRequestException('Cannot cancel a completed order');
+    if (order.status === OrderStatus.SHIPPED) {
+      throw new BadRequestException('Cannot cancel a shipped order');
+    }
+
+    // Can only cancel before production starts
+    if (PRODUCTION_STATUSES.includes(order.status)) {
+      throw new BadRequestException(
+        `Cannot cancel order in ${order.status} status. Order is already in production.`,
+      );
     }
 
     const previousStatus = order.status;
@@ -443,6 +483,14 @@ export class OrdersService {
 
   /**
    * Handle allocation changes when order status changes
+   *
+   * New workflow:
+   * - CANCELLED: Release all allocations
+   * - SHIPPED: Production complete, trigger return workflow (handled separately)
+   * - KITTING: Begin allocation/picking process
+   * - SMT: Issue SMT materials to floor
+   * - TH: Issue TH materials to floor, trigger SMT material return
+   * - ON_HOLD: No allocation changes (materials stay where they are)
    */
   private async handleStatusChange(
     orderId: string,
@@ -450,7 +498,6 @@ export class OrdersService {
     newStatus: OrderStatus,
     createdBy?: string,
   ): Promise<void> {
-    // Only take action if moving to a terminal status
     if (newStatus === OrderStatus.CANCELLED) {
       // CANCELLED: Release all allocations back to available inventory
       const result = await this.inventoryService.deallocateForOrder(orderId, createdBy);
@@ -459,44 +506,67 @@ export class OrdersService {
           `Order cancelled: deallocated ${result.cancelled} material allocations`,
         );
       }
-    } else if (newStatus === OrderStatus.COMPLETED) {
-      // COMPLETED: Consume all remaining allocations
-      // This creates CONSUMPTION transactions for any materials still allocated
-      const result = await this.inventoryService.consumeAllocationsForOrder(orderId, createdBy);
-      if (result.consumed > 0) {
-        this.logger.log(
-          `Order completed: consumed ${result.consumed} material allocations, created ${result.transactions.length} transactions`,
-        );
-      }
+    } else if (newStatus === OrderStatus.SHIPPED) {
+      // SHIPPED: Production complete
+      // Note: Material return/consumption is handled via separate return workflow
+      // This ensures counting happens before qty_on_hand is updated
+      this.logger.log(
+        `Order shipped: materials should be returned via return workflow`,
+      );
+    } else if (newStatus === OrderStatus.ON_HOLD) {
+      // ON_HOLD: No allocation changes, materials stay in current state
+      this.logger.log(
+        `Order on hold: allocations unchanged`,
+      );
     }
+    // Note: KITTING, SMT, TH transitions are handled via separate pick/issue endpoints
+    // to ensure proper material tracking and counting workflows
   }
 
   /**
    * Validate that a status transition is allowed
+   *
+   * New workflow:
+   * ENTERED → KITTING → SMT → TH → SHIPPED
+   *                   → TH → SHIPPED (SMT-only skips TH)
+   *        → KITTING → SMT → SHIPPED (SMT-only orders)
+   *        → KITTING → TH → SHIPPED (TH-only orders)
+   *
+   * Any status → ON_HOLD → Previous status (resume)
+   * ENTERED or KITTING → CANCELLED
    */
   private validateStatusTransition(from: OrderStatus, to: OrderStatus): void {
     // Define allowed transitions
     const allowedTransitions: Record<OrderStatus, OrderStatus[]> = {
-      [OrderStatus.PENDING]: [
-        OrderStatus.CONFIRMED,
+      [OrderStatus.ENTERED]: [
+        OrderStatus.KITTING,
+        OrderStatus.ON_HOLD,
         OrderStatus.CANCELLED,
       ],
-      [OrderStatus.CONFIRMED]: [
-        OrderStatus.IN_PRODUCTION,
+      [OrderStatus.KITTING]: [
+        OrderStatus.SMT,
+        OrderStatus.TH,        // For TH-only orders
+        OrderStatus.ON_HOLD,
+        OrderStatus.CANCELLED,
+      ],
+      [OrderStatus.SMT]: [
+        OrderStatus.TH,
+        OrderStatus.SHIPPED,   // For SMT-only orders
+        OrderStatus.ON_HOLD,
+      ],
+      [OrderStatus.TH]: [
         OrderStatus.SHIPPED,
-        OrderStatus.CANCELLED,
+        OrderStatus.ON_HOLD,
       ],
-      [OrderStatus.IN_PRODUCTION]: [
-        OrderStatus.SHIPPED,
-        OrderStatus.COMPLETED,
-        OrderStatus.CANCELLED,
+      [OrderStatus.SHIPPED]: [],  // Terminal state
+      [OrderStatus.ON_HOLD]: [
+        // Can return to any non-terminal status (validated separately)
+        OrderStatus.ENTERED,
+        OrderStatus.KITTING,
+        OrderStatus.SMT,
+        OrderStatus.TH,
       ],
-      [OrderStatus.SHIPPED]: [
-        OrderStatus.COMPLETED,
-        OrderStatus.CANCELLED,
-      ],
-      [OrderStatus.COMPLETED]: [],  // Terminal state
-      [OrderStatus.CANCELLED]: [],   // Terminal state
+      [OrderStatus.CANCELLED]: [],  // Terminal state
     };
 
     if (!allowedTransitions[from].includes(to)) {
@@ -504,6 +574,35 @@ export class OrdersService {
         `Invalid status transition from ${from} to ${to}`,
       );
     }
+  }
+
+  /**
+   * Determine production type from BOM resource types
+   */
+  async determineProductionType(bomRevisionId: string): Promise<OrderProductionType> {
+    const bomItems = await this.bomRevisionRepository
+      .createQueryBuilder('revision')
+      .leftJoinAndSelect('revision.items', 'item')
+      .where('revision.id = :id', { id: bomRevisionId })
+      .getOne();
+
+    if (!bomItems || !bomItems.items) {
+      return OrderProductionType.SMT_AND_TH; // Default to both
+    }
+
+    const hasSMT = bomItems.items.some(item => item.resource_type === ResourceType.SMT);
+    const hasTH = bomItems.items.some(item => item.resource_type === ResourceType.TH);
+
+    if (hasSMT && hasTH) {
+      return OrderProductionType.SMT_AND_TH;
+    } else if (hasSMT) {
+      return OrderProductionType.SMT_ONLY;
+    } else if (hasTH) {
+      return OrderProductionType.TH_ONLY;
+    }
+
+    // Default to SMT_AND_TH if no resource types specified
+    return OrderProductionType.SMT_AND_TH;
   }
 
   // ============ Helper Methods ============
@@ -544,11 +643,12 @@ export class OrdersService {
     today.setHours(0, 0, 0, 0);
 
     const byStatus: Record<OrderStatus, number> = {
-      [OrderStatus.PENDING]: 0,
-      [OrderStatus.CONFIRMED]: 0,
-      [OrderStatus.IN_PRODUCTION]: 0,
+      [OrderStatus.ENTERED]: 0,
+      [OrderStatus.KITTING]: 0,
+      [OrderStatus.SMT]: 0,
+      [OrderStatus.TH]: 0,
       [OrderStatus.SHIPPED]: 0,
-      [OrderStatus.COMPLETED]: 0,
+      [OrderStatus.ON_HOLD]: 0,
       [OrderStatus.CANCELLED]: 0,
     };
 
@@ -558,7 +658,7 @@ export class OrdersService {
       byStatus[order.status]++;
       if (
         order.due_date < today &&
-        ![OrderStatus.COMPLETED, OrderStatus.CANCELLED].includes(order.status)
+        !TERMINAL_STATUSES.includes(order.status)
       ) {
         overdueCount++;
       }
@@ -573,11 +673,7 @@ export class OrdersService {
 
   async getActiveOrders(): Promise<Order[]> {
     return this.orderRepository.find({
-      where: [
-        { status: OrderStatus.PENDING },
-        { status: OrderStatus.CONFIRMED },
-        { status: OrderStatus.IN_PRODUCTION },
-      ],
+      where: ACTIVE_STATUSES.map(status => ({ status })),
       relations: ['customer', 'product', 'bom_revision'],
       order: { due_date: 'ASC' },
     });

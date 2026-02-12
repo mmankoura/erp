@@ -21,6 +21,7 @@ config();
 const customers = [
   {
     name: 'TelcoBridge',
+    code: 'TELCO',
     contact_person: 'John Smith',
     email: 'john.smith@telcobridge.com',
     phone: '555-0101',
@@ -28,6 +29,7 @@ const customers = [
   },
   {
     name: 'Carma Industries',
+    code: 'CARMA',
     contact_person: 'Sarah Johnson',
     email: 'sarah.j@carma-ind.com',
     phone: '555-0102',
@@ -35,6 +37,7 @@ const customers = [
   },
   {
     name: 'UgoWork',
+    code: 'UGOWORK',
     contact_person: 'Michel Tremblay',
     email: 'michel@ugowork.ca',
     phone: '514-555-0103',
@@ -42,6 +45,7 @@ const customers = [
   },
   {
     name: 'ISC Technologies',
+    code: 'ISC',
     contact_person: 'David Chen',
     email: 'dchen@isc-tech.com',
     phone: '555-0104',
@@ -57,8 +61,8 @@ const materials = [
     value: '0.1uF',
     package: '0201',
     manufacturer: 'Murata',
-    manufacturer_part_number: 'GRM033R71E104KE14D',
-    unit: 'pcs',
+    manufacturer_pn: 'GRM033R71E104KE14D',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'C50402-4.7UF-6.3V',
@@ -66,8 +70,8 @@ const materials = [
     value: '4.7uF',
     package: '0402',
     manufacturer: 'Samsung',
-    manufacturer_part_number: 'CL05A475KQ5NRNC',
-    unit: 'pcs',
+    manufacturer_pn: 'CL05A475KQ5NRNC',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'C50201-1UF-16V',
@@ -75,8 +79,8 @@ const materials = [
     value: '1uF',
     package: '0201',
     manufacturer: 'Murata',
-    manufacturer_part_number: 'GRM033R61C105ME15D',
-    unit: 'pcs',
+    manufacturer_pn: 'GRM033R61C105ME15D',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'CP0402-100PF',
@@ -84,8 +88,8 @@ const materials = [
     value: '100pF',
     package: '0402',
     manufacturer: 'Yageo',
-    manufacturer_part_number: 'CC0402JRNPO9BN101',
-    unit: 'pcs',
+    manufacturer_pn: 'CC0402JRNPO9BN101',
+    uom: 'pcs',
   },
   // Resistors
   {
@@ -94,8 +98,8 @@ const materials = [
     value: '10K',
     package: '0402',
     manufacturer: 'Yageo',
-    manufacturer_part_number: 'RC0402FR-0710KL',
-    unit: 'pcs',
+    manufacturer_pn: 'RC0402FR-0710KL',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'R0201-49.9R',
@@ -103,8 +107,8 @@ const materials = [
     value: '49.9R',
     package: '0201',
     manufacturer: 'Panasonic',
-    manufacturer_part_number: 'ERJ-1GEF49R9C',
-    unit: 'pcs',
+    manufacturer_pn: 'ERJ-1GEF49R9C',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'R0402-3K74',
@@ -112,8 +116,8 @@ const materials = [
     value: '3K74',
     package: '0402',
     manufacturer: 'Stackpole',
-    manufacturer_part_number: 'RMCF0402FT3K74',
-    unit: 'pcs',
+    manufacturer_pn: 'RMCF0402FT3K74',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'R0402-0R',
@@ -121,8 +125,8 @@ const materials = [
     value: '0R',
     package: '0402',
     manufacturer: 'Yageo',
-    manufacturer_part_number: 'RC0402JR-070RL',
-    unit: 'pcs',
+    manufacturer_pn: 'RC0402JR-070RL',
+    uom: 'pcs',
   },
   // Inductors & Ferrites
   {
@@ -131,8 +135,8 @@ const materials = [
     value: '600R',
     package: '0402',
     manufacturer: 'Murata',
-    manufacturer_part_number: 'BLM15HG601SN1D',
-    unit: 'pcs',
+    manufacturer_pn: 'BLM15HG601SN1D',
+    uom: 'pcs',
   },
   // Transistors & ICs
   {
@@ -141,8 +145,8 @@ const materials = [
     value: undefined,
     package: 'SOT-23',
     manufacturer: 'Nexperia',
-    manufacturer_part_number: '2N7002,215',
-    unit: 'pcs',
+    manufacturer_pn: '2N7002,215',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'STM32F407VGT6',
@@ -150,8 +154,8 @@ const materials = [
     value: undefined,
     package: 'LQFP100',
     manufacturer: 'STMicroelectronics',
-    manufacturer_part_number: 'STM32F407VGT6',
-    unit: 'pcs',
+    manufacturer_pn: 'STM32F407VGT6',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'LM3940IT-3.3',
@@ -159,8 +163,8 @@ const materials = [
     value: '3.3V',
     package: 'TO-220',
     manufacturer: 'Texas Instruments',
-    manufacturer_part_number: 'LM3940IT-3.3/NOPB',
-    unit: 'pcs',
+    manufacturer_pn: 'LM3940IT-3.3/NOPB',
+    uom: 'pcs',
   },
   // Connectors
   {
@@ -169,8 +173,8 @@ const materials = [
     value: undefined,
     package: 'TH',
     manufacturer: 'Samtec',
-    manufacturer_part_number: 'PCIE-164-02-F-D-TH',
-    unit: 'pcs',
+    manufacturer_pn: 'PCIE-164-02-F-D-TH',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'OR4532',
@@ -178,8 +182,8 @@ const materials = [
     value: undefined,
     package: 'TH',
     manufacturer: 'Samtec',
-    manufacturer_part_number: 'PCIE-098-02-F-D-TH',
-    unit: 'pcs',
+    manufacturer_pn: 'PCIE-098-02-F-D-TH',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'USB-C-001',
@@ -187,8 +191,8 @@ const materials = [
     value: undefined,
     package: 'SMD',
     manufacturer: 'Amphenol',
-    manufacturer_part_number: '12401610E4#2A',
-    unit: 'pcs',
+    manufacturer_pn: '12401610E4#2A',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'HDR-2X20-2.54',
@@ -196,8 +200,8 @@ const materials = [
     value: undefined,
     package: 'TH',
     manufacturer: 'Wurth',
-    manufacturer_part_number: '61304021121',
-    unit: 'pcs',
+    manufacturer_pn: '61304021121',
+    uom: 'pcs',
   },
   // LEDs
   {
@@ -206,8 +210,8 @@ const materials = [
     value: 'GREEN',
     package: '0603',
     manufacturer: 'Lite-On',
-    manufacturer_part_number: 'LTST-C191KGKT',
-    unit: 'pcs',
+    manufacturer_pn: 'LTST-C191KGKT',
+    uom: 'pcs',
   },
   {
     internal_part_number: 'LED-RED-0603',
@@ -215,8 +219,8 @@ const materials = [
     value: 'RED',
     package: '0603',
     manufacturer: 'Lite-On',
-    manufacturer_part_number: 'LTST-C191KRKT',
-    unit: 'pcs',
+    manufacturer_pn: 'LTST-C191KRKT',
+    uom: 'pcs',
   },
   // PCBs
   {
@@ -225,8 +229,8 @@ const materials = [
     value: undefined,
     package: 'PCB',
     manufacturer: 'JLCPCB',
-    manufacturer_part_number: undefined,
-    unit: 'pcs',
+    manufacturer_pn: undefined,
+    uom: 'pcs',
   },
   {
     internal_part_number: 'PCB-TELCO-90061',
@@ -234,8 +238,8 @@ const materials = [
     value: undefined,
     package: 'PCB',
     manufacturer: 'PCBWay',
-    manufacturer_part_number: undefined,
-    unit: 'pcs',
+    manufacturer_pn: undefined,
+    uom: 'pcs',
   },
 ];
 
@@ -585,7 +589,7 @@ async function seed() {
       wo_number: 'BX20-583',
       quantity: 20,
       due_date: '2026-02-15',
-      status: OrderStatus.CONFIRMED,
+      status: OrderStatus.KITTING,
     },
     {
       customer: 'ISC Technologies',
@@ -593,7 +597,7 @@ async function seed() {
       po_number: 'P17771',
       quantity: 160,
       due_date: '2026-01-25',
-      status: OrderStatus.IN_PRODUCTION,
+      status: OrderStatus.SMT,
     },
     {
       customer: 'UgoWork',
@@ -601,7 +605,7 @@ async function seed() {
       po_number: 'PO08623',
       quantity: 150,
       due_date: '2026-03-01',
-      status: OrderStatus.PENDING,
+      status: OrderStatus.ENTERED,
     },
     {
       customer: 'TelcoBridge',
@@ -609,7 +613,7 @@ async function seed() {
       po_number: 'PO-2500601',
       quantity: 50,
       due_date: '2026-02-28',
-      status: OrderStatus.PENDING,
+      status: OrderStatus.ENTERED,
     },
     {
       customer: 'Carma Industries',
@@ -617,7 +621,7 @@ async function seed() {
       po_number: 'CARMA-2026-001',
       quantity: 25,
       due_date: '2026-01-20',
-      status: OrderStatus.CONFIRMED,
+      status: OrderStatus.KITTING,
     },
   ];
 

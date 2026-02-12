@@ -24,9 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Pencil, Trash2, X, Search, Filter } from "lucide-react"
+import { Plus, Pencil, Trash2, X, Search, Filter, Eye } from "lucide-react"
 import { useState, useMemo } from "react"
 import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -266,6 +267,7 @@ function MaterialDialog({
 }
 
 export default function MaterialsPage() {
+  const router = useRouter()
   const { data: materials, isLoading, refetch } = useApi<Material[]>("/materials")
   const { data: customers } = useApi<Customer[]>("/customers")
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -375,11 +377,13 @@ export default function MaterialsPage() {
     {
       key: "customer",
       header: "Customer",
+      defaultWidth: 140,
       cell: (material) => material.customer?.name || "-",
     },
     {
       key: "internal_part_number",
       header: "IPN",
+      defaultWidth: 150,
       cell: (material) => (
         <span className="font-medium">{material.internal_part_number}</span>
       ),
@@ -387,18 +391,21 @@ export default function MaterialsPage() {
     {
       key: "manufacturer_pn",
       header: "Manufacturer P/N",
+      defaultWidth: 160,
       cell: (material) => material.manufacturer_pn || "-",
     },
     {
       key: "manufacturer",
       header: "Manufacturer",
+      defaultWidth: 140,
       cell: (material) => material.manufacturer || "-",
     },
     {
       key: "description",
       header: "Description",
+      defaultWidth: 250,
       cell: (material) => (
-        <span className="max-w-[200px] truncate block" title={material.description || ""}>
+        <span className="truncate block" title={material.description || ""}>
           {material.description || "-"}
         </span>
       ),
@@ -406,6 +413,7 @@ export default function MaterialsPage() {
     {
       key: "category",
       header: "Category",
+      defaultWidth: 100,
       cell: (material) =>
         material.category ? (
           <Badge variant="secondary">{material.category}</Badge>
@@ -416,11 +424,14 @@ export default function MaterialsPage() {
     {
       key: "uom",
       header: "UOM",
+      defaultWidth: 80,
       cell: (material) => material.uom,
     },
     {
       key: "actions",
       header: "",
+      defaultWidth: 100,
+      resizable: false,
       className: "w-[100px]",
       cell: (material) => (
         <div className="flex items-center gap-1">
@@ -602,6 +613,8 @@ export default function MaterialsPage() {
         selectable
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}
+        onRowClick={(material) => router.push(`/materials/${material.id}`)}
+        storageKey="materials"
       />
 
       {/* Bulk delete confirmation dialog */}

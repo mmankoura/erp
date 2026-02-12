@@ -539,7 +539,7 @@ export default function MRPPage() {
             <CardHeader>
               <CardTitle>All Material Requirements</CardTitle>
               <CardDescription>
-                Summary of requirements across all active orders (PENDING, CONFIRMED, IN_PRODUCTION)
+                Summary of requirements across all active orders (ENTERED, KITTING, SMT, TH)
               </CardDescription>
             </CardHeader>
             <CardContent>

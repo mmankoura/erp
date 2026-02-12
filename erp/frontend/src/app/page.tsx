@@ -83,11 +83,12 @@ function StatsCardSkeleton() {
 
 function RecentOrdersCard({ orders, isLoading }: { orders: Order[] | null; isLoading: boolean }) {
   const statusColors: Record<string, string> = {
-    PENDING: "bg-yellow-100 text-yellow-800",
-    CONFIRMED: "bg-blue-100 text-blue-800",
-    IN_PRODUCTION: "bg-purple-100 text-purple-800",
+    ENTERED: "bg-yellow-100 text-yellow-800",
+    KITTING: "bg-blue-100 text-blue-800",
+    SMT: "bg-purple-100 text-purple-800",
+    TH: "bg-indigo-100 text-indigo-800",
     SHIPPED: "bg-green-100 text-green-800",
-    COMPLETED: "bg-gray-100 text-gray-800",
+    ON_HOLD: "bg-orange-100 text-orange-800",
     CANCELLED: "bg-red-100 text-red-800",
   }
 
@@ -205,9 +206,9 @@ export default function DashboardPage() {
   // Calculate stats from orders
   const stats: DashboardStats = {
     orders: {
-      pending: orders?.filter((o) => o.status === "PENDING").length || 0,
-      confirmed: orders?.filter((o) => o.status === "CONFIRMED").length || 0,
-      inProduction: orders?.filter((o) => o.status === "IN_PRODUCTION").length || 0,
+      pending: orders?.filter((o) => o.status === "ENTERED").length || 0,
+      confirmed: orders?.filter((o) => o.status === "KITTING").length || 0,
+      inProduction: orders?.filter((o) => ["SMT", "TH"].includes(o.status)).length || 0,
       total: orders?.length || 0,
     },
     purchaseOrders: {
@@ -257,18 +258,18 @@ export default function DashboardPage() {
         ) : (
           <>
             <StatsCard
-              title="Pending Orders"
+              title="New Orders"
               value={stats.orders.pending}
-              description="Awaiting confirmation"
+              description="Ready for kitting"
               icon={Clock}
-              href="/orders?status=PENDING"
+              href="/orders?status=ENTERED"
             />
             <StatsCard
               title="In Production"
               value={stats.orders.inProduction}
-              description="Currently being manufactured"
+              description="Currently in SMT or TH"
               icon={FileText}
-              href="/orders?status=IN_PRODUCTION"
+              href="/orders?status=SMT"
             />
             <StatsCard
               title="Total Orders"

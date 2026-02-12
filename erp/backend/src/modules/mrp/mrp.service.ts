@@ -263,9 +263,10 @@ export class MrpService {
   ): Promise<ShortageReport> {
     // Default to orders that need materials
     const statuses = includeStatuses ?? [
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.IN_PRODUCTION,
+      OrderStatus.ENTERED,
+      OrderStatus.KITTING,
+      OrderStatus.SMT,
+      OrderStatus.TH,
     ];
 
     // Get all active orders
@@ -451,9 +452,10 @@ export class MrpService {
     }>;
   }> {
     const statuses = [
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.IN_PRODUCTION,
+      OrderStatus.ENTERED,
+      OrderStatus.KITTING,
+      OrderStatus.SMT,
+      OrderStatus.TH,
     ];
 
     const orders = await this.orderRepository.find({
@@ -665,9 +667,10 @@ export class MrpService {
     includeStatuses?: OrderStatus[],
   ): Promise<EnhancedShortageReport> {
     const statuses = includeStatuses ?? [
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.IN_PRODUCTION,
+      OrderStatus.ENTERED,
+      OrderStatus.KITTING,
+      OrderStatus.SMT,
+      OrderStatus.TH,
     ];
 
     // Get all active orders with customer info
@@ -1024,9 +1027,10 @@ export class MrpService {
     includeStatuses?: OrderStatus[],
   ): Promise<OrderBuildabilityReport> {
     const statuses = includeStatuses ?? [
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.IN_PRODUCTION,
+      OrderStatus.ENTERED,
+      OrderStatus.KITTING,
+      OrderStatus.SMT,
+      OrderStatus.TH,
     ];
 
     const orders = await this.orderRepository.find({

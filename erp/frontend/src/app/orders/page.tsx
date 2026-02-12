@@ -25,11 +25,12 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 
 const orderStatusColors: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  CONFIRMED: "bg-blue-100 text-blue-800 border-blue-200",
-  IN_PRODUCTION: "bg-purple-100 text-purple-800 border-purple-200",
+  ENTERED: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  KITTING: "bg-blue-100 text-blue-800 border-blue-200",
+  SMT: "bg-purple-100 text-purple-800 border-purple-200",
+  TH: "bg-indigo-100 text-indigo-800 border-indigo-200",
   SHIPPED: "bg-green-100 text-green-800 border-green-200",
-  COMPLETED: "bg-gray-100 text-gray-800 border-gray-200",
+  ON_HOLD: "bg-orange-100 text-orange-800 border-orange-200",
   CANCELLED: "bg-red-100 text-red-800 border-red-200",
 }
 
@@ -149,6 +150,7 @@ export default function OrdersPage() {
     {
       key: "order_number",
       header: "Order #",
+      defaultWidth: 120,
       cell: (order) => (
         <span className="font-medium">{order.order_number}</span>
       ),
@@ -156,21 +158,25 @@ export default function OrdersPage() {
     {
       key: "customer",
       header: "Customer",
+      defaultWidth: 150,
       cell: (order) => order.customer?.name || "Unknown",
     },
     {
       key: "product",
       header: "Product",
+      defaultWidth: 180,
       cell: (order) => order.product?.name || order.product?.part_number || "Unknown",
     },
     {
       key: "quantity",
       header: "Qty",
+      defaultWidth: 80,
       cell: (order) => order.quantity.toLocaleString(),
     },
     {
       key: "status",
       header: "Order Status",
+      defaultWidth: 130,
       cell: (order) => (
         <Badge variant="outline" className={orderStatusColors[order.status]}>
           {order.status.replace("_", " ")}
@@ -180,9 +186,10 @@ export default function OrdersPage() {
     {
       key: "material_status",
       header: "Material Status",
+      defaultWidth: 140,
       cell: (order) => {
         // Only show material status for active orders
-        if (["CANCELLED", "COMPLETED", "SHIPPED"].includes(order.status)) {
+        if (["CANCELLED", "SHIPPED"].includes(order.status)) {
           return <span className="text-muted-foreground text-sm">-</span>
         }
         const materialStatus = computeMaterialStatus(order.id, shortages)
@@ -192,9 +199,10 @@ export default function OrdersPage() {
     {
       key: "due_date",
       header: "Due Date",
+      defaultWidth: 130,
       cell: (order) => {
         const date = new Date(order.due_date)
-        const isOverdue = date < new Date() && !["COMPLETED", "SHIPPED", "CANCELLED"].includes(order.status)
+        const isOverdue = date < new Date() && !["SHIPPED", "CANCELLED"].includes(order.status)
         return (
           <span className={isOverdue ? "text-destructive font-medium" : ""}>
             {date.toLocaleDateString()}
@@ -206,6 +214,7 @@ export default function OrdersPage() {
     {
       key: "order_type",
       header: "Type",
+      defaultWidth: 100,
       cell: (order) => (
         <Badge variant="secondary" className="text-xs">
           {order.order_type}
@@ -215,6 +224,8 @@ export default function OrdersPage() {
     {
       key: "actions",
       header: "",
+      defaultWidth: 100,
+      resizable: false,
       className: "w-[100px]",
       cell: (order) => (
         <div className="flex items-center gap-1">
@@ -283,20 +294,23 @@ export default function OrdersPage() {
               <SelectItem value="all">
                 All ({orders?.length || 0})
               </SelectItem>
-              <SelectItem value="PENDING">
-                Pending ({statusCounts.PENDING || 0})
+              <SelectItem value="ENTERED">
+                Entered ({statusCounts.ENTERED || 0})
               </SelectItem>
-              <SelectItem value="CONFIRMED">
-                Confirmed ({statusCounts.CONFIRMED || 0})
+              <SelectItem value="KITTING">
+                Kitting ({statusCounts.KITTING || 0})
               </SelectItem>
-              <SelectItem value="IN_PRODUCTION">
-                In Production ({statusCounts.IN_PRODUCTION || 0})
+              <SelectItem value="SMT">
+                SMT ({statusCounts.SMT || 0})
+              </SelectItem>
+              <SelectItem value="TH">
+                TH ({statusCounts.TH || 0})
               </SelectItem>
               <SelectItem value="SHIPPED">
                 Shipped ({statusCounts.SHIPPED || 0})
               </SelectItem>
-              <SelectItem value="COMPLETED">
-                Completed ({statusCounts.COMPLETED || 0})
+              <SelectItem value="ON_HOLD">
+                On Hold ({statusCounts.ON_HOLD || 0})
               </SelectItem>
               <SelectItem value="CANCELLED">
                 Cancelled ({statusCounts.CANCELLED || 0})
@@ -332,6 +346,7 @@ export default function OrdersPage() {
         onRowClick={(order) => router.push(`/orders/${order.id}`)}
         enableSelection
         onBulkDelete={handleBulkDelete}
+        storageKey="orders"
       />
     </div>
   )

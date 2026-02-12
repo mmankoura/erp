@@ -15,11 +15,13 @@ import { Customer } from './customer.entity';
 import { OwnerType } from './inventory-transaction.entity';
 
 export enum AllocationStatus {
-  ACTIVE = 'ACTIVE',       // Reserved, still in stock
-  PICKED = 'PICKED',       // Phase 3: Picked from stock, staged
-  ISSUED = 'ISSUED',       // Phase 3: Issued to WIP / production
-  CONSUMED = 'CONSUMED',   // Materials used
-  CANCELLED = 'CANCELLED', // Reservation cancelled
+  ACTIVE = 'ACTIVE',           // Reserved, still in stock
+  PICKED = 'PICKED',           // Picked from stock, staged for kitting
+  ISSUED = 'ISSUED',           // Issued to production floor
+  FLOOR_STOCK = 'FLOOR_STOCK', // On floor between jobs (not tied to specific order)
+  CONSUMED = 'CONSUMED',       // Materials used in production
+  RETURNED = 'RETURNED',       // Returned to warehouse after job completion
+  CANCELLED = 'CANCELLED',     // Reservation cancelled
 }
 
 @Entity('inventory_allocations')
