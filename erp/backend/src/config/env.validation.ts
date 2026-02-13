@@ -28,12 +28,18 @@ const ENV_VARS: EnvVar[] = [
     required: false,
     description: 'Environment: development, production, test',
   },
+  {
+    name: 'SESSION_SECRET',
+    required: true,
+    description: 'Secret key for session encryption (min 32 characters)',
+  },
 ];
 
 export interface EnvConfig {
   DATABASE_URL: string;
   PORT: number;
   NODE_ENV: 'development' | 'production' | 'test';
+  SESSION_SECRET: string;
 }
 
 export function validateEnv(): EnvConfig {
@@ -71,9 +77,18 @@ export function validateEnv(): EnvConfig {
     process.exit(1);
   }
 
+  // Validate SESSION_SECRET length
+  const sessionSecret = process.env.SESSION_SECRET!;
+  if (sessionSecret.length < 32) {
+    console.error('\n❌ Invalid SESSION_SECRET');
+    console.error('   SESSION_SECRET must be at least 32 characters long\n');
+    process.exit(1);
+  }
+
   return {
     DATABASE_URL: dbUrl,
     PORT: parseInt(process.env.PORT || '3000', 10),
     NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development',
+    SESSION_SECRET: sessionSecret,
   };
 }

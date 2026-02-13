@@ -69,8 +69,10 @@ import {
   Copy,
   RotateCcw,
   Upload,
+  Search,
+  X,
 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -92,6 +94,7 @@ export default function ProductDetailPage() {
   const [showNewRevisionDialog, setShowNewRevisionDialog] = useState(false)
   const [showAddItemDialog, setShowAddItemDialog] = useState(false)
   const [showImportWizard, setShowImportWizard] = useState(false)
+  const [bomItemSearch, setBomItemSearch] = useState("")
 
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = useApi<Product>(`/products/${productId}`)
   const { data: revisions, isLoading: loadingRevisions, refetch: refetchRevisions } = useApi<BomRevision[]>(`/bom/product/${productId}`)
@@ -115,8 +118,27 @@ export default function ProductDetailPage() {
   useEffect(() => {
     if (selectedRevisionId) {
       refetchSelectedRevision()
+      setBomItemSearch("") // Clear search when switching revisions
     }
   }, [selectedRevisionId, refetchSelectedRevision])
+
+  // Filter BOM items by IPN or Ref Des
+  const filteredBomItems = useMemo(() => {
+    if (!selectedRevision?.items) return []
+    if (!bomItemSearch.trim()) {
+      return selectedRevision.items.sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
+    }
+
+    const query = bomItemSearch.toLowerCase().trim()
+    return selectedRevision.items
+      .filter((item) => {
+        const ipn = item.material?.internal_part_number?.toLowerCase() || ""
+        const altIpn = item.alternate_ipn?.toLowerCase() || ""
+        const refDes = item.reference_designators?.toLowerCase() || ""
+        return ipn.includes(query) || altIpn.includes(query) || refDes.includes(query)
+      })
+      .sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
+  }, [selectedRevision?.items, bomItemSearch])
 
   const activateMutation = useMutation(
     (revisionId: string) => api.post<BomRevision>(`/bom/revision/${revisionId}/activate`, {}),
@@ -375,7 +397,9 @@ export default function ProductDetailPage() {
             <div>
               <CardTitle>BOM Items - {selectedRevision.revision_number}</CardTitle>
               <CardDescription>
-                {selectedRevision.items?.length || 0} items in this revision
+                {bomItemSearch
+                  ? `${filteredBomItems.length} of ${selectedRevision.items?.length || 0} items`
+                  : `${selectedRevision.items?.length || 0} items in this revision`}
               </CardDescription>
             </div>
             <AddItemDialog
@@ -391,7 +415,30 @@ export default function ProductDetailPage() {
             />
           </CardHeader>
           <CardContent>
+            {/* Search for BOM Items */}
+            {selectedRevision.items && selectedRevision.items.length > 0 && (
+              <div className="mb-4">
+                <div className="relative max-w-sm">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by IPN or Ref Des..."
+                    value={bomItemSearch}
+                    onChange={(e) => setBomItemSearch(e.target.value)}
+                    className="pl-10 pr-10"
+                  />
+                  {bomItemSearch && (
+                    <button
+                      onClick={() => setBomItemSearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             {selectedRevision.items && selectedRevision.items.length > 0 ? (
+              filteredBomItems.length > 0 ? (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -407,9 +454,7 @@ export default function ProductDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {selectedRevision.items
-                      .sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
-                      .map((item) => (
+                    {filteredBomItems.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell className="font-mono text-sm">
                             {item.line_number || "-"}
@@ -465,6 +510,12 @@ export default function ProductDetailPage() {
                   </TableBody>
                 </Table>
               </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No items match your search</p>
+                  <p className="text-sm">Try a different IPN or Ref Des</p>
+                </div>
+              )
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <p>No items in this BOM revision</p>

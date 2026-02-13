@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { CycleCountService } from './cycle-count.service';
 import {
@@ -19,8 +20,13 @@ import {
   SkipItemDto,
 } from './dto';
 import { CycleCountStatus } from '../../entities/cycle-count.entity';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('cycle-counts')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class CycleCountController {
   constructor(private readonly cycleCountService: CycleCountService) {}
 
@@ -31,6 +37,7 @@ export class CycleCountController {
    * Create a new cycle count
    */
   @Post()
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async create(@Body() dto: CreateCycleCountDto) {
     return this.cycleCountService.createCycleCount(dto);
   }
@@ -77,6 +84,7 @@ export class CycleCountController {
    * Start a cycle count (capture system quantities)
    */
   @Post(':id/start')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async startCount(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: StartCountDto,
@@ -89,6 +97,7 @@ export class CycleCountController {
    * Record a single count entry
    */
   @Post(':id/count')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async recordCount(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CountEntryDto,
@@ -101,6 +110,7 @@ export class CycleCountController {
    * Record multiple count entries at once
    */
   @Post(':id/count/batch')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async recordBatchCount(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: BatchCountEntryDto,
@@ -118,6 +128,7 @@ export class CycleCountController {
    * Complete counting and move to pending review
    */
   @Post(':id/complete')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async completeCount(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CompleteCountDto,
@@ -130,6 +141,7 @@ export class CycleCountController {
    * Approve cycle count and create adjustment transactions
    */
   @Post(':id/approve')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async approveCount(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ApproveCountDto,
@@ -142,6 +154,7 @@ export class CycleCountController {
    * Cancel a cycle count
    */
   @Post(':id/cancel')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async cancelCount(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CancelCountDto,
@@ -154,6 +167,7 @@ export class CycleCountController {
    * Skip an item (e.g., material not found)
    */
   @Post(':id/items/:itemId/skip')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async skipItem(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('itemId', ParseUUIDPipe) itemId: string,

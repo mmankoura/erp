@@ -108,6 +108,12 @@ export enum AuditEventType {
   PRODUCTION_STARTED = 'PRODUCTION_STARTED',
   PRODUCTION_STAGE_MOVED = 'PRODUCTION_STAGE_MOVED',
   PRODUCTION_COMPLETED = 'PRODUCTION_COMPLETED',
+
+  // User / Auth events
+  USER_CREATED = 'USER_CREATED',
+  USER_UPDATED = 'USER_UPDATED',
+  USER_LOGIN = 'USER_LOGIN',
+  USER_LOGOUT = 'USER_LOGOUT',
 }
 
 /**
@@ -129,6 +135,7 @@ export enum AuditEntityType {
   CYCLE_COUNT = 'cycle_count',
   CYCLE_COUNT_ITEM = 'cycle_count_item',
   PRODUCTION_LOG = 'production_log',
+  USER = 'user',
 }
 
 /**

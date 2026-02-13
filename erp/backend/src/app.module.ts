@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import 'dotenv/config';
 import { HealthModule } from './modules/health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { MaterialsModule } from './modules/materials/materials.module';
 import { ProductsModule } from './modules/products/products.module';
 import { CustomersModule } from './modules/customers/customers.module';
@@ -27,6 +28,7 @@ import { ProductionModule } from './modules/production/production.module';
     }),
     HealthModule, // Health checks - no dependencies
     AuditModule, // Global module - must be imported first so it's available to other modules
+    AuthModule, // Authentication - must be before other protected modules
     MaterialsModule,
     ProductsModule,
     CustomersModule,

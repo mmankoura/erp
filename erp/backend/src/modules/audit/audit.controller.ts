@@ -1,8 +1,11 @@
-import { Controller, Get, Query, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Query, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { AuditService, AuditQueryFilters } from './audit.service';
 import { AuditEvent } from '../../entities/audit-event.entity';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Controller('audit')
+@UseGuards(AuthenticatedGuard, RolesGuard) // Read-only, all authenticated users can access
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 

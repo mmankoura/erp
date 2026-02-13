@@ -50,6 +50,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
 import { Plus, ClipboardCheck, Play, CheckCircle, XCircle, Eye } from "lucide-react"
 import Link from "next/link"
+import { useAuth } from "@/contexts/auth-context"
 
 const statusColors: Record<CycleCountStatus, string> = {
   PLANNED: "bg-blue-100 text-blue-800",
@@ -67,6 +68,7 @@ const typeLabels: Record<CycleCountType, string> = {
 }
 
 export default function CycleCountsPage() {
+  const { canPerformInventoryOps } = useAuth()
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([])
@@ -179,13 +181,14 @@ export default function CycleCountsPage() {
             Physical inventory counts and reconciliation
           </p>
         </div>
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              New Cycle Count
-            </Button>
-          </DialogTrigger>
+        {canPerformInventoryOps() && (
+          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                New Cycle Count
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create Cycle Count</DialogTitle>
@@ -277,6 +280,7 @@ export default function CycleCountsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       {/* Filters */}
@@ -413,7 +417,7 @@ export default function CycleCountsPage() {
                             <Eye className="h-4 w-4" />
                           </Link>
                         </Button>
-                        {count.status === "PLANNED" && (
+                        {count.status === "PLANNED" && canPerformInventoryOps() && (
                           <>
                             <Button
                               variant="ghost"

@@ -1,6 +1,8 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
+import { Public } from '../auth/decorators/public.decorator';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 
 interface HealthStatus {
   status: 'healthy' | 'unhealthy';
@@ -14,6 +16,8 @@ interface HealthStatus {
 }
 
 @Controller('health')
+@UseGuards(AuthenticatedGuard)
+@Public() // Health checks are public - no auth required
 export class HealthController {
   private readonly startTime = Date.now();
 

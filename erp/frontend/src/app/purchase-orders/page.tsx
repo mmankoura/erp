@@ -798,16 +798,19 @@ export default function PurchaseOrdersPage() {
     {
       key: "po_number",
       header: "PO #",
+      defaultWidth: 120,
       cell: (po) => <span className="font-medium">{po.po_number}</span>,
     },
     {
       key: "supplier",
       header: "Supplier",
+      defaultWidth: 180,
       cell: (po) => po.supplier?.name || "-",
     },
     {
       key: "status",
       header: "Status",
+      defaultWidth: 130,
       cell: (po) => (
         <Badge variant={statusConfig[po.status].variant}>{statusConfig[po.status].label}</Badge>
       ),
@@ -815,11 +818,13 @@ export default function PurchaseOrdersPage() {
     {
       key: "order_date",
       header: "Order Date",
+      defaultWidth: 120,
       cell: (po) => new Date(po.order_date).toLocaleDateString(),
     },
     {
       key: "expected_date",
       header: "Expected",
+      defaultWidth: 120,
       cell: (po) => {
         if (!po.expected_date) return "-"
         const date = new Date(po.expected_date)
@@ -834,6 +839,7 @@ export default function PurchaseOrdersPage() {
     {
       key: "total_amount",
       header: "Total",
+      defaultWidth: 120,
       className: "text-right",
       cell: (po) =>
         po.total_amount ? `${po.currency} ${po.total_amount.toFixed(2)}` : "-",
@@ -841,6 +847,8 @@ export default function PurchaseOrdersPage() {
     {
       key: "actions",
       header: "",
+      defaultWidth: 100,
+      resizable: false,
       className: "w-[100px]",
       cell: (po) => (
         <div className="flex items-center gap-1">
@@ -944,6 +952,7 @@ export default function PurchaseOrdersPage() {
         searchKey="po_number"
         searchPlaceholder="Search by PO number..."
         emptyMessage="No purchase orders found. Create your first PO to get started."
+        storageKey="purchase-orders"
       />
     </div>
   )

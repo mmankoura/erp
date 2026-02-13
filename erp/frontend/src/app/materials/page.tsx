@@ -38,6 +38,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useAuth } from "@/contexts/auth-context"
 
 const uomOptions = ["EA", "FT", "IN", "M", "CM", "MM", "KG", "G", "LB", "OZ", "L", "ML", "GAL"]
 const categoryOptions = ["Resistors", "Capacitors", "Inductors", "ICs", "Connectors", "PCBs", "Mechanical", "Labels", "Other"]
@@ -268,6 +269,7 @@ function MaterialDialog({
 
 export default function MaterialsPage() {
   const router = useRouter()
+  const { canEdit } = useAuth()
   const { data: materials, isLoading, refetch } = useApi<Material[]>("/materials")
   const { data: customers } = useApi<Customer[]>("/customers")
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -435,29 +437,33 @@ export default function MaterialsPage() {
       className: "w-[100px]",
       cell: (material) => (
         <div className="flex items-center gap-1">
-          <MaterialDialog
-            material={material}
-            customers={customers || []}
-            onSuccess={refetch}
-            trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Pencil className="h-4 w-4" />
+          {canEdit() && (
+            <>
+              <MaterialDialog
+                material={material}
+                customers={customers || []}
+                onSuccess={refetch}
+                trigger={
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                }
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (confirm("Are you sure you want to delete this material?")) {
+                    deleteMutation.mutate(material.id)
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
               </Button>
-            }
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              if (confirm("Are you sure you want to delete this material?")) {
-                deleteMutation.mutate(material.id)
-              }
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            </>
+          )}
         </div>
       ),
     },
@@ -472,16 +478,18 @@ export default function MaterialsPage() {
             Manage your inventory of raw materials and components
           </p>
         </div>
-        <MaterialDialog
-          customers={customers || []}
-          onSuccess={refetch}
-          trigger={
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Material
-            </Button>
-          }
-        />
+        {canEdit() && (
+          <MaterialDialog
+            customers={customers || []}
+            onSuccess={refetch}
+            trigger={
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Material
+              </Button>
+            }
+          />
+        )}
       </div>
 
       {/* Search and Filters */}
@@ -580,7 +588,7 @@ export default function MaterialsPage() {
       </div>
 
       {/* Selection toolbar */}
-      {selectedIds.length > 0 && (
+      {selectedIds.length > 0 && canEdit() && (
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
           <span className="text-sm font-medium">
             {selectedIds.length} selected

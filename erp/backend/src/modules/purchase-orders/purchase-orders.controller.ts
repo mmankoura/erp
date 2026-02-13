@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   PurchaseOrdersService,
@@ -23,8 +24,13 @@ import {
   UpdateLineDto,
 } from './dto';
 import { PurchaseOrderStatus } from '../../entities/purchase-order.entity';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('purchase-orders')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class PurchaseOrdersController {
   constructor(private readonly poService: PurchaseOrdersService) {}
 
@@ -68,11 +74,13 @@ export class PurchaseOrdersController {
   }
 
   @Post()
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async create(@Body() dto: CreatePurchaseOrderDto) {
     return this.poService.create(dto);
   }
 
   @Patch(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePurchaseOrderDto,
@@ -81,6 +89,7 @@ export class PurchaseOrdersController {
   }
 
   @Delete(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.poService.remove(id);
@@ -89,6 +98,7 @@ export class PurchaseOrdersController {
   // ==================== LINE OPERATIONS ====================
 
   @Post(':id/lines')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async addLine(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() lineDto: AddLineDto,
@@ -97,6 +107,7 @@ export class PurchaseOrdersController {
   }
 
   @Patch('lines/:lineId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async updateLine(
     @Param('lineId', ParseUUIDPipe) lineId: string,
     @Body() updates: UpdateLineDto,
@@ -105,6 +116,7 @@ export class PurchaseOrdersController {
   }
 
   @Delete('lines/:lineId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeLine(@Param('lineId', ParseUUIDPipe) lineId: string) {
     await this.poService.removeLine(lineId);
@@ -113,6 +125,7 @@ export class PurchaseOrdersController {
   // ==================== STATUS TRANSITIONS ====================
 
   @Post(':id/submit')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async submit(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { actor?: string },
@@ -121,6 +134,7 @@ export class PurchaseOrdersController {
   }
 
   @Post(':id/confirm')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async confirm(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { actor?: string },
@@ -129,6 +143,7 @@ export class PurchaseOrdersController {
   }
 
   @Post(':id/close')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async close(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { actor?: string },
@@ -137,6 +152,7 @@ export class PurchaseOrdersController {
   }
 
   @Post(':id/cancel')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { reason?: string; actor?: string },
@@ -147,6 +163,7 @@ export class PurchaseOrdersController {
   // ==================== RECEIVING ====================
 
   @Post(':id/receive')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async receive(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReceiveAgainstPODto,

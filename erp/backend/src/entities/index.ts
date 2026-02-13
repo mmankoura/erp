@@ -17,3 +17,4 @@ export * from './receiving-inspection.entity';
 export * from './cycle-count.entity';
 export * from './cycle-count-item.entity';
 export * from './production-log.entity';
+export * from './user.entity';

@@ -6,12 +6,18 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ReceivingInspectionService } from './receiving-inspection.service';
 import { InspectionStatus } from '../../entities/receiving-inspection.entity';
 import { PerformInspectionDto, DispositionDto, ReleaseDto } from './dto';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('receiving-inspections')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class ReceivingInspectionController {
   constructor(
     private readonly inspectionService: ReceivingInspectionService,
@@ -47,6 +53,7 @@ export class ReceivingInspectionController {
   }
 
   @Post(':id/validate')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async performValidation(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PerformInspectionDto,
@@ -55,6 +62,7 @@ export class ReceivingInspectionController {
   }
 
   @Post(':id/approve')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async approve(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DispositionDto,
@@ -67,6 +75,7 @@ export class ReceivingInspectionController {
   }
 
   @Post(':id/reject')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async reject(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DispositionDto,
@@ -79,6 +88,7 @@ export class ReceivingInspectionController {
   }
 
   @Post(':id/hold')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async hold(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DispositionDto,
@@ -91,6 +101,7 @@ export class ReceivingInspectionController {
   }
 
   @Post(':id/release')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async releaseToInventory(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReleaseDto,
@@ -99,6 +110,7 @@ export class ReceivingInspectionController {
   }
 
   @Post('bulk-release')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async bulkRelease(
     @Body('ids') ids: string[],
     @Body('actor') actor: string,

@@ -10,11 +10,17 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('customers')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
@@ -38,11 +44,13 @@ export class CustomersController {
   }
 
   @Post()
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async create(@Body() createCustomerDto: CreateCustomerDto) {
     return this.customersService.create(createCustomerDto);
   }
 
   @Patch(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateCustomerDto: UpdateCustomerDto,
@@ -51,12 +59,14 @@ export class CustomersController {
   }
 
   @Delete(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.customersService.remove(id);
   }
 
   @Post(':id/restore')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async restore(@Param('id', ParseUUIDPipe) id: string) {
     return this.customersService.restore(id);
   }

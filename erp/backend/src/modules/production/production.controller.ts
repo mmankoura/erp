@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ProductionService } from './production.service';
 import {
@@ -13,8 +14,13 @@ import {
   MoveUnitsDto,
   ShipUnitsDto,
 } from './dto';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('production')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class ProductionController {
   constructor(private readonly productionService: ProductionService) {}
 
@@ -67,6 +73,7 @@ export class ProductionController {
    * Start production for an order (move units to kitting)
    */
   @Post('order/:orderId/start')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async startProduction(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() dto: StartProductionDto,
@@ -83,6 +90,7 @@ export class ProductionController {
    * Move units between production stages
    */
   @Post('order/:orderId/move')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async moveUnits(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() dto: MoveUnitsDto,
@@ -102,6 +110,7 @@ export class ProductionController {
    * Ship completed units
    */
   @Post('order/:orderId/ship')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async shipUnits(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() dto: ShipUnitsDto,

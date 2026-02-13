@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Query,
   ParseBoolPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { InventoryImportService } from './inventory-import.service';
@@ -26,8 +27,13 @@ import {
   ReturnFloorStockDto,
 } from './dto';
 import { OwnerType } from '../../entities/inventory-transaction.entity';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('inventory')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class InventoryController {
   constructor(
     private readonly inventoryService: InventoryService,
@@ -72,6 +78,7 @@ export class InventoryController {
    * Preview file content before mapping
    */
   @Post('import/preview')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async previewImportFile(@Body() dto: InventoryImportPreviewDto) {
     return this.inventoryImportService.previewFile(dto);
   }
@@ -81,6 +88,7 @@ export class InventoryController {
    * Parse file with column mappings, validate, and match materials
    */
   @Post('import/parse')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async parseImportFile(@Body() dto: InventoryImportParseDto) {
     return this.inventoryImportService.parseAndMapFile(dto);
   }
@@ -90,6 +98,7 @@ export class InventoryController {
    * Commit parsed import - create lots and receipt transactions
    */
   @Post('import/commit')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async commitImport(@Body() dto: InventoryImportCommitDto) {
     return this.inventoryImportService.commitImport(dto);
   }
@@ -131,6 +140,7 @@ export class InventoryController {
    * Delete a specific lot
    */
   @Delete('lots/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async deleteLot(@Param('id', ParseUUIDPipe) id: string) {
     await this.inventoryImportService.deleteLot(id);
     return { success: true };
@@ -141,6 +151,7 @@ export class InventoryController {
    * Delete multiple lots
    */
   @Post('lots/bulk-delete')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async deleteLots(@Body() body: { ids: string[] }) {
     return this.inventoryImportService.deleteLots(body.ids);
   }
@@ -213,6 +224,7 @@ export class InventoryController {
    * Record an inventory transaction
    */
   @Post('transaction')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async createTransaction(@Body() createTransactionDto: CreateTransactionDto) {
     return this.inventoryService.createTransaction(createTransactionDto);
   }
@@ -222,6 +234,7 @@ export class InventoryController {
    * Set stock to a specific level (convenience endpoint)
    */
   @Post(':materialId/set-stock')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async setStockLevel(
     @Param('materialId', ParseUUIDPipe) materialId: string,
     @Body() body: { quantity: number; reason?: string; created_by?: string },
@@ -266,6 +279,7 @@ export class InventoryController {
    * Create a single allocation
    */
   @Post('allocation')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async createAllocation(@Body() createAllocationDto: CreateAllocationDto) {
     return this.inventoryService.createAllocation(createAllocationDto);
   }
@@ -275,6 +289,7 @@ export class InventoryController {
    * Update an allocation quantity
    */
   @Patch('allocation/:allocationId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async updateAllocation(
     @Param('allocationId', ParseUUIDPipe) allocationId: string,
     @Body() updateAllocationDto: UpdateAllocationDto,
@@ -287,6 +302,7 @@ export class InventoryController {
    * Cancel an allocation (release reserved stock)
    */
   @Delete('allocation/:allocationId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async cancelAllocation(
     @Param('allocationId', ParseUUIDPipe) allocationId: string,
   ) {
@@ -298,6 +314,7 @@ export class InventoryController {
    * Convert allocation to consumption transaction
    */
   @Post('allocation/:allocationId/consume')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async consumeAllocation(
     @Param('allocationId', ParseUUIDPipe) allocationId: string,
     @Body() body: { quantity?: number; created_by?: string },
@@ -314,6 +331,7 @@ export class InventoryController {
    * Allocate all materials for an order based on its BOM
    */
   @Post('allocate-for-order')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async allocateForOrder(@Body() dto: AllocateForOrderDto) {
     return this.inventoryService.allocateForOrder(
       dto.order_id,
@@ -327,6 +345,7 @@ export class InventoryController {
    * Deallocate all materials for an order
    */
   @Delete('allocations/order/:orderId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async deallocateForOrder(
     @Param('orderId', ParseUUIDPipe) orderId: string,
   ) {
@@ -375,6 +394,7 @@ export class InventoryController {
    * Called when materials are physically pulled from warehouse shelves
    */
   @Post('order/:orderId/pick')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async pickMaterials(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() dto: PickMaterialsDto,
@@ -392,6 +412,7 @@ export class InventoryController {
    * Called when materials leave the warehouse and go to production
    */
   @Post('order/:orderId/issue')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async issueMaterials(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() dto: IssueMaterialsDto,
@@ -409,6 +430,7 @@ export class InventoryController {
    * Handles counting, consumption recording, waste tracking, and variance calculation
    */
   @Post('order/:orderId/return')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async returnMaterials(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() dto: ReturnMaterialsDto,
@@ -426,6 +448,7 @@ export class InventoryController {
    * TH parts are typically exact-count and can be auto-consumed when issued=required
    */
   @Post('order/:orderId/auto-consume-th')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async autoConsumeTHParts(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() body: { created_by?: string },
@@ -439,6 +462,7 @@ export class InventoryController {
    * Used when floor stock materials are returned to warehouse
    */
   @Post('floor-stock/:allocationId/return')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async returnFloorStock(
     @Param('allocationId', ParseUUIDPipe) allocationId: string,
     @Body() dto: ReturnFloorStockDto,

@@ -255,26 +255,32 @@ export default function SuppliersPage() {
     {
       key: "code",
       header: "Code",
+      defaultWidth: 100,
       cell: (supplier) => <span className="font-medium">{supplier.code}</span>,
     },
     {
       key: "name",
       header: "Name",
+      defaultWidth: 200,
       cell: (supplier) => supplier.name,
     },
     {
       key: "email",
       header: "Email",
+      defaultWidth: 200,
       cell: (supplier) => supplier.email || "-",
     },
     {
       key: "phone",
       header: "Phone",
+      defaultWidth: 150,
       cell: (supplier) => supplier.phone || "-",
     },
     {
       key: "actions",
       header: "",
+      defaultWidth: 100,
+      resizable: false,
       className: "w-[100px]",
       cell: (supplier) => (
         <div className="flex items-center gap-1">
@@ -360,6 +366,7 @@ export default function SuppliersPage() {
         selectable
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}
+        storageKey="suppliers"
       />
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

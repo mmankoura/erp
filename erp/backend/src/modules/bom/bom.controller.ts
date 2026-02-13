@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { BomService } from './bom.service';
 import { BomImportService } from './bom-import.service';
@@ -24,8 +25,13 @@ import {
   BomImportUploadDto,
   BomImportCommitDto,
 } from './dto';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('bom')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class BomController {
   constructor(
     private readonly bomService: BomService,
@@ -59,16 +65,19 @@ export class BomController {
   }
 
   @Post('revision')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async createRevision(@Body() dto: CreateBomRevisionDto) {
     return this.bomService.createRevision(dto);
   }
 
   @Post('revision/full')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async createFullRevision(@Body() dto: CreateFullBomRevisionDto) {
     return this.bomService.createFullRevision(dto);
   }
 
   @Patch('revision/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async updateRevision(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBomRevisionDto,
@@ -77,17 +86,20 @@ export class BomController {
   }
 
   @Delete('revision/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteRevision(@Param('id', ParseUUIDPipe) id: string) {
     await this.bomService.deleteRevision(id);
   }
 
   @Post('revision/:id/activate')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async activateRevision(@Param('id', ParseUUIDPipe) id: string) {
     return this.bomService.activateRevision(id);
   }
 
   @Post('revision/:id/copy')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async copyRevision(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { revision_number: string; change_summary?: string },
@@ -119,6 +131,7 @@ export class BomController {
   }
 
   @Post('revision/:revisionId/items')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async addItem(
     @Param('revisionId', ParseUUIDPipe) revisionId: string,
     @Body() dto: CreateBomItemDto,
@@ -127,6 +140,7 @@ export class BomController {
   }
 
   @Patch('item/:itemId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async updateItem(
     @Param('itemId', ParseUUIDPipe) itemId: string,
     @Body() dto: UpdateBomItemDto,
@@ -135,6 +149,7 @@ export class BomController {
   }
 
   @Delete('item/:itemId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeItem(@Param('itemId', ParseUUIDPipe) itemId: string) {
     await this.bomService.removeItem(itemId);
@@ -153,11 +168,13 @@ export class BomController {
   }
 
   @Post('import/mappings')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async createMapping(@Body() dto: CreateBomImportMappingDto) {
     return this.bomImportService.createMapping(dto);
   }
 
   @Patch('import/mappings/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async updateMapping(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBomImportMappingDto,
@@ -166,6 +183,7 @@ export class BomController {
   }
 
   @Delete('import/mappings/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteMapping(@Param('id', ParseUUIDPipe) id: string) {
     await this.bomImportService.deleteMapping(id);
@@ -185,11 +203,13 @@ export class BomController {
   }
 
   @Post('import/parse')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async parseAndMapFile(@Body() dto: BomImportUploadDto) {
     return this.bomImportService.parseAndMapFile(dto);
   }
 
   @Post('import/commit')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async commitImport(@Body() dto: BomImportCommitDto) {
     return this.bomImportService.commitImport(dto);
   }

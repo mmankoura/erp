@@ -37,6 +37,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       method: "GET",
+      credentials: "include", // Required for session cookies
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
@@ -49,6 +50,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       method: "POST",
+      credentials: "include", // Required for session cookies
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
@@ -62,6 +64,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       method: "PUT",
+      credentials: "include", // Required for session cookies
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
@@ -75,6 +78,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       method: "PATCH",
+      credentials: "include", // Required for session cookies
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
@@ -88,6 +92,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       method: "DELETE",
+      credentials: "include", // Required for session cookies
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,

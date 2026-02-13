@@ -10,11 +10,17 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { AmlService } from './aml.service';
 import { CreateAmlDto, UpdateAmlDto } from './dto';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('aml')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class AmlController {
   constructor(private readonly amlService: AmlService) {}
 
@@ -52,11 +58,13 @@ export class AmlController {
   }
 
   @Post()
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async create(@Body() dto: CreateAmlDto) {
     return this.amlService.create(dto);
   }
 
   @Patch(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAmlDto,
@@ -65,6 +73,7 @@ export class AmlController {
   }
 
   @Delete(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
@@ -74,6 +83,7 @@ export class AmlController {
   }
 
   @Post(':id/approve')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async approve(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('approved_by') approvedBy: string,
@@ -85,6 +95,7 @@ export class AmlController {
   }
 
   @Post(':id/suspend')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async suspend(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('suspended_by') suspendedBy: string,
@@ -97,6 +108,7 @@ export class AmlController {
   }
 
   @Post(':id/reinstate')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async reinstate(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reinstated_by') reinstatedBy: string,
@@ -108,6 +120,7 @@ export class AmlController {
   }
 
   @Post(':id/obsolete')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async obsolete(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('obsoleted_by') obsoletedBy: string,

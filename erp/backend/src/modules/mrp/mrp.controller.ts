@@ -4,11 +4,15 @@ import {
   Param,
   ParseUUIDPipe,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { MrpService } from './mrp.service';
 import { OrderStatus } from '../../entities/order.entity';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Controller('mrp')
+@UseGuards(AuthenticatedGuard, RolesGuard) // Read-only, all authenticated users can access
 export class MrpController {
   constructor(private readonly mrpService: MrpService) {}
 

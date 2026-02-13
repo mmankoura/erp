@@ -19,6 +19,8 @@ import {
   Layers,
   Factory,
   ClipboardPen,
+  LogOut,
+  UserCog,
 } from "lucide-react"
 
 import {
@@ -34,6 +36,9 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { useAuth, UserRole } from "@/contexts/auth-context"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 const navigation = {
   main: [
@@ -120,6 +125,13 @@ const navigation = {
       url: "/audit",
       icon: History,
     },
+  ],
+  admin: [
+    {
+      title: "Users",
+      url: "/settings/users",
+      icon: UserCog,
+    },
     {
       title: "Settings",
       url: "/settings",
@@ -128,14 +140,34 @@ const navigation = {
   ],
 }
 
+// Role display names and colors
+const roleDisplayNames: Record<UserRole, string> = {
+  [UserRole.ADMIN]: "Admin",
+  [UserRole.MANAGER]: "Manager",
+  [UserRole.WAREHOUSE_CLERK]: "Warehouse",
+  [UserRole.OPERATOR]: "Operator",
+}
+
+const roleBadgeVariants: Record<UserRole, "default" | "secondary" | "outline"> = {
+  [UserRole.ADMIN]: "default",
+  [UserRole.MANAGER]: "secondary",
+  [UserRole.WAREHOUSE_CLERK]: "outline",
+  [UserRole.OPERATOR]: "outline",
+}
+
 export function AppSidebar() {
   const pathname = usePathname()
+  const { user, logout, canManageUsers, canAccessSettings } = useAuth()
 
   const isActive = (url: string) => {
     if (url === "/") {
       return pathname === "/"
     }
     return pathname.startsWith(url)
+  }
+
+  const handleLogout = async () => {
+    await logout()
   }
 
   return (
@@ -243,15 +275,55 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              {/* Admin-only items */}
+              {(canManageUsers() || canAccessSettings()) && navigation.admin.map((item) => {
+                // Show Users link only for admins
+                if (item.url === "/settings/users" && !canManageUsers()) return null
+                // Show Settings link only for admins
+                if (item.url === "/settings" && !canAccessSettings()) return null
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                      <Link href={item.url}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <SidebarMenu>
+        {user && (
+          <div className="px-2 py-2 group-data-[collapsible=icon]:hidden">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{user.full_name}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.username}</p>
+              </div>
+              <Badge variant={roleBadgeVariants[user.role]} className="text-xs">
+                {roleDisplayNames[user.role]}
+              </Badge>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              onClick={handleLogout}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign Out
+            </Button>
+          </div>
+        )}
+        <SidebarMenu className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:flex-col hidden">
           <SidebarMenuItem>
-            <SidebarMenuButton size="sm" className="text-xs text-muted-foreground">
-              <span>v1.0.0 MVP</span>
+            <SidebarMenuButton size="sm" tooltip="Sign Out" onClick={handleLogout}>
+              <LogOut />
+              <span>Sign Out</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

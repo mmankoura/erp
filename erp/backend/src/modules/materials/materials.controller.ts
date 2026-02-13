@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { MaterialsService } from './materials.service';
 import {
@@ -17,8 +18,13 @@ import {
   UpdateMaterialDto,
   BulkCreateMaterialDto,
 } from './dto';
+import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('materials')
+@UseGuards(AuthenticatedGuard, RolesGuard)
 export class MaterialsController {
   constructor(private readonly materialsService: MaterialsService) {}
 
@@ -36,16 +42,19 @@ export class MaterialsController {
   }
 
   @Post()
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async create(@Body() createMaterialDto: CreateMaterialDto) {
     return this.materialsService.create(createMaterialDto);
   }
 
   @Post('bulk')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async bulkCreate(@Body() bulkCreateDto: BulkCreateMaterialDto) {
     return this.materialsService.bulkCreate(bulkCreateDto);
   }
 
   @Patch(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateMaterialDto: UpdateMaterialDto,
@@ -54,12 +63,14 @@ export class MaterialsController {
   }
 
   @Delete(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.materialsService.remove(id);
   }
 
   @Post(':id/restore')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async restore(@Param('id', ParseUUIDPipe) id: string) {
     return this.materialsService.restore(id);
   }

@@ -286,23 +286,27 @@ export default function ProductsPage() {
     {
       key: "customer",
       header: "Customer",
+      defaultWidth: 150,
       cell: (product) => product.customer?.name || "-",
     },
     {
       key: "part_number",
       header: "Part Number",
+      defaultWidth: 150,
       cell: (product) => <span className="font-medium">{product.part_number}</span>,
     },
     {
       key: "name",
       header: "Name",
+      defaultWidth: 180,
       cell: (product) => product.name,
     },
     {
       key: "description",
       header: "Description",
+      defaultWidth: 250,
       cell: (product) => (
-        <span className="max-w-[200px] truncate block" title={product.description || ""}>
+        <span className="truncate block" title={product.description || ""}>
           {product.description || "-"}
         </span>
       ),
@@ -310,6 +314,7 @@ export default function ProductsPage() {
     {
       key: "bom",
       header: "BOM",
+      defaultWidth: 100,
       cell: (product) =>
         product.active_bom_revision_id ? (
           <Badge variant="secondary" className="gap-1">
@@ -323,6 +328,8 @@ export default function ProductsPage() {
     {
       key: "actions",
       header: "",
+      defaultWidth: 130,
+      resizable: false,
       className: "w-[130px]",
       cell: (product) => (
         <div className="flex items-center gap-1">
@@ -489,6 +496,7 @@ export default function ProductsPage() {
         selectable
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}
+        storageKey="products"
       />
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
