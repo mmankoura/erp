@@ -327,7 +327,7 @@ export function BomImportWizard({
           Import BOM
         </Button>
       </DialogTrigger>
-      <DialogContent className="w-screen h-screen max-w-none m-0 rounded-none flex flex-col">
+      <DialogContent className="!fixed !inset-0 !translate-x-0 !translate-y-0 !top-0 !left-0 !max-w-none !w-screen !h-screen !rounded-none flex flex-col">
         <DialogHeader>
           <DialogTitle>Import BOM</DialogTitle>
           <DialogDescription>
