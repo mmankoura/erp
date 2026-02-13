@@ -77,6 +77,46 @@ export interface OrderAllocationResult {
   }>;
 }
 
+// Return workflow types
+export interface IssuedMaterial {
+  allocation_id: string;
+  material_id: string;
+  material: Material;
+  issued_quantity: number;
+  expected_return_quantity: number;
+  resource_type: string | null;
+}
+
+export interface MaterialReturnInput {
+  allocation_id: string;
+  counted_quantity: number;
+  consumed_quantity: number;
+  waste_quantity?: number;
+  action: 'RETURN' | 'FLOOR_STOCK';
+}
+
+export interface MaterialReturnResult {
+  allocation_id: string;
+  material_id: string;
+  issued_quantity: number;
+  counted_quantity: number;
+  consumed_quantity: number;
+  waste_quantity: number;
+  variance: number;
+  new_status: AllocationStatus;
+  transactions: InventoryTransaction[];
+}
+
+export interface OrderReturnResult {
+  order_id: string;
+  order_number: string;
+  total_materials_returned: number;
+  total_consumed: number;
+  total_waste: number;
+  total_variance: number;
+  results: MaterialReturnResult[];
+}
+
 @Injectable()
 export class InventoryService {
   private readonly logger = new Logger(InventoryService.name);
@@ -1127,6 +1167,541 @@ export class InventoryService {
         0,
       ),
       by_order: byOrder,
+    };
+  }
+
+  // ==================== RETURN WORKFLOW OPERATIONS ====================
+
+  /**
+   * Get materials currently issued to an order (ready for return)
+   * Returns allocations with ISSUED status and their expected return quantities
+   */
+  async getIssuedMaterialsForOrder(orderId: string): Promise<IssuedMaterial[]> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: ['bom_revision'],
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID "${orderId}" not found`);
+    }
+
+    // Get all ISSUED allocations for this order
+    const issuedAllocations = await this.allocationRepository.find({
+      where: { order_id: orderId, status: AllocationStatus.ISSUED },
+      relations: ['material'],
+    });
+
+    if (issuedAllocations.length === 0) {
+      return [];
+    }
+
+    // Get BOM items to determine resource types and expected consumption
+    const bomItems = await this.bomItemRepository.find({
+      where: { bom_revision_id: order.bom_revision_id },
+      relations: ['material'],
+    });
+
+    const bomItemMap = new Map<string, BomItem>();
+    for (const item of bomItems) {
+      bomItemMap.set(item.material_id, item);
+    }
+
+    return issuedAllocations.map((allocation) => {
+      const bomItem = bomItemMap.get(allocation.material_id);
+      const issuedQty = parseFloat(String(allocation.quantity));
+
+      // Calculate expected consumption based on BOM and order quantity
+      let expectedConsumption = 0;
+      if (bomItem) {
+        const bomQty = parseFloat(String(bomItem.quantity_required));
+        const scrapFactor = parseFloat(String(bomItem.scrap_factor)) || 0;
+        expectedConsumption = order.quantity * bomQty * (1 + scrapFactor / 100);
+      }
+
+      // Expected return = issued - expected consumption
+      // But never negative (in case more was issued than needed)
+      const expectedReturn = Math.max(0, issuedQty - expectedConsumption);
+
+      return {
+        allocation_id: allocation.id,
+        material_id: allocation.material_id,
+        material: allocation.material,
+        issued_quantity: issuedQty,
+        expected_return_quantity: Math.round(expectedReturn * 10000) / 10000,
+        resource_type: bomItem?.resource_type ?? null,
+      };
+    });
+  }
+
+  /**
+   * Issue materials for an order - transition allocations from PICKED to ISSUED
+   * Called when materials leave the warehouse and go to production
+   */
+  async issueMaterialsForOrder(
+    orderId: string,
+    allocationIds?: string[],
+    createdBy?: string,
+  ): Promise<{
+    issued: number;
+    allocations: InventoryAllocation[];
+  }> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID "${orderId}" not found`);
+    }
+
+    // Find allocations to issue - either specific ones or all PICKED for this order
+    const whereCondition: any = {
+      order_id: orderId,
+      status: AllocationStatus.PICKED,
+    };
+
+    if (allocationIds && allocationIds.length > 0) {
+      whereCondition.id = In(allocationIds);
+    }
+
+    const pickedAllocations = await this.allocationRepository.find({
+      where: whereCondition,
+      relations: ['material'],
+    });
+
+    if (pickedAllocations.length === 0) {
+      return { issued: 0, allocations: [] };
+    }
+
+    const issuedAllocations: InventoryAllocation[] = [];
+
+    await this.dataSource.transaction(async (manager) => {
+      for (const allocation of pickedAllocations) {
+        allocation.status = AllocationStatus.ISSUED;
+        const saved = await manager.save(InventoryAllocation, allocation);
+        issuedAllocations.push(saved);
+      }
+    });
+
+    // Emit audit event
+    await this.auditService.emit({
+      event_type: AuditEventType.ORDER_MATERIALS_ISSUED,
+      entity_type: AuditEntityType.ORDER,
+      entity_id: orderId,
+      actor: createdBy,
+      new_value: {
+        issued_count: issuedAllocations.length,
+        allocation_ids: issuedAllocations.map(a => a.id),
+      },
+    });
+
+    return { issued: issuedAllocations.length, allocations: issuedAllocations };
+  }
+
+  /**
+   * Pick materials for an order - transition allocations from ACTIVE to PICKED
+   * Called when materials are physically pulled from warehouse shelves
+   */
+  async pickMaterialsForOrder(
+    orderId: string,
+    allocationIds?: string[],
+    createdBy?: string,
+  ): Promise<{
+    picked: number;
+    allocations: InventoryAllocation[];
+  }> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID "${orderId}" not found`);
+    }
+
+    // Find allocations to pick - either specific ones or all ACTIVE for this order
+    const whereCondition: any = {
+      order_id: orderId,
+      status: AllocationStatus.ACTIVE,
+    };
+
+    if (allocationIds && allocationIds.length > 0) {
+      whereCondition.id = In(allocationIds);
+    }
+
+    const activeAllocations = await this.allocationRepository.find({
+      where: whereCondition,
+      relations: ['material'],
+    });
+
+    if (activeAllocations.length === 0) {
+      return { picked: 0, allocations: [] };
+    }
+
+    const pickedAllocations: InventoryAllocation[] = [];
+
+    await this.dataSource.transaction(async (manager) => {
+      for (const allocation of activeAllocations) {
+        allocation.status = AllocationStatus.PICKED;
+        const saved = await manager.save(InventoryAllocation, allocation);
+        pickedAllocations.push(saved);
+      }
+    });
+
+    // Emit audit event
+    await this.auditService.emit({
+      event_type: AuditEventType.ORDER_MATERIALS_PICKED,
+      entity_type: AuditEntityType.ORDER,
+      entity_id: orderId,
+      actor: createdBy,
+      new_value: {
+        picked_count: pickedAllocations.length,
+        allocation_ids: pickedAllocations.map(a => a.id),
+      },
+    });
+
+    return { picked: pickedAllocations.length, allocations: pickedAllocations };
+  }
+
+  /**
+   * Process material returns from production
+   * Handles counting, consumption recording, waste tracking, and variance calculation
+   *
+   * For each material return:
+   * - counted_quantity: Physical count of materials remaining
+   * - consumed_quantity: Materials consumed in production
+   * - waste_quantity: Materials scrapped/damaged (optional)
+   * - action: RETURN (back to stock) or FLOOR_STOCK (stays with production)
+   */
+  async returnMaterialsFromOrder(
+    orderId: string,
+    returns: MaterialReturnInput[],
+    createdBy?: string,
+  ): Promise<OrderReturnResult> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID "${orderId}" not found`);
+    }
+
+    // Get all issued allocations for this order
+    const issuedAllocations = await this.allocationRepository.find({
+      where: { order_id: orderId, status: AllocationStatus.ISSUED },
+      relations: ['material'],
+    });
+
+    const allocationMap = new Map<string, InventoryAllocation>();
+    for (const alloc of issuedAllocations) {
+      allocationMap.set(alloc.id, alloc);
+    }
+
+    const results: MaterialReturnResult[] = [];
+    let totalConsumed = 0;
+    let totalWaste = 0;
+    let totalVariance = 0;
+
+    await this.dataSource.transaction(async (manager) => {
+      for (const returnInput of returns) {
+        const allocation = allocationMap.get(returnInput.allocation_id);
+
+        if (!allocation) {
+          throw new BadRequestException(
+            `Allocation ${returnInput.allocation_id} not found or not in ISSUED status`,
+          );
+        }
+
+        const issuedQty = parseFloat(String(allocation.quantity));
+        const countedQty = returnInput.counted_quantity;
+        const consumedQty = returnInput.consumed_quantity;
+        const wasteQty = returnInput.waste_quantity ?? 0;
+
+        // Validate quantities
+        if (countedQty < 0 || consumedQty < 0 || wasteQty < 0) {
+          throw new BadRequestException('Quantities cannot be negative');
+        }
+
+        // Calculate return quantity and variance
+        // Return = what's counted minus what was consumed and wasted
+        const returnQty = Math.max(0, countedQty - consumedQty - wasteQty);
+
+        // Variance = issued - (counted + consumed that are NOT in counted)
+        // If counted includes unconsumed materials: variance = issued - (consumed + counted)
+        // More simply: variance = issued - consumed - returnQty - wasteQty
+        const variance = issuedQty - consumedQty - returnQty - wasteQty;
+
+        const transactions: InventoryTransaction[] = [];
+
+        // 1. Create consumption transaction (reduces inventory)
+        if (consumedQty > 0) {
+          const consumptionTx = manager.create(InventoryTransaction, {
+            material_id: allocation.material_id,
+            transaction_type: TransactionType.CONSUMPTION,
+            quantity: -Math.abs(consumedQty),
+            reference_type: ReferenceType.WORK_ORDER,
+            reference_id: orderId,
+            reason: `Production consumption for order ${order.order_number}`,
+            created_by: createdBy ?? null,
+            owner_type: allocation.owner_type,
+            owner_id: allocation.owner_id,
+          });
+          const savedConsumption = await manager.save(InventoryTransaction, consumptionTx);
+          transactions.push(savedConsumption);
+        }
+
+        // 2. Create scrap transaction for waste
+        if (wasteQty > 0) {
+          const scrapTx = manager.create(InventoryTransaction, {
+            material_id: allocation.material_id,
+            transaction_type: TransactionType.SCRAP,
+            quantity: -Math.abs(wasteQty),
+            reference_type: ReferenceType.WORK_ORDER,
+            reference_id: orderId,
+            reason: `Production waste/scrap for order ${order.order_number}`,
+            created_by: createdBy ?? null,
+            owner_type: allocation.owner_type,
+            owner_id: allocation.owner_id,
+          });
+          const savedScrap = await manager.save(InventoryTransaction, scrapTx);
+          transactions.push(savedScrap);
+        }
+
+        // 3. Handle variance (missing or extra materials)
+        if (variance !== 0) {
+          const varianceTx = manager.create(InventoryTransaction, {
+            material_id: allocation.material_id,
+            transaction_type: TransactionType.ADJUSTMENT,
+            quantity: -variance, // Negative variance = missing, positive = surplus
+            reference_type: ReferenceType.WORK_ORDER,
+            reference_id: orderId,
+            reason: `Inventory variance from order ${order.order_number} return (${variance > 0 ? 'shortage' : 'overage'})`,
+            created_by: createdBy ?? null,
+            owner_type: allocation.owner_type,
+            owner_id: allocation.owner_id,
+          });
+          const savedVariance = await manager.save(InventoryTransaction, varianceTx);
+          transactions.push(savedVariance);
+        }
+
+        // 4. Update allocation status
+        const newStatus = returnInput.action === 'FLOOR_STOCK'
+          ? AllocationStatus.FLOOR_STOCK
+          : AllocationStatus.RETURNED;
+
+        allocation.status = newStatus;
+        await manager.save(InventoryAllocation, allocation);
+
+        // 5. If returning to stock (not floor stock), materials are already "back"
+        // No additional transaction needed - we only consumed/scrapped what was used
+
+        results.push({
+          allocation_id: allocation.id,
+          material_id: allocation.material_id,
+          issued_quantity: issuedQty,
+          counted_quantity: countedQty,
+          consumed_quantity: consumedQty,
+          waste_quantity: wasteQty,
+          variance,
+          new_status: newStatus,
+          transactions,
+        });
+
+        totalConsumed += consumedQty;
+        totalWaste += wasteQty;
+        totalVariance += Math.abs(variance);
+      }
+    });
+
+    // Emit audit event
+    await this.auditService.emit({
+      event_type: AuditEventType.ORDER_MATERIALS_RETURNED,
+      entity_type: AuditEntityType.ORDER,
+      entity_id: orderId,
+      actor: createdBy,
+      new_value: {
+        total_materials_returned: results.length,
+        total_consumed: totalConsumed,
+        total_waste: totalWaste,
+        total_variance: totalVariance,
+      },
+    });
+
+    return {
+      order_id: orderId,
+      order_number: order.order_number,
+      total_materials_returned: results.length,
+      total_consumed: totalConsumed,
+      total_waste: totalWaste,
+      total_variance: totalVariance,
+      results,
+    };
+  }
+
+  /**
+   * Auto-consume TH parts that exactly match required quantity
+   * TH parts are typically exact-count (e.g., connectors, ICs in tubes)
+   * When issued qty = required qty, auto-mark as consumed without return step
+   */
+  async autoConsumeTHParts(
+    orderId: string,
+    createdBy?: string,
+  ): Promise<{
+    auto_consumed: number;
+    allocations: InventoryAllocation[];
+  }> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: ['bom_revision'],
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID "${orderId}" not found`);
+    }
+
+    // Get ISSUED allocations for this order
+    const issuedAllocations = await this.allocationRepository.find({
+      where: { order_id: orderId, status: AllocationStatus.ISSUED },
+      relations: ['material'],
+    });
+
+    // Get BOM items to check resource types
+    const bomItems = await this.bomItemRepository.find({
+      where: { bom_revision_id: order.bom_revision_id },
+    });
+
+    const bomItemMap = new Map<string, BomItem>();
+    for (const item of bomItems) {
+      bomItemMap.set(item.material_id, item);
+    }
+
+    const autoConsumedAllocations: InventoryAllocation[] = [];
+
+    await this.dataSource.transaction(async (manager) => {
+      for (const allocation of issuedAllocations) {
+        const bomItem = bomItemMap.get(allocation.material_id);
+
+        // Only auto-consume TH parts
+        if (bomItem?.resource_type !== 'TH') {
+          continue;
+        }
+
+        const issuedQty = parseFloat(String(allocation.quantity));
+        const bomQty = parseFloat(String(bomItem.quantity_required));
+        const scrapFactor = parseFloat(String(bomItem.scrap_factor)) || 0;
+        const requiredQty = order.quantity * bomQty * (1 + scrapFactor / 100);
+
+        // Only auto-consume if issued = required (exact match)
+        const tolerance = 0.0001;
+        if (Math.abs(issuedQty - requiredQty) > tolerance) {
+          continue;
+        }
+
+        // Create consumption transaction
+        const consumptionTx = manager.create(InventoryTransaction, {
+          material_id: allocation.material_id,
+          transaction_type: TransactionType.CONSUMPTION,
+          quantity: -Math.abs(issuedQty),
+          reference_type: ReferenceType.WORK_ORDER,
+          reference_id: orderId,
+          reason: `Auto-consumed TH part for order ${order.order_number}`,
+          created_by: createdBy ?? null,
+          owner_type: allocation.owner_type,
+          owner_id: allocation.owner_id,
+        });
+        await manager.save(InventoryTransaction, consumptionTx);
+
+        // Mark allocation as consumed
+        allocation.status = AllocationStatus.CONSUMED;
+        const saved = await manager.save(InventoryAllocation, allocation);
+        autoConsumedAllocations.push(saved);
+      }
+    });
+
+    if (autoConsumedAllocations.length > 0) {
+      await this.auditService.emit({
+        event_type: AuditEventType.ORDER_TH_AUTO_CONSUMED,
+        entity_type: AuditEntityType.ORDER,
+        entity_id: orderId,
+        actor: createdBy,
+        new_value: {
+          auto_consumed_count: autoConsumedAllocations.length,
+          allocation_ids: autoConsumedAllocations.map(a => a.id),
+        },
+      });
+    }
+
+    return { auto_consumed: autoConsumedAllocations.length, allocations: autoConsumedAllocations };
+  }
+
+  /**
+   * Get floor stock allocations (materials left at production for future use)
+   */
+  async getFloorStockAllocations(): Promise<InventoryAllocation[]> {
+    return this.allocationRepository.find({
+      where: { status: AllocationStatus.FLOOR_STOCK },
+      relations: ['material', 'order'],
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  /**
+   * Convert floor stock back to available inventory
+   * Used when floor stock materials are returned to warehouse
+   */
+  async returnFloorStock(
+    allocationId: string,
+    countedQuantity: number,
+    createdBy?: string,
+  ): Promise<{
+    allocation: InventoryAllocation;
+    variance: number;
+    transaction?: InventoryTransaction;
+  }> {
+    const allocation = await this.allocationRepository.findOne({
+      where: { id: allocationId },
+      relations: ['material', 'order'],
+    });
+
+    if (!allocation) {
+      throw new NotFoundException(`Allocation with ID "${allocationId}" not found`);
+    }
+
+    if (allocation.status !== AllocationStatus.FLOOR_STOCK) {
+      throw new BadRequestException(
+        `Allocation is not in FLOOR_STOCK status (current: ${allocation.status})`,
+      );
+    }
+
+    const expectedQty = parseFloat(String(allocation.quantity));
+    const variance = expectedQty - countedQuantity;
+    let varianceTransaction: InventoryTransaction | undefined;
+
+    await this.dataSource.transaction(async (manager) => {
+      // Record variance if any
+      if (variance !== 0) {
+        const varianceTx = manager.create(InventoryTransaction, {
+          material_id: allocation.material_id,
+          transaction_type: TransactionType.ADJUSTMENT,
+          quantity: -variance, // Negative variance = shortage
+          reference_type: ReferenceType.WORK_ORDER,
+          reference_id: allocation.order_id,
+          reason: `Floor stock variance on return (expected: ${expectedQty}, counted: ${countedQuantity})`,
+          created_by: createdBy ?? null,
+          owner_type: allocation.owner_type,
+          owner_id: allocation.owner_id,
+        });
+        varianceTransaction = await manager.save(InventoryTransaction, varianceTx);
+      }
+
+      // Mark allocation as returned
+      allocation.status = AllocationStatus.RETURNED;
+      await manager.save(InventoryAllocation, allocation);
+    });
+
+    return {
+      allocation,
+      variance,
+      transaction: varianceTransaction,
     };
   }
 }

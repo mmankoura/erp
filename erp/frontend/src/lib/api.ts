@@ -332,6 +332,8 @@ export interface InventoryTransaction {
   owner_id: string | null
 }
 
+export type AllocationStatus = "ACTIVE" | "PICKED" | "ISSUED" | "FLOOR_STOCK" | "CONSUMED" | "RETURNED" | "CANCELLED"
+
 export interface InventoryAllocation {
   id: string
   material_id: string
@@ -339,7 +341,7 @@ export interface InventoryAllocation {
   order_id: string
   order?: Order
   quantity: number
-  status: "ACTIVE" | "CONSUMED" | "CANCELLED"
+  status: AllocationStatus
   reason: string | null
   created_by: string | null
   created_at: string
@@ -347,6 +349,62 @@ export interface InventoryAllocation {
   // Ownership dimension
   owner_type: OwnerType
   owner_id: string | null
+}
+
+// Return Workflow types
+export interface IssuedMaterial {
+  allocation_id: string
+  material_id: string
+  material: Material
+  issued_quantity: number
+  expected_return_quantity: number
+  resource_type: string | null
+}
+
+export interface MaterialReturnInput {
+  allocation_id: string
+  counted_quantity: number
+  consumed_quantity: number
+  waste_quantity?: number
+  action: "RETURN" | "FLOOR_STOCK"
+}
+
+export interface MaterialReturnResult {
+  allocation_id: string
+  material_id: string
+  issued_quantity: number
+  counted_quantity: number
+  consumed_quantity: number
+  waste_quantity: number
+  variance: number
+  new_status: AllocationStatus
+  transactions: InventoryTransaction[]
+}
+
+export interface OrderReturnResult {
+  order_id: string
+  order_number: string
+  total_materials_returned: number
+  total_consumed: number
+  total_waste: number
+  total_variance: number
+  results: MaterialReturnResult[]
+}
+
+export interface PickMaterialsResult {
+  picked: number
+  allocations: InventoryAllocation[]
+}
+
+export interface IssueMaterialsResult {
+  issued: number
+  allocations: InventoryAllocation[]
+}
+
+export interface FloorStockReturnResult {
+  allocation: InventoryAllocation
+  variance: number
+  transaction?: InventoryTransaction
 }
 
 export interface MrpShortage {

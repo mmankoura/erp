@@ -20,6 +20,10 @@ import {
   InventoryImportPreviewDto,
   InventoryImportParseDto,
   InventoryImportCommitDto,
+  PickMaterialsDto,
+  IssueMaterialsDto,
+  ReturnMaterialsDto,
+  ReturnFloorStockDto,
 } from './dto';
 import { OwnerType } from '../../entities/inventory-transaction.entity';
 
@@ -340,5 +344,109 @@ export class InventoryController {
   ) {
     const includeInactiveValue = includeInactive === 'true';
     return this.inventoryService.getAllocationsByOrder(orderId, includeInactiveValue);
+  }
+
+  // ==================== RETURN WORKFLOW ENDPOINTS ====================
+
+  /**
+   * GET /inventory/floor-stock
+   * Get all floor stock allocations (materials left at production for future use)
+   */
+  @Get('floor-stock')
+  async getFloorStock() {
+    return this.inventoryService.getFloorStockAllocations();
+  }
+
+  /**
+   * GET /inventory/order/:orderId/issued
+   * Get materials currently issued to an order (ready for return)
+   * Returns allocations with ISSUED status and expected return quantities
+   */
+  @Get('order/:orderId/issued')
+  async getIssuedMaterials(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+  ) {
+    return this.inventoryService.getIssuedMaterialsForOrder(orderId);
+  }
+
+  /**
+   * POST /inventory/order/:orderId/pick
+   * Pick materials for an order - transition allocations from ACTIVE to PICKED
+   * Called when materials are physically pulled from warehouse shelves
+   */
+  @Post('order/:orderId/pick')
+  async pickMaterials(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: PickMaterialsDto,
+  ) {
+    return this.inventoryService.pickMaterialsForOrder(
+      orderId,
+      dto.allocation_ids,
+      dto.created_by,
+    );
+  }
+
+  /**
+   * POST /inventory/order/:orderId/issue
+   * Issue materials for an order - transition allocations from PICKED to ISSUED
+   * Called when materials leave the warehouse and go to production
+   */
+  @Post('order/:orderId/issue')
+  async issueMaterials(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: IssueMaterialsDto,
+  ) {
+    return this.inventoryService.issueMaterialsForOrder(
+      orderId,
+      dto.allocation_ids,
+      dto.created_by,
+    );
+  }
+
+  /**
+   * POST /inventory/order/:orderId/return
+   * Process material returns from production
+   * Handles counting, consumption recording, waste tracking, and variance calculation
+   */
+  @Post('order/:orderId/return')
+  async returnMaterials(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: ReturnMaterialsDto,
+  ) {
+    return this.inventoryService.returnMaterialsFromOrder(
+      orderId,
+      dto.returns,
+      dto.created_by,
+    );
+  }
+
+  /**
+   * POST /inventory/order/:orderId/auto-consume-th
+   * Auto-consume TH parts that exactly match required quantity
+   * TH parts are typically exact-count and can be auto-consumed when issued=required
+   */
+  @Post('order/:orderId/auto-consume-th')
+  async autoConsumeTHParts(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() body: { created_by?: string },
+  ) {
+    return this.inventoryService.autoConsumeTHParts(orderId, body.created_by);
+  }
+
+  /**
+   * POST /inventory/floor-stock/:allocationId/return
+   * Convert floor stock back to available inventory
+   * Used when floor stock materials are returned to warehouse
+   */
+  @Post('floor-stock/:allocationId/return')
+  async returnFloorStock(
+    @Param('allocationId', ParseUUIDPipe) allocationId: string,
+    @Body() dto: ReturnFloorStockDto,
+  ) {
+    return this.inventoryService.returnFloorStock(
+      allocationId,
+      dto.counted_quantity,
+      dto.created_by,
+    );
   }
 }

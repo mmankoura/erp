@@ -46,6 +46,7 @@ import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useRouter, useParams } from "next/navigation"
+import { MaterialReturnWorkflow } from "@/components/orders/material-return-workflow"
 
 const orderStatusColors: Record<string, string> = {
   ENTERED: "bg-yellow-100 text-yellow-800 border-yellow-200",
@@ -556,6 +557,11 @@ export default function OrderDetailPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Material Return Workflow - show for orders in production stages */}
+      {order && ["KITTING", "SMT", "TH"].includes(order.status) && order.bom_revision_id && (
+        <MaterialReturnWorkflow order={order} onUpdate={() => refetch()} />
       )}
     </div>
   )
