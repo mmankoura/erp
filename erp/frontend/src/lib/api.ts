@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"
+// Use relative URL - goes through Next.js proxy to backend
+const API_BASE_URL = "/api"
 
 export class ApiError extends Error {
   constructor(

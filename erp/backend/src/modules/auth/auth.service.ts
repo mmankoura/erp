@@ -80,16 +80,22 @@ export class AuthService {
    * Create a new user (admin only).
    */
   async createUser(dto: CreateUserDto, createdBy: User): Promise<User> {
-    // Check for existing username or email
-    const existing = await this.userRepository.findOne({
-      where: [{ username: dto.username }, { email: dto.email }],
+    // Check for existing username
+    const existingUsername = await this.userRepository.findOne({
+      where: { username: dto.username },
     });
+    if (existingUsername) {
+      throw new ConflictException('Username already exists');
+    }
 
-    if (existing) {
-      if (existing.username === dto.username) {
-        throw new ConflictException('Username already exists');
+    // Check for existing email (only if email provided)
+    if (dto.email) {
+      const existingEmail = await this.userRepository.findOne({
+        where: { email: dto.email },
+      });
+      if (existingEmail) {
+        throw new ConflictException('Email already exists');
       }
-      throw new ConflictException('Email already exists');
     }
 
     // Hash password
@@ -97,7 +103,7 @@ export class AuthService {
 
     // Create user
     const user = this.userRepository.create({
-      email: dto.email,
+      email: dto.email || null,
       username: dto.username,
       password_hash,
       full_name: dto.full_name,

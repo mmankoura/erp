@@ -37,7 +37,7 @@ import { Plus, Pencil, UserCog } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface CreateUserDto {
-  email: string
+  email?: string
   username: string
   password: string
   full_name: string
@@ -120,14 +120,17 @@ export default function UsersPage() {
 
   // Create user
   const handleCreate = async () => {
-    if (!createForm.email || !createForm.username || !createForm.password || !createForm.full_name) {
+    if (!createForm.username || !createForm.password || !createForm.full_name) {
       toast.error("Please fill in all required fields")
       return
     }
 
     setIsSubmitting(true)
     try {
-      const newUser = await api.post<User>("/auth/users", createForm)
+      // Only include email if provided
+      const { email, ...rest } = createForm
+      const payload = email ? { ...rest, email } : rest
+      const newUser = await api.post<User>("/auth/users", payload)
       setUsers([newUser, ...users])
       setIsCreateDialogOpen(false)
       setCreateForm({
@@ -227,7 +230,7 @@ export default function UsersPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email *</Label>
+                <Label htmlFor="email">Email (optional)</Label>
                 <Input
                   id="email"
                   type="email"

@@ -43,9 +43,9 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Index({ unique: true })
-  @Column({ type: 'varchar', length: 255 })
-  email: string;
+  @Index({ unique: true, where: '"email" IS NOT NULL' })
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  email: string | null;
 
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 100 })

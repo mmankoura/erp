@@ -36,7 +36,7 @@ async function bootstrap() {
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
         httpOnly: true,
         secure: config.NODE_ENV === 'production',
-        sameSite: config.NODE_ENV === 'production' ? 'strict' : 'lax',
+        sameSite: 'lax',
       },
     }),
   );

@@ -12,8 +12,8 @@ import { UserRole } from '../../../entities/user.entity';
 
 export class CreateUserDto {
   @IsEmail()
-  @IsNotEmpty()
-  email: string;
+  @IsOptional()
+  email?: string;
 
   @IsString()
   @IsNotEmpty()
