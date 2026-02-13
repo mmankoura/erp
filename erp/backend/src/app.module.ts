@@ -14,6 +14,7 @@ import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
 import { AmlModule } from './modules/aml/aml.module';
 import { ReceivingInspectionModule } from './modules/receiving-inspection/receiving-inspection.module';
+import { CycleCountModule } from './modules/cycle-count/cycle-count.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ReceivingInspectionModule } from './modules/receiving-inspection/receiv
     ReceivingInspectionModule, // Receiving inspection workflow
     PurchaseOrdersModule,
     MrpModule,
+    CycleCountModule, // Cycle counting / physical inventory
   ],
 })
 export class AppModule {}

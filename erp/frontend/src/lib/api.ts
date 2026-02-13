@@ -853,3 +853,90 @@ export interface InventoryImportCommitResult {
   created_materials: string[]
   lot_ids: string[]
 }
+
+// Cycle Count types
+export type CycleCountStatus = "PLANNED" | "IN_PROGRESS" | "PENDING_REVIEW" | "APPROVED" | "CANCELLED"
+export type CycleCountType = "FULL" | "PARTIAL" | "ABC" | "LOCATION"
+export type CycleCountItemStatus = "PENDING" | "COUNTED" | "RECOUNTED" | "APPROVED" | "ADJUSTED" | "SKIPPED"
+
+export interface CycleCountItem {
+  id: string
+  cycle_count_id: string
+  material_id: string
+  material?: Material
+  lot_id: string | null
+  lot?: InventoryLot
+  status: CycleCountItemStatus
+  system_quantity: number
+  counted_quantity: number | null
+  variance: number | null
+  variance_percent: number | null
+  variance_value: number | null
+  unit_cost: number | null
+  recount_number: number
+  previous_counted_quantity: number | null
+  counted_by: string | null
+  counted_at: string | null
+  approved_by: string | null
+  approved_at: string | null
+  adjustment_transaction_id: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CycleCount {
+  id: string
+  count_number: string
+  status: CycleCountStatus
+  count_type: CycleCountType
+  scheduled_date: string
+  started_at: string | null
+  completed_at: string | null
+  approved_at: string | null
+  created_by: string | null
+  counted_by: string | null
+  approved_by: string | null
+  notes: string | null
+  total_items: number
+  items_counted: number
+  items_with_variance: number
+  total_variance_value: number
+  items?: CycleCountItem[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CycleCountVarianceReport {
+  cycle_count: {
+    id: string
+    count_number: string
+    status: CycleCountStatus
+    count_type: CycleCountType
+    scheduled_date: string
+    total_items: number
+    items_counted: number
+    items_with_variance: number
+    total_variance_value: number
+  }
+  items: Array<{
+    material_id: string
+    internal_part_number: string
+    description: string | null
+    lot_uid: string | null
+    system_quantity: number
+    counted_quantity: number | null
+    variance: number | null
+    variance_percent: number | null
+    variance_value: number | null
+    status: CycleCountItemStatus
+  }>
+  totals: {
+    total_items: number
+    items_with_positive_variance: number
+    items_with_negative_variance: number
+    total_positive_variance_value: number
+    total_negative_variance_value: number
+    net_variance_value: number
+  }
+}
