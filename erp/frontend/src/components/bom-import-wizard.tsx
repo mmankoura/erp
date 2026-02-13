@@ -340,26 +340,38 @@ export function BomImportWizard({
 
         {/* Progress indicator */}
         <div className="flex items-center justify-between mb-6">
-          {(["upload", "mapping", "preview", "commit"] as WizardStep[]).map((s, i) => (
-            <div key={s} className="flex items-center">
-              <div
-                className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${
-                  step === s
-                    ? "bg-primary text-primary-foreground"
-                    : (["upload", "mapping", "preview", "commit"].indexOf(step) > i)
-                    ? "bg-primary/20 text-primary"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {(["upload", "mapping", "preview", "commit"].indexOf(step) > i) ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  i + 1
-                )}
+          {([
+            { key: "upload", label: "Upload" },
+            { key: "mapping", label: "Map Columns" },
+            { key: "preview", label: "Preview" },
+            { key: "commit", label: "Create Revision" },
+          ] as { key: WizardStep; label: string }[]).map((s, i) => (
+            <div key={s.key} className="flex items-center">
+              <div className="flex flex-col items-center">
+                <div
+                  className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${
+                    step === s.key
+                      ? "bg-primary text-primary-foreground"
+                      : (["upload", "mapping", "preview", "commit"].indexOf(step) > i)
+                      ? "bg-primary/20 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {(["upload", "mapping", "preview", "commit"].indexOf(step) > i) ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    i + 1
+                  )}
+                </div>
+                <span className={`text-xs mt-1 ${
+                  step === s.key ? "text-primary font-medium" : "text-muted-foreground"
+                }`}>
+                  {s.label}
+                </span>
               </div>
               {i < 3 && (
                 <div
-                  className={`w-12 h-1 mx-2 ${
+                  className={`w-16 h-1 mx-2 mt-[-12px] ${
                     (["upload", "mapping", "preview", "commit"].indexOf(step) > i)
                       ? "bg-primary/20"
                       : "bg-muted"
@@ -456,9 +468,22 @@ export function BomImportWizard({
               <Card>
                 <CardHeader className="py-3">
                   <CardTitle className="text-sm">Column Mapping</CardTitle>
-                  <CardDescription>Map each column to a BOM field</CardDescription>
+                  <CardDescription>
+                    Map each column from your file to the corresponding BOM field.
+                    Fields marked with * are required.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="py-2">
+                  {/* Header row */}
+                  <div className="flex items-center gap-4 mb-3 pb-2 border-b">
+                    <div className="w-1/3 text-xs font-semibold text-muted-foreground uppercase">
+                      Source Column (from file)
+                    </div>
+                    <div className="w-4" />
+                    <div className="w-[200px] text-xs font-semibold text-muted-foreground uppercase">
+                      Target Field (BOM)
+                    </div>
+                  </div>
                   <div className="grid gap-2">
                     {columnMappings.map((mapping, index) => (
                       <div key={index} className="flex items-center gap-4">
