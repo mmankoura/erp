@@ -103,6 +103,11 @@ export enum AuditEventType {
   CYCLE_COUNT_APPROVED = 'CYCLE_COUNT_APPROVED',
   CYCLE_COUNT_CANCELLED = 'CYCLE_COUNT_CANCELLED',
   CYCLE_COUNT_ADJUSTMENT = 'CYCLE_COUNT_ADJUSTMENT',
+
+  // Production / WIP events
+  PRODUCTION_STARTED = 'PRODUCTION_STARTED',
+  PRODUCTION_STAGE_MOVED = 'PRODUCTION_STAGE_MOVED',
+  PRODUCTION_COMPLETED = 'PRODUCTION_COMPLETED',
 }
 
 /**
@@ -123,6 +128,7 @@ export enum AuditEntityType {
   RECEIVING_INSPECTION = 'receiving_inspection',
   CYCLE_COUNT = 'cycle_count',
   CYCLE_COUNT_ITEM = 'cycle_count_item',
+  PRODUCTION_LOG = 'production_log',
 }
 
 /**

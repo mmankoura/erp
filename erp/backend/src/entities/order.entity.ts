@@ -79,6 +79,32 @@ export class Order {
   @Column({ type: 'integer', default: 0 })
   quantity_shipped: number;
 
+  // ============ WIP Tracking ============
+
+  @Column({ type: 'integer', default: 0 })
+  quantity_in_kitting: number;
+
+  @Column({ type: 'integer', default: 0 })
+  quantity_in_smt: number;
+
+  @Column({ type: 'integer', default: 0 })
+  quantity_in_th: number;
+
+  @Column({ type: 'integer', default: 0 })
+  quantity_completed: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  kitting_started_at: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  smt_started_at: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  th_started_at: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  production_completed_at: Date | null;
+
   @Column({ type: 'date' })
   due_date: Date;
 
@@ -130,8 +156,19 @@ export class Order {
   @DeleteDateColumn()
   deleted_at: Date | null;
 
-  // Computed property for balance
+  // Computed property for balance (remaining to ship)
   get balance(): number {
     return this.quantity - this.quantity_shipped;
+  }
+
+  // Computed property for units not yet started
+  get quantity_not_started(): number {
+    return this.quantity - this.quantity_in_kitting - this.quantity_in_smt -
+           this.quantity_in_th - this.quantity_completed - this.quantity_shipped;
+  }
+
+  // Computed property for total in production (WIP)
+  get quantity_in_production(): number {
+    return this.quantity_in_kitting + this.quantity_in_smt + this.quantity_in_th;
   }
 }

@@ -17,6 +17,8 @@ import {
   History,
   Settings,
   Layers,
+  Factory,
+  ClipboardPen,
 } from "lucide-react"
 
 import {
@@ -75,6 +77,11 @@ const navigation = {
       icon: FileText,
     },
     {
+      title: "Production",
+      url: "/production",
+      icon: Factory,
+    },
+    {
       title: "Purchase Orders",
       url: "/purchase-orders",
       icon: ClipboardList,
@@ -95,6 +102,11 @@ const navigation = {
       title: "Receiving",
       url: "/receiving",
       icon: ClipboardCheck,
+    },
+    {
+      title: "Cycle Counts",
+      url: "/cycle-counts",
+      icon: ClipboardPen,
     },
     {
       title: "AML",

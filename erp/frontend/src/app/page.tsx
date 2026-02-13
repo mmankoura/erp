@@ -173,7 +173,7 @@ function ShortagesCard({ shortages, isLoading }: { shortages: MrpShortage[] | nu
                   {shortage.material.internal_part_number}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Need: {shortage.required_quantity} • Have: {shortage.available_quantity} •{" "}
+                  Need: {shortage.total_required} • Have: {shortage.quantity_available} •{" "}
                   <span className="text-destructive font-medium">
                     Short: {shortage.shortage}
                   </span>

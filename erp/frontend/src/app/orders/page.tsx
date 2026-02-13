@@ -105,27 +105,31 @@ export default function OrdersPage() {
   const { data: orders, isLoading, refetch } = useApi<Order[]>("/orders")
   const { data: shortages } = useApi<MrpShortage[]>("/mrp/shortages")
 
-  const deleteMutation = useMutation<void, string>({
-    mutationFn: (id) => api.delete(`/orders/${id}`),
-    onSuccess: () => {
-      toast.success("Order deleted successfully")
-      refetch()
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to delete order")
-    },
-  })
+  const deleteMutation = useMutation<void, string>(
+    (id) => api.delete(`/orders/${id}`),
+    {
+      onSuccess: () => {
+        toast.success("Order deleted successfully")
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to delete order")
+      },
+    }
+  )
 
-  const bulkDeleteMutation = useMutation<{ deleted: number }, string[]>({
-    mutationFn: (ids) => api.post("/orders/bulk-delete", { ids }),
-    onSuccess: (data) => {
-      toast.success(`${data.deleted} order(s) deleted successfully`)
-      refetch()
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to delete orders")
-    },
-  })
+  const bulkDeleteMutation = useMutation<{ deleted: number }, string[]>(
+    (ids) => api.post("/orders/bulk-delete", { ids }),
+    {
+      onSuccess: (data) => {
+        toast.success(`${data.deleted} order(s) deleted successfully`)
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to delete orders")
+      },
+    }
+  )
 
   const handleDelete = (id: string, orderNumber: string) => {
     if (confirm(`Are you sure you want to delete order ${orderNumber}?`)) {

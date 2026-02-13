@@ -222,6 +222,15 @@ export interface Order {
   notes: string | null
   quoted_price: number | null
   currency: string
+  // WIP tracking fields
+  quantity_in_kitting: number
+  quantity_in_smt: number
+  quantity_in_th: number
+  quantity_completed: number
+  kitting_started_at: string | null
+  smt_started_at: string | null
+  th_started_at: string | null
+  production_completed_at: string | null
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -939,4 +948,57 @@ export interface CycleCountVarianceReport {
     total_negative_variance_value: number
     net_variance_value: number
   }
+}
+
+// Production / WIP Tracking types
+export type ProductionStage = "NOT_STARTED" | "KITTING" | "SMT" | "TH" | "COMPLETED" | "SHIPPED"
+
+export interface ProductionLog {
+  id: string
+  order_id: string
+  from_stage: string | null
+  to_stage: string
+  quantity: number
+  notes: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface WipSummary {
+  id: string // alias for order_id (for DataTable compatibility)
+  order_id: string
+  order_number: string
+  customer_name: string
+  product_name: string
+  total_quantity: number
+  quantity_not_started: number
+  quantity_in_kitting: number
+  quantity_in_smt: number
+  quantity_in_th: number
+  quantity_completed: number
+  quantity_shipped: number
+  due_date: string
+  status: OrderStatus
+}
+
+export interface StageSummary {
+  stage: ProductionStage
+  order_count: number
+  total_units: number
+  orders: Array<{
+    order_id: string
+    order_number: string
+    quantity: number
+    due_date: string
+  }>
+}
+
+export interface OrderWipDetails {
+  order: Order
+  stages: Array<{
+    stage: ProductionStage
+    quantity: number
+    started_at: string | null
+  }>
+  logs: ProductionLog[]
 }
