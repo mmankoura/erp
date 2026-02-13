@@ -15,6 +15,7 @@ export interface ColumnMapping {
 
 export type BomImportField =
   | 'internal_part_number'
+  | 'description'
   | 'alternate_ipn'
   | 'manufacturer'
   | 'manufacturer_pn'

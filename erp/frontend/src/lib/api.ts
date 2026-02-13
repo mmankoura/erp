@@ -722,6 +722,7 @@ export interface BomDiff {
 // BOM Import types
 export type BomImportField =
   | "internal_part_number"
+  | "description"
   | "alternate_ipn"
   | "manufacturer"
   | "manufacturer_pn"
@@ -760,6 +761,7 @@ export interface BomImportPreviewResult {
 
 export interface BomImportItemDto {
   internal_part_number: string
+  description?: string
   alternate_ipn?: string
   manufacturer?: string
   manufacturer_pn?: string

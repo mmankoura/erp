@@ -13,6 +13,7 @@ import { Type } from 'class-transformer';
 
 const BOM_IMPORT_FIELDS = [
   'internal_part_number',
+  'description',
   'alternate_ipn',
   'manufacturer',
   'manufacturer_pn',

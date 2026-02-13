@@ -208,7 +208,7 @@ export class BomImportService {
           internal_part_number: item.internal_part_number,
           manufacturer: item.manufacturer,
           manufacturer_pn: item.manufacturer_pn,
-          description: item.notes, // Use notes as description if available
+          description: item.description || item.notes, // Use description, fallback to notes
         });
         material = await this.materialRepository.save(material);
         createdMaterials.push(item.internal_part_number);
@@ -365,6 +365,7 @@ export class BomImportService {
 
     return {
       internal_part_number: ipn,
+      description: getValue('description'),
       alternate_ipn: getValue('alternate_ipn'),
       manufacturer: getValue('manufacturer'),
       manufacturer_pn: getValue('manufacturer_pn'),

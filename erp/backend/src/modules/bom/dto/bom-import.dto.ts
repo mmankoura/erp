@@ -78,6 +78,10 @@ export class BomImportItemDto {
 
   @IsString()
   @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
   alternate_ipn?: string;
 
   @IsString()

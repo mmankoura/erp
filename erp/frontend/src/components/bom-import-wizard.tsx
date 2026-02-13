@@ -62,6 +62,7 @@ import { toast } from "sonner"
 
 const BOM_FIELDS: { value: BomImportField; label: string }[] = [
   { value: "internal_part_number", label: "Internal Part Number *" },
+  { value: "description", label: "Description" },
   { value: "alternate_ipn", label: "Alternate IPN" },
   { value: "manufacturer", label: "Manufacturer" },
   { value: "manufacturer_pn", label: "Manufacturer P/N" },
@@ -189,6 +190,8 @@ export function BomImportWizard({
         // Try to auto-detect field mappings
         if (lowerHeader.includes("ipn") || lowerHeader.includes("internal") || lowerHeader.includes("part number")) {
           targetField = "internal_part_number"
+        } else if (lowerHeader === "description" || lowerHeader.includes("desc")) {
+          targetField = "description"
         } else if (lowerHeader.includes("alternate")) {
           targetField = "alternate_ipn"
         } else if (lowerHeader === "manufacturer" || lowerHeader === "mfr") {
@@ -479,12 +482,12 @@ export function BomImportWizard({
                     <div className="w-1/3 text-xs font-semibold text-muted-foreground uppercase">
                       Source Column (from file)
                     </div>
-                    <div className="w-4" />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0" />
                     <div className="w-[200px] text-xs font-semibold text-muted-foreground uppercase">
                       Target Field (BOM)
                     </div>
                   </div>
-                  <div className="grid gap-2">
+                  <div className="grid gap-2 max-h-[400px] overflow-y-auto">
                     {columnMappings.map((mapping, index) => (
                       <div key={index} className="flex items-center gap-4">
                         <div className="w-1/3 text-sm font-medium truncate" title={mapping.source_column}>
