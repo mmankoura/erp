@@ -327,7 +327,7 @@ export function BomImportWizard({
           Import BOM
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-screen h-screen max-w-none m-0 rounded-none flex flex-col">
         <DialogHeader>
           <DialogTitle>Import BOM</DialogTitle>
           <DialogDescription>
@@ -371,7 +371,7 @@ export function BomImportWizard({
         </div>
 
         {/* Step Content */}
-        <div className="space-y-4">
+        <div className="space-y-4 flex-1 overflow-y-auto">
           {step === "upload" && (
             <div className="space-y-4">
               <div className="border-2 border-dashed rounded-lg p-8 text-center">
@@ -725,7 +725,7 @@ export function BomImportWizard({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="border-t pt-4 mt-4">
           {step !== "upload" && (
             <Button
               type="button"
