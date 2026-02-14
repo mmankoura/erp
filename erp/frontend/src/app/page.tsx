@@ -13,7 +13,7 @@ import {
   TrendingDown,
   Activity,
 } from "lucide-react"
-import type { Order, HealthStatus, MrpShortage } from "@/lib/api"
+import type { Order, HealthStatus, MrpShortage, MrpShortagesResponse } from "@/lib/api"
 import Link from "next/link"
 
 interface DashboardStats {
@@ -201,7 +201,8 @@ function ShortagesCard({ shortages, isLoading }: { shortages: MrpShortage[] | nu
 export default function DashboardPage() {
   const { data: health, isLoading: healthLoading } = useApi<HealthStatus>("/health")
   const { data: orders, isLoading: ordersLoading } = useApi<Order[]>("/orders")
-  const { data: shortages, isLoading: shortagesLoading } = useApi<MrpShortage[]>("/mrp/shortages")
+  const { data: shortagesResponse, isLoading: shortagesLoading } = useApi<MrpShortagesResponse>("/mrp/shortages")
+  const shortages = shortagesResponse?.shortages ?? null
 
   // Calculate stats from orders
   const stats: DashboardStats = {
