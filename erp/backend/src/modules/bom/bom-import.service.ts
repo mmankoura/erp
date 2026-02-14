@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, IsNull } from 'typeorm';
 import { BomImportMapping, ColumnMapping } from '../../entities/bom-import-mapping.entity';
 import { Material } from '../../entities/material.entity';
+import { Product } from '../../entities/product.entity';
 import { ResourceType } from '../../entities/bom-item.entity';
 import {
   CreateBomImportMappingDto,
@@ -28,6 +29,8 @@ export class BomImportService {
     private readonly mappingRepository: Repository<BomImportMapping>,
     @InjectRepository(Material)
     private readonly materialRepository: Repository<Material>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
     private readonly bomService: BomService,
   ) {}
 
@@ -191,6 +194,14 @@ export class BomImportService {
   }
 
   async commitImport(dto: BomImportCommitDto) {
+    // Get the product to get its customer_id for new materials
+    const product = await this.productRepository.findOne({
+      where: { id: dto.product_id },
+    });
+    if (!product) {
+      throw new NotFoundException(`Product with ID "${dto.product_id}" not found`);
+    }
+
     // Validate all items have valid material references
     const materialIds = new Set<string>();
     const ipnToMaterial = new Map<string, Material>();
@@ -204,11 +215,13 @@ export class BomImportService {
 
       if (!material) {
         // Auto-create the material with available data from import
+        // Assign the product's customer to the new material
         material = this.materialRepository.create({
           internal_part_number: item.internal_part_number,
           manufacturer: item.manufacturer,
           manufacturer_pn: item.manufacturer_pn,
-          description: item.description || item.notes, // Use description, fallback to notes
+          description: item.description || item.notes,
+          customer_id: product.customer_id, // Auto-assign customer from product
         });
         material = await this.materialRepository.save(material);
         createdMaterials.push(item.internal_part_number);
