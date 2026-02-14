@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: January 28, 2026
+> **Last Updated**: February 13, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -70,10 +70,10 @@
   - [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
   - [x] shadcn/ui component library integrated
   - [x] Layout: Collapsible sidebar navigation, header with breadcrumbs
-  - [x] Dashboard: Stats cards, recent orders, shortages display
+  - [x] Dashboard: Stats cards, recent orders, shortages display (fixed Feb 13)
   - [x] Full CRUD pages: Materials, Products, Customers, Suppliers
   - [x] Orders page with computed Material Status (Option A implementation)
-  - [x] Reusable DataTable component with search/pagination
+  - [x] Reusable DataTable component with search/pagination/column resize
   - [x] API client with TypeScript types (`lib/api.ts`)
   - [x] Custom data fetching hooks (`useApi`, `useMutation`)
   - [x] Purchase Orders page (full CRUD with line items, status workflow)
@@ -83,9 +83,14 @@
   - [x] AML page (CRUD with status workflow)
   - [x] Audit Log page (filterable event log with detail view)
   - [x] BOM viewer page (view revisions, compare diffs, filter by product)
-  - [x] BOM Import wizard (CSV + Excel support, column mapping, material matching)
+  - [x] BOM Import wizard (CSV + Excel support, column mapping, material matching, full-screen UI)
   - [x] BOM Validation page (compare uploaded file against stored revision)
-  - [ ] Settings page (placeholder)
+  - [x] Login page with session authentication
+  - [x] User management page (admin only)
+  - [x] Role-based UI controls (canEdit, canManageUsers, etc.)
+  - [x] Cycle Count pages (count entry, variance review, approval workflow)
+  - [x] Production/WIP tracking pages
+  - [ ] Settings page (placeholder - low priority)
 
 #### Recently Completed
 - [x] **Seed Script** - 4 customers, 20 materials, 4 products with BOMs, 5 sample orders
@@ -121,9 +126,23 @@
 - [x] **Products Page Search/Filter (Jan 28)** - Multi-field search (part number, name, description) and customer filter added to products page. Customer column displayed in table
 - [x] **MRP Page Fixes (Jan 28)** - Fixed API response handling (wrapper objects vs arrays), corrected field name mismatches (total_required, quantity_available, quantity_on_order)
 - [x] **DNP Filtering in BOM Import (Jan 28)** - "Do Not Populate" entries automatically filtered out during BOM import to prevent false shortage reports
+- [x] **User Authentication & Authorization (Feb 4-13)** - Session-based auth with Passport.js, 4 roles (ADMIN, MANAGER, WAREHOUSE_CLERK, OPERATOR), role-based UI controls, user management page
+- [x] **BOM Import Wizard Full Screen (Feb 13)** - Made BOM import wizard full screen with better UX
+- [x] **BOM Import Description Field (Feb 13)** - Added description as mappable field, auto-populates material description on import
+- [x] **BOM Import Customer Assignment (Feb 13)** - Materials created during BOM import now auto-assigned to product's customer
+- [x] **System Workflows Documentation (Feb 13)** - Comprehensive mermaid diagrams documenting entity dependencies, order lifecycle, production flow, etc.
+- [x] **Cycle Count / Physical Inventory (Feb 4)** - Full cycle count workflow with variance tracking and approval process
+- [x] **WIP Tracking / In-Process Parts (Feb 4)** - Track materials through production stages (kitting, SMT, TH, etc.)
+- [x] **Material Return Workflow (Feb 4)** - Return unused materials from production back to stock
+
+### Bug Fixes (Feb 2026)
+- [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests
+- [x] **Edit Dialog Navigation** - Click/keyboard events in edit dialogs propagated to DataTable row click handler, causing unwanted navigation; fixed with stopPropagation on triggers and DialogContent
+- [x] **User Email Validation** - Empty email string caused validation error; made email optional, frontend filters out empty strings
+- [x] **Dashboard Shortages Not Displaying** - Dashboard expected MrpShortage[] but API returns wrapper object; fixed by extracting shortages array from response
+- [x] **Materials Missing Customer Association** - Materials created during BOM import had no customer_id; fixed by auto-assigning product's customer
 
 ### Not Started ⬚
-- [ ] User authentication/authorization
 - [ ] Production deployment configuration
 - [ ] Phase 5: Quoting Module (vendor pricing integration)
 - [ ] Phase 6: Label Printing (Dymo integration)
@@ -136,30 +155,15 @@
 
 **Status:** Completed on January 23, 2026. Inventory transactions and allocations now support owner_type (COMPANY/CUSTOMER) and owner_id for consignment material isolation.
 
-### Current Priority: Production Readiness 🔴
+### Current Priority: Production Readiness 🟡
+
+**Completed:**
+- [x] User authentication/authorization (session-based with 4 roles)
+- [x] Frontend ~99% complete
 
 **Remaining for MVP Go-Live:**
-- [ ] User authentication/authorization
 - [ ] Production deployment configuration (Docker, environment variables)
-- [ ] Settings page (placeholder)
-
-**Problem Without This:**
-- Customer A sends 1000 resistors (consignment) → Mixed pool
-- Customer B sends 500 resistors (consignment) → Mixed pool
-- Risk: Customer A's order might consume Customer B's parts ❌
-
-**Implementation Steps:**
-1. [ ] Create migration: Add `owner_type`, `owner_id` to `inventory_transactions`
-2. [ ] Create migration: Add `owner_type`, `owner_id` to `inventory_allocations`
-3. [ ] Update `InventoryService.getAvailableStockForOrder()` - owner-aware queries
-4. [ ] Update `InventoryService.allocateForOrder()` - respect ownership scope
-5. [ ] Update receiving workflow to capture ownership from order type
-6. [ ] Add `?owner_type=` and `?owner_id=` filters to inventory endpoints
-7. [ ] Test: Verify consignment stock isolated from company stock
-
-**Estimated Effort:** ~4 hours
-
-See **Phase 3.0** section below for detailed schema and service changes.
+- [ ] Settings page (placeholder - low priority)
 
 ---
 
