@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Plus, Pencil, Trash2, FileText, Eye, X, Search, Filter } from "lucide-react"
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -66,16 +66,23 @@ function ProductDialog({
   trigger: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
-  const [formData, setFormData] = useState<ProductFormData>(
-    product
-      ? {
-          customer_id: product.customer_id,
-          part_number: product.part_number,
-          name: product.name,
-          description: product.description || "",
-        }
-      : defaultFormData
-  )
+  const [formData, setFormData] = useState<ProductFormData>(defaultFormData)
+
+  // Reset form data when dialog opens
+  useEffect(() => {
+    if (open) {
+      setFormData(
+        product
+          ? {
+              customer_id: product.customer_id,
+              part_number: product.part_number,
+              name: product.name,
+              description: product.description || "",
+            }
+          : defaultFormData
+      )
+    }
+  }, [open, product])
 
   const createMutation = useMutation(
     (data: ProductFormData) => api.post<Product>("/products", data),
@@ -120,7 +127,11 @@ function ProductDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent
+        className="sm:max-w-[500px]"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{product ? "Edit Product" : "Add Product"}</DialogTitle>

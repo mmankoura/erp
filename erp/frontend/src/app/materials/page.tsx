@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Plus, Pencil, Trash2, X, Search, Filter, Eye } from "lucide-react"
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import {
@@ -75,19 +75,26 @@ function MaterialDialog({
   trigger: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
-  const [formData, setFormData] = useState<MaterialFormData>(
-    material
-      ? {
-          customer_id: material.customer_id || "",
-          internal_part_number: material.internal_part_number,
-          manufacturer_pn: material.manufacturer_pn || "",
-          manufacturer: material.manufacturer || "",
-          description: material.description || "",
-          category: material.category || "",
-          uom: material.uom,
-        }
-      : defaultFormData
-  )
+  const [formData, setFormData] = useState<MaterialFormData>(defaultFormData)
+
+  // Reset form data when dialog opens
+  useEffect(() => {
+    if (open) {
+      setFormData(
+        material
+          ? {
+              customer_id: material.customer_id || "",
+              internal_part_number: material.internal_part_number,
+              manufacturer_pn: material.manufacturer_pn || "",
+              manufacturer: material.manufacturer || "",
+              description: material.description || "",
+              category: material.category || "",
+              uom: material.uom,
+            }
+          : defaultFormData
+      )
+    }
+  }, [open, material])
 
   const createMutation = useMutation(
     (data: MaterialFormData) => api.post<Material>("/materials", data),
@@ -132,7 +139,11 @@ function MaterialDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent
+        className="sm:max-w-[500px]"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{material ? "Edit Material" : "Add Material"}</DialogTitle>
@@ -444,7 +455,12 @@ export default function MaterialsPage() {
                 customers={customers || []}
                 onSuccess={refetch}
                 trigger={
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Pencil className="h-4 w-4" />
                   </Button>
                 }
