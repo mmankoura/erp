@@ -465,7 +465,7 @@ export class ReceivingService {
                     ? InspectionResult.PASS
                     : InspectionResult.FAIL,
                   is_on_aml: amlMatch ?? false,
-                  approved_manufacturer_id: matchedAmlId,
+                  approved_manufacturer_id: matchedAmlId || undefined,
                   received_manufacturer: dto.received_manufacturer ?? '',
                   received_mpn: dto.received_mpn,
                 }

@@ -4,9 +4,11 @@ import {
   IsOptional,
   IsUUID,
   IsInt,
+  IsEnum,
   Min,
   MaxLength,
 } from 'class-validator';
+import { AMLSource } from '../../../entities/approved-manufacturer.entity';
 
 export class CreateAmlDto {
   @IsUUID()
@@ -41,10 +43,9 @@ export class CreateAmlDto {
   @MaxLength(100)
   created_by?: string;
 
-  @IsString()
+  @IsEnum(AMLSource)
   @IsOptional()
-  @MaxLength(20)
-  source?: string;
+  source?: AMLSource;
 
   @IsUUID()
   @IsOptional()
