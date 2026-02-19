@@ -1,7 +1,7 @@
 "use client"
 
 import { useApi, useMutation } from "@/hooks/use-api"
-import { api, type ApprovedManufacturer, type AmlStatus, type Material } from "@/lib/api"
+import { api, type ApprovedManufacturer, type AmlStatus, type Material, type Attachment } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -43,8 +43,11 @@ import {
   Trash2,
   Factory,
   Package,
+  Download,
+  Upload,
+  FileText,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { toast } from "sonner"
 
 // Status config
@@ -53,6 +56,94 @@ const statusConfig: Record<AmlStatus, { label: string; variant: "default" | "sec
   APPROVED: { label: "Approved", variant: "default", icon: <CheckCircle className="h-3 w-3" /> },
   SUSPENDED: { label: "Suspended", variant: "destructive", icon: <AlertTriangle className="h-3 w-3" /> },
   OBSOLETE: { label: "Obsolete", variant: "outline", icon: <XCircle className="h-3 w-3" /> },
+}
+
+// Proof Documents component for AML entries
+function AmlAttachments({ amlId }: { amlId: string }) {
+  const { data: attachments, isLoading, refetch } = useApi<Attachment[]>(`/attachments/entity/aml/${amlId}`)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("entity_type", "aml")
+      formData.append("entity_id", amlId)
+
+      const response = await fetch("/api/attachments", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.message || "Upload failed")
+      }
+
+      toast.success("Document uploaded")
+      refetch()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to upload document")
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  return (
+    <div className="text-sm space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Proof Documents</span>
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            <Upload className="h-3 w-3 mr-1" />
+            {uploading ? "Uploading..." : "Upload"}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
+            onChange={handleUpload}
+          />
+        </div>
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-8 w-full" />
+      ) : attachments && attachments.length > 0 ? (
+        <div className="space-y-1">
+          {attachments.map((att) => (
+            <div key={att.id} className="flex items-center justify-between p-2 rounded border text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="h-3 w-3 shrink-0" />
+                <span className="truncate">{att.filename}</span>
+                <span className="text-muted-foreground">({(att.size_bytes / 1024).toFixed(0)} KB)</span>
+              </div>
+              <a href={`/api/attachments/${att.id}/download`}>
+                <Button variant="ghost" size="sm" className="h-6 text-xs">
+                  <Download className="h-3 w-3" />
+                </Button>
+              </a>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No documents attached</p>
+      )}
+    </div>
+  )
 }
 
 // Create/Edit AML Dialog
@@ -66,6 +157,7 @@ function AmlDialog({
   trigger: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const [proofFile, setProofFile] = useState<File | null>(null)
   const [formData, setFormData] = useState({
     material_id: aml?.material_id || "",
     manufacturer: aml?.manufacturer || "",
@@ -77,11 +169,29 @@ function AmlDialog({
   const { data: materials } = useApi<Material[]>("/materials")
 
   const createMutation = useMutation(
-    (data: typeof formData) => api.post("/aml", data),
+    (data: typeof formData) => api.post<ApprovedManufacturer>("/aml", data),
     {
-      onSuccess: () => {
+      onSuccess: async (result) => {
+        // Upload proof file if provided
+        if (proofFile && result?.id) {
+          try {
+            const fd = new FormData()
+            fd.append("file", proofFile)
+            fd.append("entity_type", "aml")
+            fd.append("entity_id", result.id)
+            const resp = await fetch("/api/attachments", {
+              method: "POST",
+              credentials: "include",
+              body: fd,
+            })
+            if (!resp.ok) toast.error("AML created but proof upload failed")
+          } catch {
+            toast.error("AML created but proof upload failed")
+          }
+        }
         toast.success("AML entry created")
         setOpen(false)
+        setProofFile(null)
         onSuccess()
       },
       onError: (error) => toast.error(error.message),
@@ -176,6 +286,18 @@ function AmlDialog({
                   onChange={(e) => setFormData({ ...formData, created_by: e.target.value })}
                   placeholder="Your name"
                 />
+              </div>
+            )}
+            {!aml && (
+              <div className="grid gap-2">
+                <Label htmlFor="proof_file">Proof Document</Label>
+                <Input
+                  id="proof_file"
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+                />
+                <p className="text-xs text-muted-foreground">Upload approval proof (PDF, PNG, JPG)</p>
               </div>
             )}
             <div className="grid gap-2">
@@ -319,6 +441,18 @@ function AmlDetailDialog({
               <span className="text-muted-foreground">Approved By:</span>
               <p className="font-medium">{aml.approved_by || "-"}</p>
             </div>
+            <div>
+              <span className="text-muted-foreground">Source:</span>
+              <p>
+                <Badge variant={aml.source === "BOM_IMPORT" ? "secondary" : "outline"} className="text-xs">
+                  {aml.source === "BOM_IMPORT" ? "BOM Import" : "Manual"}
+                </Badge>
+              </p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Customer Scope:</span>
+              <p className="font-medium">{aml.customer?.name || "Global"}</p>
+            </div>
           </div>
 
           {aml.notes && (
@@ -327,6 +461,9 @@ function AmlDetailDialog({
               <p>{aml.notes}</p>
             </div>
           )}
+
+          {/* Proof Documents */}
+          <AmlAttachments amlId={aml.id} />
 
           {/* Action Inputs */}
           {(canApprove || canSuspend || canReinstate || canObsolete) && (
@@ -538,6 +675,8 @@ export default function AMLPage() {
                   <TableHead>Manufacturer</TableHead>
                   <TableHead>MPN</TableHead>
                   <TableHead>Approved By</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Customer</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[80px]"></TableHead>
                 </TableRow>
@@ -553,6 +692,14 @@ export default function AMLPage() {
                     <TableCell>{entry.manufacturer}</TableCell>
                     <TableCell className="font-mono">{entry.manufacturer_pn}</TableCell>
                     <TableCell>{entry.approved_by || "-"}</TableCell>
+                    <TableCell>
+                      <Badge variant={entry.source === "BOM_IMPORT" ? "secondary" : "outline"} className="text-xs">
+                        {entry.source === "BOM_IMPORT" ? "BOM Import" : "Manual"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {entry.customer?.name || "Global"}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={statusConfig[entry.status].variant}>
                         {statusConfig[entry.status].icon}

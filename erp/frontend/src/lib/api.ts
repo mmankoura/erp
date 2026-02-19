@@ -637,6 +637,7 @@ export interface ReceivingInspection {
 
 // AML (Approved Manufacturer List) types
 export type AmlStatus = "PENDING" | "APPROVED" | "SUSPENDED" | "OBSOLETE"
+export type AmlSource = "MANUAL" | "BOM_IMPORT"
 
 export interface ApprovedManufacturer {
   id: string
@@ -648,9 +649,102 @@ export interface ApprovedManufacturer {
   approved_by: string | null
   approved_at: string | null
   notes: string | null
+  source: AmlSource
+  source_bom_revision_id: string | null
+  customer_id: string | null
+  customer?: Customer
   created_at: string
   updated_at: string
   deleted_at: string | null
+}
+
+// Attachment types
+export interface Attachment {
+  id: string
+  entity_type: string
+  entity_id: string
+  filename: string
+  mime_type: string
+  size_bytes: number
+  sha256: string
+  storage_key: string
+  uploaded_by: string | null
+  uploaded_at: string
+  notes: string | null
+  deleted_at: string | null
+}
+
+// Receiving Session types
+export type ReceivingSessionStatus = "OPEN" | "CLOSED" | "CANCELLED"
+export type ReceiptType = "PO" | "CUSTOMER_SUPPLIED" | "TRANSFER" | "RMA"
+export type ReceivingLineValidationStatus = "PENDING" | "PASS" | "FAIL" | "FLAGGED"
+export type HoldReasonCode = "WRONG_MPN" | "DAMAGED" | "NO_PO_LINE" | "NO_AML" | "COUNTERFEIT_CONCERN" | "OTHER"
+export type DispositionActionType = "ACCEPT_DEVIATION" | "PARTIAL_ACCEPT" | "REJECT_RTV" | "SCRAP"
+
+export interface ReceivingSession {
+  id: string
+  session_number: string
+  receipt_type: ReceiptType
+  po_id: string | null
+  purchase_order?: PurchaseOrder
+  packing_slip_number: string | null
+  customer_id: string | null
+  customer?: Customer
+  supplier_id: string | null
+  supplier?: Supplier
+  auto_release_on_pass: boolean
+  next_line_number: number
+  status: ReceivingSessionStatus
+  started_by: string
+  started_at: string
+  closed_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReceivingSessionLine {
+  id: string
+  session_id: string
+  session?: ReceivingSession
+  line_number: number
+  client_request_id: string
+  material_id: string
+  material?: Material
+  received_ipn: string
+  received_mpn: string | null
+  received_manufacturer: string | null
+  quantity_received: number
+  package_type: PackageType
+  po_line_id: string | null
+  uid: string
+  lot_id: string | null
+  lot?: InventoryLot
+  inspection_id: string | null
+  validation_status: ReceivingLineValidationStatus
+  ipn_match: boolean | null
+  aml_match: boolean | null
+  matched_aml_id: string | null
+  qty_expected: number | null
+  qty_remaining_on_po: number | null
+  hold_reason_code: HoldReasonCode | null
+  hold_notes: string | null
+  disposition_action: DispositionActionType | null
+  disposition_by: string | null
+  disposition_at: string | null
+  disposition_notes: string | null
+  validation_details: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReceiveItemResult {
+  status: "PASS" | "FLAGGED"
+  line: ReceivingSessionLine
+  uid: string
+  validation_details: Record<string, unknown>
+  hold_reason_code?: HoldReasonCode
+  auto_released: boolean
 }
 
 // BOM types
@@ -793,7 +887,7 @@ export interface BomImportCommitDto {
 
 // Inventory Lot types
 export type PackageType = "TR" | "REEL" | "TUBE" | "TRAY" | "BAG" | "BOX" | "BULK" | "OTHER"
-export type LotStatus = "ACTIVE" | "CONSUMED" | "EXPIRED" | "ON_HOLD"
+export type LotStatus = "ACTIVE" | "CONSUMED" | "EXPIRED" | "ON_HOLD" | "REJECTED" | "SCRAPPED" | "RTV"
 
 export interface InventoryLot {
   id: string
@@ -810,6 +904,11 @@ export interface InventoryLot {
   received_date: string | null
   expiration_date: string | null
   status: LotStatus
+  disposition: string | null
+  location: string
+  owner_type: OwnerType
+  owner_id: string | null
+  receiving_session_line_id: string | null
   notes: string | null
   created_at: string
   updated_at: string

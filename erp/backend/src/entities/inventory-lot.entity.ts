@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Material } from './material.entity';
 import { Supplier } from './supplier.entity';
+import { OwnerType } from './inventory-transaction.entity';
 
 export enum PackageType {
   TR = 'TR',
@@ -27,6 +28,9 @@ export enum LotStatus {
   CONSUMED = 'CONSUMED',
   EXPIRED = 'EXPIRED',
   ON_HOLD = 'ON_HOLD',
+  REJECTED = 'REJECTED',
+  SCRAPPED = 'SCRAPPED',
+  RTV = 'RTV',
 }
 
 @Entity('inventory_lots')
@@ -88,6 +92,26 @@ export class InventoryLot {
 
   @Column({ type: 'text', nullable: true })
   notes: string | null;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  disposition: string | null;
+
+  @Column({ type: 'varchar', length: 50, default: 'RECEIVING' })
+  location: string;
+
+  @Column({
+    type: 'enum',
+    enum: OwnerType,
+    default: OwnerType.COMPANY,
+  })
+  owner_type: OwnerType;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  owner_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  receiving_session_line_id: string | null;
 
   @CreateDateColumn()
   created_at: Date;

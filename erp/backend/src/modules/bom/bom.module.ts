@@ -8,6 +8,7 @@ import { Material } from '../../entities/material.entity';
 import { BomController } from './bom.controller';
 import { BomService } from './bom.service';
 import { BomImportService } from './bom-import.service';
+import { AmlModule } from '../aml/aml.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { BomImportService } from './bom-import.service';
       Product,
       Material,
     ]),
+    AmlModule,
   ],
   controllers: [BomController],
   providers: [BomService, BomImportService],

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, IsNull } from 'typeorm';
@@ -21,9 +22,13 @@ import {
 } from './dto';
 import { BomService } from './bom.service';
 import { BomSource } from '../../entities/bom-revision.entity';
+import { AmlService } from '../aml/aml.service';
+import { AMLSource } from '../../entities/approved-manufacturer.entity';
 
 @Injectable()
 export class BomImportService {
+  private readonly logger = new Logger(BomImportService.name);
+
   constructor(
     @InjectRepository(BomImportMapping)
     private readonly mappingRepository: Repository<BomImportMapping>,
@@ -32,6 +37,7 @@ export class BomImportService {
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
     private readonly bomService: BomService,
+    private readonly amlService: AmlService,
   ) {}
 
   // ============ Import Mapping CRUD ============
@@ -259,9 +265,43 @@ export class BomImportService {
       items: bomItems,
     });
 
+    // AML auto-seeding: create AML entries for items with manufacturer + MPN
+    // This runs outside the BOM transaction — if AML creation fails, BOM import still succeeds
+    const amlCreated: string[] = [];
+    for (const item of dto.items) {
+      if (item.manufacturer && item.manufacturer_pn) {
+        const material = ipnToMaterial.get(item.internal_part_number);
+        if (!material) continue;
+
+        try {
+          const result = await this.amlService.findOrCreate({
+            material_id: material.id,
+            manufacturer: item.manufacturer,
+            manufacturer_part_number: item.manufacturer_pn,
+            source: AMLSource.BOM_IMPORT,
+            source_bom_revision_id: revision.id,
+            customer_id: product.customer_id ?? undefined,
+            created_by: 'system',
+            notes: 'Auto-created from BOM import',
+          });
+
+          if (result.created) {
+            amlCreated.push(
+              `${item.manufacturer}/${item.manufacturer_pn}`,
+            );
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Failed to auto-create AML entry for ${item.manufacturer}/${item.manufacturer_pn}: ${(error as Error).message}`,
+          );
+        }
+      }
+    }
+
     return {
       ...revision,
       created_materials: createdMaterials,
+      aml_entries_created: amlCreated,
     };
   }
 

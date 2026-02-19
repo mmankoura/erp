@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import {
   ApprovedManufacturer,
   AMLStatus,
+  AMLSource,
 } from '../../entities/approved-manufacturer.entity';
 import { AuditService } from '../audit/audit.service';
 import {
@@ -362,5 +363,173 @@ export class AmlService {
       status: match.status,
       message: `AML entry exists but status is ${match.status}`,
     };
+  }
+
+  /**
+   * Customer-scoped validate: prefer customer-scoped entries, fall back to global.
+   */
+  async validateWithCustomerScope(
+    materialId: string,
+    manufacturer: string,
+    mpn: string,
+    customerId?: string | null,
+  ): Promise<{
+    is_valid: boolean;
+    aml_entry: ApprovedManufacturer | null;
+    status: AMLStatus | null;
+    scope: 'customer' | 'global' | null;
+    message: string;
+  }> {
+    // Try customer-scoped entry first
+    if (customerId) {
+      const customerMatch = await this.amlRepository.findOne({
+        where: {
+          material_id: materialId,
+          manufacturer,
+          manufacturer_part_number: mpn,
+          customer_id: customerId,
+        },
+        relations: ['material', 'preferred_supplier'],
+      });
+
+      if (customerMatch && customerMatch.status === AMLStatus.APPROVED) {
+        return {
+          is_valid: true,
+          aml_entry: customerMatch,
+          status: customerMatch.status,
+          scope: 'customer',
+          message: 'Approved (customer-scoped)',
+        };
+      }
+    }
+
+    // Fall back to global entries (customer_id IS NULL)
+    const globalMatch = await this.amlRepository
+      .createQueryBuilder('aml')
+      .leftJoinAndSelect('aml.material', 'material')
+      .leftJoinAndSelect('aml.preferred_supplier', 'preferred_supplier')
+      .where('aml.material_id = :materialId', { materialId })
+      .andWhere('aml.manufacturer = :manufacturer', { manufacturer })
+      .andWhere('aml.manufacturer_part_number = :mpn', { mpn })
+      .andWhere('aml.customer_id IS NULL')
+      .andWhere('aml.deleted_at IS NULL')
+      .getOne();
+
+    if (!globalMatch) {
+      return {
+        is_valid: false,
+        aml_entry: null,
+        status: null,
+        scope: null,
+        message: `No AML entry found for manufacturer "${manufacturer}" with MPN "${mpn}"`,
+      };
+    }
+
+    if (globalMatch.status === AMLStatus.APPROVED) {
+      return {
+        is_valid: true,
+        aml_entry: globalMatch,
+        status: globalMatch.status,
+        scope: 'global',
+        message: 'Approved (global)',
+      };
+    }
+
+    return {
+      is_valid: false,
+      aml_entry: globalMatch,
+      status: globalMatch.status,
+      scope: 'global',
+      message: `AML entry exists but status is ${globalMatch.status}`,
+    };
+  }
+
+  /**
+   * Find approved AML entries matching a material + MPN (any manufacturer).
+   * Used by receiving to determine manufacturer from MPN scan.
+   */
+  async findApprovedByMaterialAndMpn(
+    materialId: string,
+    mpn: string,
+    customerId?: string | null,
+  ): Promise<ApprovedManufacturer[]> {
+    const query = this.amlRepository
+      .createQueryBuilder('aml')
+      .leftJoinAndSelect('aml.material', 'material')
+      .leftJoinAndSelect('aml.preferred_supplier', 'preferred_supplier')
+      .where('aml.material_id = :materialId', { materialId })
+      .andWhere('aml.manufacturer_part_number = :mpn', { mpn })
+      .andWhere('aml.status = :status', { status: AMLStatus.APPROVED })
+      .andWhere('aml.deleted_at IS NULL');
+
+    // If customer-scoped, include both customer-scoped and global entries
+    if (customerId) {
+      query.andWhere(
+        '(aml.customer_id = :customerId OR aml.customer_id IS NULL)',
+        { customerId },
+      );
+    } else {
+      query.andWhere('aml.customer_id IS NULL');
+    }
+
+    return query.orderBy('aml.priority', 'ASC').getMany();
+  }
+
+  /**
+   * Idempotent find-or-create. Returns existing if duplicate, creates if new.
+   * Used by BOM import for AML auto-seeding.
+   */
+  async findOrCreate(dto: CreateAmlDto): Promise<{
+    aml: ApprovedManufacturer;
+    created: boolean;
+  }> {
+    // Check for existing (including customer scope)
+    const query: any = {
+      material_id: dto.material_id,
+      manufacturer: dto.manufacturer,
+      manufacturer_part_number: dto.manufacturer_part_number,
+    };
+    if (dto.customer_id) {
+      query.customer_id = dto.customer_id;
+    }
+
+    const existing = await this.amlRepository.findOne({
+      where: query,
+      relations: ['material', 'preferred_supplier'],
+    });
+
+    if (existing) {
+      return { aml: existing, created: false };
+    }
+
+    // Create new entry
+    const aml = this.amlRepository.create({
+      ...dto,
+      status: AMLStatus.APPROVED,
+      source: (dto.source as AMLSource) ?? AMLSource.MANUAL,
+    });
+
+    const saved = await this.amlRepository.save(aml);
+
+    await this.auditService.emitCreate(
+      AuditEventType.AML_CREATED,
+      AuditEntityType.APPROVED_MANUFACTURER,
+      saved.id,
+      {
+        material_id: saved.material_id,
+        manufacturer: saved.manufacturer,
+        manufacturer_part_number: saved.manufacturer_part_number,
+        status: saved.status,
+        source: saved.source,
+      },
+      dto.created_by,
+    );
+
+    const full = await this.amlRepository.findOne({
+      where: { id: saved.id },
+      relations: ['material', 'preferred_supplier'],
+    });
+
+    return { aml: full!, created: true };
   }
 }

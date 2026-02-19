@@ -11,6 +11,13 @@ import {
 } from 'typeorm';
 import { Material } from './material.entity';
 import { Supplier } from './supplier.entity';
+import { Customer } from './customer.entity';
+import { BomRevision } from './bom-revision.entity';
+
+export enum AMLSource {
+  MANUAL = 'MANUAL',
+  BOM_IMPORT = 'BOM_IMPORT',
+}
 
 export enum AMLStatus {
   PENDING = 'PENDING',
@@ -72,6 +79,25 @@ export class ApprovedManufacturer {
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   created_by: string | null;
+
+  @Index()
+  @Column({ type: 'varchar', length: 20, default: AMLSource.MANUAL })
+  source: AMLSource;
+
+  @Column({ type: 'uuid', nullable: true })
+  source_bom_revision_id: string | null;
+
+  @ManyToOne(() => BomRevision, { nullable: true })
+  @JoinColumn({ name: 'source_bom_revision_id' })
+  source_bom_revision: BomRevision | null;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  customer_id: string | null;
+
+  @ManyToOne(() => Customer, { nullable: true })
+  @JoinColumn({ name: 'customer_id' })
+  customer: Customer | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

@@ -15,6 +15,8 @@ import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
 import { AmlModule } from './modules/aml/aml.module';
 import { ReceivingInspectionModule } from './modules/receiving-inspection/receiving-inspection.module';
+import { AttachmentsModule } from './modules/attachments/attachments.module';
+import { ReceivingModule } from './modules/receiving/receiving.module';
 import { CycleCountModule } from './modules/cycle-count/cycle-count.module';
 import { ProductionModule } from './modules/production/production.module';
 
@@ -37,7 +39,9 @@ import { ProductionModule } from './modules/production/production.module';
     InventoryModule,
     SuppliersModule,
     AmlModule, // Approved Manufacturer List - must be before ReceivingInspectionModule
+    AttachmentsModule, // Entity-agnostic file attachments
     ReceivingInspectionModule, // Receiving inspection workflow
+    ReceivingModule, // Operator-facing receiving sessions
     PurchaseOrdersModule,
     MrpModule,
     CycleCountModule, // Cycle counting / physical inventory

@@ -40,4 +40,17 @@ export class CreateAmlDto {
   @IsOptional()
   @MaxLength(100)
   created_by?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(20)
+  source?: string;
+
+  @IsUUID()
+  @IsOptional()
+  source_bom_revision_id?: string;
+
+  @IsUUID()
+  @IsOptional()
+  customer_id?: string;
 }
