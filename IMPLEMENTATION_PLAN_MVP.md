@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: February 13, 2026
+> **Last Updated**: February 19, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -12,7 +12,7 @@
 - [x] ValidationPipe configured (whitelist, forbidNonWhitelisted, transform)
 - [x] Environment validation (fail-fast on missing DATABASE_URL)
 
-#### Entities (14 complete)
+#### Entities (17 complete)
 - [x] **Materials** entity with soft delete + partial unique index + costing fields
 - [x] **Products** entity with soft delete + partial unique index + customer association (required)
 - [x] **Customers** entity with soft delete
@@ -25,10 +25,13 @@
 - [x] **Supplier** entity with soft delete + partial unique index
 - [x] **PurchaseOrder** entity (PurchaseOrderStatus: 7 states) + soft delete
 - [x] **PurchaseOrderLine** entity (quantity_ordered, quantity_received tracking)
-- [x] **ApprovedManufacturer** entity (AML - tracks approved MPN/manufacturer combinations per material)
+- [x] **ApprovedManufacturer** entity (AML - tracks approved MPN/manufacturer combinations per material) + provenance (source, customer scope)
 - [x] **ReceivingInspection** entity (staging area for received items pending validation)
+- [x] **Attachment** entity (entity-agnostic file attachments with SHA256 tamper evidence, soft-delete)
+- [x] **ReceivingSession** entity (WIP container for operator receiving sessions with receipt type, auto-release toggle)
+- [x] **ReceivingSessionLine** entity (individual received packages with UID, validation status, idempotency key, disposition workflow)
 
-#### Migrations (20 applied)
+#### Migrations (26 applied)
 - [x] Initial schema (materials, products)
 - [x] AddSoftDeleteToMaterials
 - [x] AddSoftDeleteToProducts
@@ -49,8 +52,14 @@
 - [x] CreateReceivingInspection (approved_manufacturers, receiving_inspections tables with enums and indexes)
 - [x] AddOwnershipDimension (owner_type, owner_id on inventory_transactions and inventory_allocations)
 - [x] AddCustomerToProduct (customer_id on products with foreign key to customers)
+- [x] CreateAttachments (entity-agnostic file attachments with soft-delete, SHA256, entity_type+entity_id index)
+- [x] AddAmlProvenance (source, source_bom_revision_id, customer_id on approved_manufacturers)
+- [x] AddLotDispositionAndLocation (REJECTED/SCRAPPED/RTV lot statuses, disposition, location, owner_type/owner_id on inventory_lots)
+- [x] CreateReceivingSessions (receiving_session_status and receipt_type enums, receiving_sessions table)
+- [x] CreateReceivingSessionLines (validation_status, hold_reason_code, disposition_action enums, session_lines + uid_sequences tables)
+- [x] LinkLotsToReceivingLines (receiving_session_line_id FK on inventory_lots)
 
-#### Backend Modules (13 complete) - ~122 API Endpoints Total
+#### Backend Modules (16 complete) - ~150 API Endpoints Total
 - [x] **Materials Module** (7 endpoints) - CRUD + bulk create + restore
 - [x] **Products Module** (6 endpoints) - CRUD + restore
 - [x] **Customers Module** (6 endpoints) - CRUD + search + restore
@@ -62,8 +71,11 @@
 - [x] **Health Module** (3 endpoints) - Health check, liveness probe, readiness probe
 - [x] **Suppliers Module** (6 endpoints) - CRUD + search + restore
 - [x] **Purchase Orders Module** (15 endpoints) - CRUD, lines, status workflow, receiving, quantity_on_order queries
-- [x] **AML Module** (11 endpoints) - Approved Manufacturer List CRUD + status transitions (approve, suspend, reinstate, obsolete) + validation
+- [x] **AML Module** (11 endpoints) - Approved Manufacturer List CRUD + status transitions + validation + customer-scoped validation + findOrCreate
 - [x] **Receiving Inspection Module** (11 endpoints) - Inspection workflow (validate, approve, reject, hold, release) + bulk release
+- [x] **Attachments Module** (4 endpoints) - Upload (multipart), list by entity, download, soft-delete (ADMIN/MANAGER only)
+- [x] **Receiving Module** (12 endpoints) - Session CRUD, receive item (11-step flow), close/cancel session, resolve discrepancy, manual release, PO/material/AML lookups, flagged items list
+- [x] **Production Module** - WIP tracking, stage transitions, production logs
 
 ### In Progress 🔄
 - [ ] **Frontend (Next.js)** (~99% complete)
@@ -90,6 +102,9 @@
   - [x] Role-based UI controls (canEdit, canManageUsers, etc.)
   - [x] Cycle Count pages (count entry, variance review, approval workflow)
   - [x] Production/WIP tracking pages
+  - [x] Operator Receiving form (/receiving/new) - scanner-friendly, PO/Customer Supplied modes, validation preview, offline retry
+  - [x] Receiving dashboard - tabbed: Open Sessions, Flagged Items (with resolution dialog), Inspections
+  - [x] AML page enhancements - proof document upload/download, source/customer columns, BOM Import badge
   - [ ] Settings page (placeholder - low priority)
 
 #### Recently Completed
@@ -134,6 +149,15 @@
 - [x] **Cycle Count / Physical Inventory (Feb 4)** - Full cycle count workflow with variance tracking and approval process
 - [x] **WIP Tracking / In-Process Parts (Feb 4)** - Track materials through production stages (kitting, SMT, TH, etc.)
 - [x] **Material Return Workflow (Feb 4)** - Return unused materials from production back to stock
+- [x] **Industrial-Grade Receiving Module (Feb 19)** - Full operator-facing receiving module with barcode scanner UX:
+  - 6 database migrations: attachments table, AML provenance (source/customer scope), inventory lot disposition/location, receiving sessions, session lines with idempotency keys, lot-to-line linking
+  - Entity-agnostic attachments module with SHA256 tamper evidence, soft-delete, multipart file upload
+  - AML enhancements: BOM-to-AML auto-seeding on import (with provenance tracking), customer-scoped validation with global fallback, findOrCreate for idempotent seeding
+  - Receiving backend: session management, 11-step receive flow with quarantine-first approach (ON_HOLD immediately), AML/IPN/PO line validation, atomic UID generation (UID-YYYYMMDD-XXXX), idempotent via client_request_id
+  - Discrepancy resolution: ACCEPT_DEVIATION, PARTIAL_ACCEPT, REJECT_RTV, SCRAP with proper lot status transitions
+  - Operator receiving form (/receiving/new) with scanner-friendly UX, PO/Customer Supplied modes, validation preview panel, session receipt log, offline retry, Ctrl+Enter shortcut
+  - Receiving dashboard with tabs: Open Sessions (with resume), Flagged Items (with resolution dialog), Inspections
+  - AML page: proof document upload/download, source badge (BOM Import vs Manual), customer scope column
 
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests
