@@ -27,7 +27,7 @@ export class CreateReceivingSessionLines1736600000036
         "received_mpn"           varchar(100),
         "received_manufacturer"  varchar(100),
         "quantity_received"      decimal(12,4) NOT NULL,
-        "package_type"           "package_type" NOT NULL DEFAULT 'TR',
+        "package_type"           "package_type_enum" NOT NULL DEFAULT 'TR',
         "po_line_id"             uuid REFERENCES "purchase_order_lines"("id"),
         "uid"                    varchar(100) NOT NULL,
         "lot_id"                 uuid REFERENCES "inventory_lots"("id"),

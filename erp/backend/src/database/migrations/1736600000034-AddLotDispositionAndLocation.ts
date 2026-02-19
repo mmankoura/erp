@@ -8,13 +8,13 @@ export class AddLotDispositionAndLocation1736600000034
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Extend lot_status enum with disposition states
     await queryRunner.query(
-      `ALTER TYPE "lot_status" ADD VALUE IF NOT EXISTS 'REJECTED'`,
+      `ALTER TYPE "lot_status_enum" ADD VALUE IF NOT EXISTS 'REJECTED'`,
     );
     await queryRunner.query(
-      `ALTER TYPE "lot_status" ADD VALUE IF NOT EXISTS 'SCRAPPED'`,
+      `ALTER TYPE "lot_status_enum" ADD VALUE IF NOT EXISTS 'SCRAPPED'`,
     );
     await queryRunner.query(
-      `ALTER TYPE "lot_status" ADD VALUE IF NOT EXISTS 'RTV'`,
+      `ALTER TYPE "lot_status_enum" ADD VALUE IF NOT EXISTS 'RTV'`,
     );
 
     // Add new columns to inventory_lots
