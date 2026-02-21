@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: February 19, 2026
+> **Last Updated**: February 20, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -165,6 +165,24 @@
 - [x] **User Email Validation** - Empty email string caused validation error; made email optional, frontend filters out empty strings
 - [x] **Dashboard Shortages Not Displaying** - Dashboard expected MrpShortage[] but API returns wrapper object; fixed by extracting shortages array from response
 - [x] **Materials Missing Customer Association** - Materials created during BOM import had no customer_id; fixed by auto-assigning product's customer
+- [x] **11 TypeScript Compilation Errors (Feb 19)** - DTO source typed as string vs AMLSource enum (7 cascading errors), missing @types/multer, import type needed for Response, null vs undefined for optional fields
+- [x] **Migration Enum Naming (Feb 20)** - TypeORM appends `_enum` suffix to PostgreSQL enum names; fixed `lot_status` → `lot_status_enum` and `package_type` → `package_type_enum` in migrations
+- [x] **TypeORM RETURNING Clause in Transactions (Feb 20)** - `EntityManager.query()` inside transactions doesn't reliably return RETURNING clause results; fixed by splitting into separate UPDATE + SELECT for UID generation and line_number allocation
+
+### Backend Testing (Feb 20) — Receiving Module Verified
+All 15 test scenarios passed against live backend:
+- [x] PASS path: valid IPN/MPN/qty → UID assigned, lot=ACTIVE@STOCK, inspection=RELEASED, PO line updated
+- [x] Idempotency: same client_request_id resubmit → identical result, no duplicate
+- [x] PO status transitions: CONFIRMED → PARTIALLY_RECEIVED → RECEIVED (automatic)
+- [x] FLAGGED path: wrong MPN → lot=ON_HOLD@RECEIVING, hold_reason=NO_AML
+- [x] ACCEPT_DEVIATION resolution → lot→ACTIVE, PO updated
+- [x] Flagged items endpoint returns flagged lines correctly
+- [x] Session close/cancel lifecycle
+- [x] Manual release mode (auto_release=false) → PASS stays ON_HOLD
+- [x] Manual release endpoint → lot→ACTIVE@STOCK
+- [x] Operator flag on valid item → FLAGGED with hold_reason=OTHER
+- [x] SCRAP disposition → lot=SCRAPPED, no inventory transaction
+- [x] Sessions list, PO lookup, material lookup, AML suggestions endpoints
 
 ### Not Started ⬚
 - [ ] Production deployment configuration
