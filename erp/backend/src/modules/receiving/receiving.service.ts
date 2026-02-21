@@ -379,11 +379,16 @@ export class ReceivingService {
       const uid = await this.uidGenerator.generate(manager);
 
       // Step 6: Allocate next line_number (atomic)
-      const lineResult = await manager.query(
+      // Use separate UPDATE + SELECT since TypeORM manager.query() may return
+      // RETURNING results in different formats depending on version/context
+      await manager.query(
         `UPDATE "receiving_sessions"
          SET "next_line_number" = "next_line_number" + 1, "updated_at" = NOW()
-         WHERE "id" = $1
-         RETURNING "next_line_number"`,
+         WHERE "id" = $1`,
+        [sessionId],
+      );
+      const lineResult = await manager.query(
+        `SELECT "next_line_number" FROM "receiving_sessions" WHERE "id" = $1`,
         [sessionId],
       );
       const lineNumber = lineResult[0].next_line_number;
