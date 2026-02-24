@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   History,
   Settings,
-  Layers,
   Factory,
   ClipboardPen,
   LogOut,
@@ -58,11 +57,6 @@ const navigation = {
       title: "Products",
       url: "/products",
       icon: Box,
-    },
-    {
-      title: "BOMs",
-      url: "/bom",
-      icon: Layers,
     },
     {
       title: "Customers",

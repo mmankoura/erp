@@ -14,6 +14,7 @@ import {
   UpdateMaterialDto,
   BulkCreateMaterialDto,
 } from './dto';
+import { FilterMaterialsDto } from './dto/filter-materials.dto';
 import { AuditService } from '../audit/audit.service';
 import {
   AuditEventType,
@@ -356,5 +357,77 @@ export class MaterialsService {
       open_orders_count: parseInt(ordersResult?.order_count || '0'),
       total_qty_required_by_open_orders: parseFloat(ordersResult?.total_qty || '0'),
     };
+  }
+
+  // ============ Relational Filtering ============
+
+  async filterMaterials(dto: FilterMaterialsDto): Promise<Material[]> {
+    if (!dto.filters || dto.filters.length === 0) {
+      return this.findAll();
+    }
+
+    const logic = dto.logic || 'OR';
+    const materialIdSets: Set<string>[] = [];
+
+    for (const filter of dto.filters) {
+      if (filter.ids.length === 0) continue;
+
+      if (filter.type === 'product_revision') {
+        // Get materials used in specified BOM revisions
+        const items = await this.bomItemRepository.find({
+          where: { bom_revision_id: In(filter.ids) },
+          select: ['material_id'],
+        });
+        materialIdSets.push(new Set(items.map((i) => i.material_id)));
+      } else if (filter.type === 'order') {
+        // Get materials used by specified orders (via their BOM revisions)
+        const orders = await this.orderRepository.find({
+          where: { id: In(filter.ids) },
+          select: ['bom_revision_id'],
+        });
+        const revisionIds = orders
+          .map((o) => o.bom_revision_id)
+          .filter(Boolean);
+        if (revisionIds.length > 0) {
+          const items = await this.bomItemRepository.find({
+            where: { bom_revision_id: In(revisionIds) },
+            select: ['material_id'],
+          });
+          materialIdSets.push(new Set(items.map((i) => i.material_id)));
+        } else {
+          materialIdSets.push(new Set());
+        }
+      }
+    }
+
+    if (materialIdSets.length === 0) {
+      return this.findAll();
+    }
+
+    let resultIds: Set<string>;
+    if (logic === 'AND') {
+      // Intersection of all sets
+      resultIds = materialIdSets.reduce((acc, set) => {
+        return new Set([...acc].filter((id) => set.has(id)));
+      });
+    } else {
+      // Union of all sets
+      resultIds = new Set<string>();
+      for (const set of materialIdSets) {
+        for (const id of set) {
+          resultIds.add(id);
+        }
+      }
+    }
+
+    if (resultIds.size === 0) {
+      return [];
+    }
+
+    return this.materialRepository.find({
+      where: { id: In([...resultIds]) },
+      relations: ['customer'],
+      order: { internal_part_number: 'ASC' },
+    });
   }
 }

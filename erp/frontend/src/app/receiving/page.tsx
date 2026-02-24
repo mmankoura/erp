@@ -9,6 +9,7 @@ import {
   type ReceivingSessionLine,
   type DispositionActionType,
 } from "@/lib/api"
+import { DataTable, type Column } from "@/components/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,14 +25,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -39,7 +32,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   CheckCircle,
   XCircle,
@@ -463,28 +455,258 @@ const sessionStatusConfig: Record<string, { label: string; variant: "default" | 
 
 export default function ReceivingPage() {
   const [activeTab, setActiveTab] = useState<"sessions" | "flagged" | "inspections">("sessions")
+  const [sessionStatusFilter, setSessionStatusFilter] = useState<string>("OPEN")
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
-  // Fetch open sessions
-  const { data: sessions, isLoading: sessionsLoading, refetch: refetchSessions } = useApi<ReceivingSession[]>("/receiving/sessions?status=OPEN")
+  // Fetch sessions based on status filter
+  const sessionEndpoint = sessionStatusFilter === "all"
+    ? "/receiving/sessions"
+    : `/receiving/sessions?status=${sessionStatusFilter}`
+  const { data: sessions, isLoading: sessionsLoading, refetch: refetchSessions } = useApi<ReceivingSession[]>(sessionEndpoint)
 
   // Fetch flagged lines
   const { data: flaggedLines, isLoading: flaggedLoading, refetch: refetchFlagged } = useApi<ReceivingSessionLine[]>("/receiving/flagged")
 
   // Fetch inspections
-  const endpoint = statusFilter === "all"
+  const inspectionEndpoint = statusFilter === "all"
     ? "/receiving-inspections"
     : statusFilter === "PENDING"
       ? "/receiving-inspections/pending"
       : `/receiving-inspections/status/${statusFilter}`
 
-  const { data: inspections, isLoading: inspectionsLoading, refetch: refetchInspections } = useApi<ReceivingInspection[]>(endpoint)
+  const { data: inspections, isLoading: inspectionsLoading, refetch: refetchInspections } = useApi<ReceivingInspection[]>(inspectionEndpoint)
 
   // Calculate stats
-  const openSessionCount = sessions?.length || 0
+  const openSessionCount = sessions?.filter((s) => s.status === "OPEN").length || sessions?.length || 0
   const flaggedCount = flaggedLines?.length || 0
   const pendingInspections = inspections?.filter((i) => i.status === "PENDING").length || 0
   const approvedInspections = inspections?.filter((i) => i.status === "APPROVED").length || 0
+
+  // Session columns for DataTable
+  const sessionColumns: Column<ReceivingSession>[] = [
+    {
+      key: "session_number",
+      header: "Session #",
+      sortable: true,
+      cell: (s) => <span className="font-mono font-medium">{s.session_number}</span>,
+    },
+    {
+      key: "receipt_type",
+      header: "Type",
+      sortable: true,
+      cell: (s) => (
+        <Badge variant="outline" className="text-xs">
+          {s.receipt_type === "PO" ? "PO" : "Customer Supplied"}
+        </Badge>
+      ),
+    },
+    {
+      key: "po_reference",
+      header: "PO / Packing Slip",
+      sortable: true,
+      sortAccessor: (s) => s.purchase_order?.po_number || s.packing_slip_number || "",
+      cell: (s) => s.purchase_order?.po_number || s.packing_slip_number || "-",
+    },
+    {
+      key: "started_by",
+      header: "Started By",
+      sortable: true,
+      cell: (s) => s.started_by,
+    },
+    {
+      key: "started_at",
+      header: "Started At",
+      sortable: true,
+      sortAccessor: (s) => new Date(s.started_at).getTime(),
+      cell: (s) => <span className="text-sm">{new Date(s.started_at).toLocaleString()}</span>,
+    },
+    {
+      key: "next_line_number",
+      header: "Lines",
+      sortable: true,
+      cell: (s) => <span className="font-mono">{s.next_line_number}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      cell: (s) => (
+        <Badge variant={sessionStatusConfig[s.status]?.variant || "outline"}>
+          {sessionStatusConfig[s.status]?.label || s.status}
+        </Badge>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      resizable: false,
+      cell: (s) => (
+        <Link href={`/receiving/new?session=${s.id}`}>
+          <Button variant="ghost" size="sm" className="h-8 text-xs">
+            <ArrowRight className="h-4 w-4 mr-1" />
+            Resume
+          </Button>
+        </Link>
+      ),
+    },
+  ]
+
+  // Flagged items columns for DataTable
+  const flaggedColumns: Column<ReceivingSessionLine>[] = [
+    {
+      key: "uid",
+      header: "UID",
+      sortable: true,
+      cell: (line) => <span className="font-mono text-sm">{line.uid}</span>,
+    },
+    {
+      key: "received_ipn",
+      header: "IPN",
+      sortable: true,
+      cell: (line) => <span className="font-medium">{line.received_ipn}</span>,
+    },
+    {
+      key: "received_mpn",
+      header: "MPN",
+      sortable: true,
+      cell: (line) => <span className="font-mono text-sm">{line.received_mpn || "-"}</span>,
+    },
+    {
+      key: "quantity_received",
+      header: "Qty",
+      className: "text-right",
+      sortable: true,
+      cell: (line) => <span className="font-mono">{line.quantity_received}</span>,
+    },
+    {
+      key: "hold_reason_code",
+      header: "Reason",
+      sortable: true,
+      cell: (line) => (
+        <Badge variant="destructive" className="text-xs">
+          {holdReasonLabels[line.hold_reason_code || ""] || line.hold_reason_code || "-"}
+        </Badge>
+      ),
+    },
+    {
+      key: "session",
+      header: "Session",
+      sortable: true,
+      sortAccessor: (line) => line.session?.session_number || "",
+      cell: (line) => <span className="font-mono text-sm">{line.session?.session_number || "-"}</span>,
+    },
+    {
+      key: "created_at",
+      header: "Received At",
+      sortable: true,
+      sortAccessor: (line) => new Date(line.created_at).getTime(),
+      cell: (line) => <span className="text-sm">{new Date(line.created_at).toLocaleString()}</span>,
+    },
+    {
+      key: "actions",
+      header: "",
+      resizable: false,
+      cell: (line) => (
+        <ResolveDiscrepancyDialog
+          line={line}
+          onSuccess={() => {
+            refetchFlagged()
+            refetchInspections()
+          }}
+          trigger={
+            <Button variant="outline" size="sm" className="h-8 text-xs">
+              <Eye className="h-3 w-3 mr-1" />
+              Resolve
+            </Button>
+          }
+        />
+      ),
+    },
+  ]
+
+  // Inspection columns for DataTable
+  const inspectionColumns: Column<ReceivingInspection>[] = [
+    {
+      key: "material",
+      header: "Material",
+      sortable: true,
+      sortAccessor: (i) => i.material?.internal_part_number || "",
+      cell: (i) => <span className="font-medium">{i.material?.internal_part_number}</span>,
+    },
+    {
+      key: "quantity_received",
+      header: "Qty",
+      className: "text-right",
+      sortable: true,
+      cell: (i) => <span className="font-mono">{i.quantity_received}</span>,
+    },
+    {
+      key: "received_ipn",
+      header: "Received IPN",
+      sortable: true,
+      cell: (i) => i.received_ipn || "-",
+    },
+    {
+      key: "received_mpn",
+      header: "Received MPN",
+      sortable: true,
+      cell: (i) => i.received_mpn || "-",
+    },
+    {
+      key: "ipn_match",
+      header: "IPN Match",
+      sortable: true,
+      sortAccessor: (i) => i.ipn_match === null ? -1 : i.ipn_match ? 1 : 0,
+      cell: (i) =>
+        i.ipn_match === null ? (
+          <span className="text-muted-foreground">-</span>
+        ) : i.ipn_match ? (
+          <CheckCircle className="h-4 w-4 text-green-500" />
+        ) : (
+          <XCircle className="h-4 w-4 text-red-500" />
+        ),
+    },
+    {
+      key: "mpn_match",
+      header: "AML Match",
+      sortable: true,
+      sortAccessor: (i) => i.mpn_match === null ? -1 : i.mpn_match ? 1 : 0,
+      cell: (i) =>
+        i.mpn_match === null ? (
+          <span className="text-muted-foreground">-</span>
+        ) : i.mpn_match ? (
+          <CheckCircle className="h-4 w-4 text-green-500" />
+        ) : (
+          <AlertTriangle className="h-4 w-4 text-yellow-500" />
+        ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      cell: (i) => (
+        <Badge variant={statusConfig[i.status].variant}>
+          {statusConfig[i.status].label}
+        </Badge>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      resizable: false,
+      cell: (i) => (
+        <InspectionActionDialog
+          inspection={i}
+          onSuccess={refetchInspections}
+          trigger={
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Eye className="h-4 w-4" />
+            </Button>
+          }
+        />
+      ),
+    },
+  ]
 
   return (
     <div className="space-y-6">
@@ -598,159 +820,63 @@ export default function ReceivingPage() {
 
       {/* Open Sessions Tab */}
       {activeTab === "sessions" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Play className="h-5 w-5" />
-              Open Receiving Sessions
-            </CardTitle>
-            <CardDescription>Active sessions that can be resumed</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {sessionsLoading ? (
-              <div className="space-y-2">
-                {[...Array(3)].map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : sessions && sessions.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Session #</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>PO / Packing Slip</TableHead>
-                    <TableHead>Started By</TableHead>
-                    <TableHead>Started At</TableHead>
-                    <TableHead>Lines</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-[80px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sessions.map((session) => (
-                    <TableRow key={session.id}>
-                      <TableCell className="font-mono font-medium">{session.session_number}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {session.receipt_type === "PO" ? "PO" : "Customer Supplied"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {session.purchase_order?.po_number || session.packing_slip_number || "-"}
-                      </TableCell>
-                      <TableCell>{session.started_by}</TableCell>
-                      <TableCell className="text-sm">
-                        {new Date(session.started_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="font-mono">{session.next_line_number}</TableCell>
-                      <TableCell>
-                        <Badge variant={sessionStatusConfig[session.status]?.variant || "outline"}>
-                          {sessionStatusConfig[session.status]?.label || session.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/receiving/new?session=${session.id}`}>
-                          <Button variant="ghost" size="sm" className="h-8 text-xs">
-                            <ArrowRight className="h-4 w-4 mr-1" />
-                            Resume
-                          </Button>
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-center text-muted-foreground py-8">
-                No open sessions. Click &quot;Receive Materials&quot; to start a new session.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            <Label className="text-sm font-medium">Status:</Label>
+            <Select value={sessionStatusFilter} onValueChange={setSessionStatusFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="OPEN">Open</SelectItem>
+                <SelectItem value="CLOSED">Closed</SelectItem>
+                <SelectItem value="CANCELLED">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DataTable
+            data={sessions || null}
+            columns={sessionColumns}
+            isLoading={sessionsLoading}
+            searchFilter={(s, search) => {
+              const q = search.toLowerCase()
+              return (
+                s.session_number?.toLowerCase().includes(q) ||
+                s.started_by?.toLowerCase().includes(q) ||
+                (s.purchase_order?.po_number?.toLowerCase().includes(q) ?? false)
+              )
+            }}
+            searchPlaceholder="Search by session #, operator, or PO..."
+            emptyMessage="No sessions found."
+            storageKey="receiving-sessions"
+          />
+        </div>
       )}
 
       {/* Flagged Items Tab */}
       {activeTab === "flagged" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Flagged Items
-            </CardTitle>
-            <CardDescription>Items flagged during receiving that require disposition</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {flaggedLoading ? (
-              <div className="space-y-2">
-                {[...Array(3)].map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : flaggedLines && flaggedLines.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>UID</TableHead>
-                    <TableHead>IPN</TableHead>
-                    <TableHead>MPN</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead>Session</TableHead>
-                    <TableHead>Received At</TableHead>
-                    <TableHead className="w-[100px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {flaggedLines.map((line) => (
-                    <TableRow key={line.id} className="bg-amber-50/50">
-                      <TableCell className="font-mono text-sm">{line.uid}</TableCell>
-                      <TableCell className="font-medium">{line.received_ipn}</TableCell>
-                      <TableCell className="font-mono text-sm">{line.received_mpn || "-"}</TableCell>
-                      <TableCell className="text-right font-mono">{line.quantity_received}</TableCell>
-                      <TableCell>
-                        <Badge variant="destructive" className="text-xs">
-                          {holdReasonLabels[line.hold_reason_code || ""] || line.hold_reason_code || "-"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {line.session?.session_number || "-"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {new Date(line.created_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <ResolveDiscrepancyDialog
-                          line={line}
-                          onSuccess={() => {
-                            refetchFlagged()
-                            refetchInspections()
-                          }}
-                          trigger={
-                            <Button variant="outline" size="sm" className="h-8 text-xs">
-                              <Eye className="h-3 w-3 mr-1" />
-                              Resolve
-                            </Button>
-                          }
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-center text-muted-foreground py-8">
-                No flagged items. All received materials passed validation.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        <DataTable
+          data={flaggedLines || null}
+          columns={flaggedColumns}
+          isLoading={flaggedLoading}
+          searchFilter={(line, search) => {
+            const q = search.toLowerCase()
+            return (
+              line.uid?.toLowerCase().includes(q) ||
+              line.received_ipn?.toLowerCase().includes(q) ||
+              (line.received_mpn?.toLowerCase().includes(q) ?? false)
+            )
+          }}
+          searchPlaceholder="Search by UID, IPN, or MPN..."
+          emptyMessage="No flagged items. All received materials passed validation."
+          storageKey="receiving-flagged"
+        />
       )}
 
       {/* Inspections Tab */}
       {activeTab === "inspections" && (
-        <>
-          {/* Filter */}
+        <div className="space-y-4">
           <div className="flex items-center gap-4">
             <Label className="text-sm font-medium">Status:</Label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -768,92 +894,23 @@ export default function ReceivingPage() {
               </SelectContent>
             </Select>
           </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Inspections</CardTitle>
-              <CardDescription>Items received pending validation</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {inspectionsLoading ? (
-                <div className="space-y-2">
-                  {[...Array(5)].map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : inspections && inspections.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Material</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead>Received IPN</TableHead>
-                      <TableHead>Received MPN</TableHead>
-                      <TableHead>IPN Match</TableHead>
-                      <TableHead>AML Match</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-[80px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {inspections.map((inspection) => (
-                      <TableRow key={inspection.id}>
-                        <TableCell>
-                          <span className="font-medium">
-                            {inspection.material?.internal_part_number}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {inspection.quantity_received}
-                        </TableCell>
-                        <TableCell>{inspection.received_ipn || "-"}</TableCell>
-                        <TableCell>{inspection.received_mpn || "-"}</TableCell>
-                        <TableCell>
-                          {inspection.ipn_match === null ? (
-                            <span className="text-muted-foreground">-</span>
-                          ) : inspection.ipn_match ? (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-red-500" />
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {inspection.mpn_match === null ? (
-                            <span className="text-muted-foreground">-</span>
-                          ) : inspection.mpn_match ? (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={statusConfig[inspection.status].variant}>
-                            {statusConfig[inspection.status].label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <InspectionActionDialog
-                            inspection={inspection}
-                            onSuccess={refetchInspections}
-                            trigger={
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            }
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="text-center text-muted-foreground py-8">
-                  No inspections found.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </>
+          <DataTable
+            data={inspections || null}
+            columns={inspectionColumns}
+            isLoading={inspectionsLoading}
+            searchFilter={(i, search) => {
+              const q = search.toLowerCase()
+              return (
+                (i.material?.internal_part_number?.toLowerCase().includes(q) ?? false) ||
+                (i.received_ipn?.toLowerCase().includes(q) ?? false) ||
+                (i.received_mpn?.toLowerCase().includes(q) ?? false)
+              )
+            }}
+            searchPlaceholder="Search by material, IPN, or MPN..."
+            emptyMessage="No inspections found."
+            storageKey="receiving-inspections"
+          />
+        </div>
       )}
     </div>
   )

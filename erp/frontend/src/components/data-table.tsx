@@ -36,6 +36,9 @@ import {
   Settings2,
   GripVertical,
   RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react"
 
 export interface Column<T> {
@@ -43,6 +46,7 @@ export interface Column<T> {
   header: string
   cell?: (item: T) => React.ReactNode
   sortable?: boolean
+  sortAccessor?: (item: T) => string | number | null
   className?: string
   // New properties for dynamic columns
   defaultWidth?: number
@@ -129,6 +133,8 @@ export function DataTable<T extends { id: string }>({
   const [currentPage, setCurrentPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(initialPageSize)
   const [internalSelectedIds, setInternalSelectedIds] = React.useState<string[]>([])
+  const [sortKey, setSortKey] = React.useState<string | null>(null)
+  const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc")
 
   // Column settings state
   const [columnSettings, setColumnSettings] = React.useState<Record<string, ColumnSettings>>(() => {
@@ -249,13 +255,58 @@ export function DataTable<T extends { id: string }>({
     })
   }, [data, search, searchKey, searchFilter])
 
+  // Sort data
+  const handleSort = React.useCallback((key: string) => {
+    if (sortKey === key) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))
+    } else {
+      setSortKey(key)
+      setSortDirection("asc")
+    }
+    setCurrentPage(1)
+  }, [sortKey])
+
+  const sortedData = React.useMemo(() => {
+    if (!sortKey) return filteredData
+
+    const column = columns.find((c) => c.key === sortKey)
+    if (!column || !column.sortable) return filteredData
+
+    return [...filteredData].sort((a, b) => {
+      let aVal: string | number | null
+      let bVal: string | number | null
+
+      if (column.sortAccessor) {
+        aVal = column.sortAccessor(a)
+        bVal = column.sortAccessor(b)
+      } else {
+        aVal = (a as Record<string, unknown>)[sortKey] as string | number | null
+        bVal = (b as Record<string, unknown>)[sortKey] as string | number | null
+      }
+
+      // Nulls always sort last
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return 1
+      if (bVal == null) return -1
+
+      let cmp: number
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        cmp = aVal - bVal
+      } else {
+        cmp = String(aVal).localeCompare(String(bVal), undefined, { sensitivity: "base" })
+      }
+
+      return sortDirection === "asc" ? cmp : -cmp
+    })
+  }, [filteredData, sortKey, sortDirection, columns])
+
   // Paginate data
   const paginatedData = React.useMemo(() => {
     const start = (currentPage - 1) * pageSize
-    return filteredData.slice(start, start + pageSize)
-  }, [filteredData, currentPage, pageSize])
+    return sortedData.slice(start, start + pageSize)
+  }, [sortedData, currentPage, pageSize])
 
-  const totalPages = Math.ceil(filteredData.length / pageSize)
+  const totalPages = Math.ceil(sortedData.length / pageSize)
 
   // Reset to page 1 when search or page size changes
   React.useEffect(() => {
@@ -470,6 +521,10 @@ export function DataTable<T extends { id: string }>({
               {visibleColumns.map((column) => {
                 const width = columnSettings[column.key]?.width || column.defaultWidth || DEFAULT_COLUMN_WIDTH
                 const canResize = enableColumnResize && column.resizable !== false
+                const isSorted = sortKey === column.key
+                const SortIcon = isSorted
+                  ? sortDirection === "asc" ? ArrowUp : ArrowDown
+                  : ArrowUpDown
                 return (
                   <TableHead
                     key={column.key}
@@ -477,7 +532,18 @@ export function DataTable<T extends { id: string }>({
                     style={enableColumnResize ? { width, minWidth: column.minWidth || MIN_COLUMN_WIDTH } : undefined}
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="truncate">{column.header}</span>
+                      {column.sortable ? (
+                        <button
+                          type="button"
+                          className="flex items-center gap-1 hover:text-foreground text-left"
+                          onClick={() => handleSort(column.key)}
+                        >
+                          <span className="truncate">{column.header}</span>
+                          <SortIcon className={`h-3.5 w-3.5 shrink-0 ${isSorted ? "text-foreground" : "text-muted-foreground/50"}`} />
+                        </button>
+                      ) : (
+                        <span className="truncate">{column.header}</span>
+                      )}
                       {canResize && (
                         <div
                           className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-primary/50 active:bg-primary"
@@ -545,8 +611,8 @@ export function DataTable<T extends { id: string }>({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <p className="text-sm text-muted-foreground">
-            Showing {filteredData.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{" "}
-            {Math.min(currentPage * pageSize, filteredData.length)} of {filteredData.length}
+            Showing {sortedData.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{" "}
+            {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length}
           </p>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Rows per page:</span>

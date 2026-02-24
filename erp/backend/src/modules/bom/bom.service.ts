@@ -57,9 +57,16 @@ export class BomService {
     });
   }
 
-  async findRevisionsByProduct(productId: string): Promise<BomRevision[]> {
+  async findRevisionsByProduct(
+    productId: string,
+    includeArchived = false,
+  ): Promise<BomRevision[]> {
+    const where: any = { product_id: productId };
+    if (!includeArchived) {
+      where.is_archived = false;
+    }
     return this.revisionRepository.find({
-      where: { product_id: productId },
+      where,
       relations: ['product'],
       order: { created_at: 'DESC' },
     });
@@ -338,6 +345,52 @@ export class BomService {
       },
       undefined,
       { product_id: revision.product_id },
+    );
+
+    return this.findRevision(id);
+  }
+
+  // ============ Archive Methods ============
+
+  async archiveRevision(id: string): Promise<BomRevision> {
+    const revision = await this.findRevision(id);
+
+    if (revision.is_active) {
+      throw new BadRequestException(
+        'Cannot archive the active revision. Deactivate it first.',
+      );
+    }
+
+    revision.is_archived = true;
+    await this.revisionRepository.save(revision);
+
+    await this.auditService.emitStateChange(
+      AuditEventType.BOM_REVISION_UPDATED,
+      AuditEntityType.BOM_REVISION,
+      id,
+      { is_archived: false },
+      { is_archived: true },
+      undefined,
+      { product_id: revision.product_id, revision_number: revision.revision_number },
+    );
+
+    return this.findRevision(id);
+  }
+
+  async unarchiveRevision(id: string): Promise<BomRevision> {
+    const revision = await this.findRevision(id);
+
+    revision.is_archived = false;
+    await this.revisionRepository.save(revision);
+
+    await this.auditService.emitStateChange(
+      AuditEventType.BOM_REVISION_UPDATED,
+      AuditEntityType.BOM_REVISION,
+      id,
+      { is_archived: true },
+      { is_archived: false },
+      undefined,
+      { product_id: revision.product_id, revision_number: revision.revision_number },
     );
 
     return this.findRevision(id);

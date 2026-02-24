@@ -6,6 +6,7 @@ import {
   type Product,
   type BomRevision,
   type BomItem,
+  type BomDiff,
   type Material,
   type CreateBomRevisionDto,
   type CreateBomItemDto,
@@ -16,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -64,19 +66,24 @@ import {
   Plus,
   FileText,
   CheckCircle,
-  Pencil,
   Trash2,
   Copy,
-  RotateCcw,
   Upload,
   Search,
   X,
+  Archive,
+  ArchiveRestore,
+  GitCompare,
+  RefreshCw,
+  ArrowRight,
+  Minus,
 } from "lucide-react"
 import { useState, useEffect, useMemo } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { BomImportWizard } from "@/components/bom-import-wizard"
+import { useAuth, UserRole } from "@/contexts/auth-context"
 
 const resourceTypeLabels: Record<ResourceType, string> = {
   SMT: "SMT",
@@ -89,16 +96,34 @@ const resourceTypeLabels: Record<ResourceType, string> = {
 export default function ProductDetailPage() {
   const params = useParams()
   const productId = params.id as string
+  const { hasRole } = useAuth()
+  const isAdmin = hasRole(UserRole.ADMIN)
 
   const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null)
   const [showNewRevisionDialog, setShowNewRevisionDialog] = useState(false)
   const [showAddItemDialog, setShowAddItemDialog] = useState(false)
   const [showImportWizard, setShowImportWizard] = useState(false)
   const [bomItemSearch, setBomItemSearch] = useState("")
+  const [showArchived, setShowArchived] = useState(false)
+
+  // Diff comparison state
+  const [compareMode, setCompareMode] = useState(false)
+  const [revision1Id, setRevision1Id] = useState("")
+  const [revision2Id, setRevision2Id] = useState("")
+  const [showDiffDialog, setShowDiffDialog] = useState(false)
+  const [diffResult, setDiffResult] = useState<BomDiff | null>(null)
+  const [loadingDiff, setLoadingDiff] = useState(false)
 
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = useApi<Product>(`/products/${productId}`)
-  const { data: revisions, isLoading: loadingRevisions, refetch: refetchRevisions } = useApi<BomRevision[]>(`/bom/product/${productId}`)
+  const { data: revisions, isLoading: loadingRevisions, refetch: refetchRevisions } = useApi<BomRevision[]>(
+    `/bom/product/${productId}?includeArchived=${showArchived}`
+  )
   const { data: materials } = useApi<Material[]>("/materials")
+
+  // Refetch revisions when showArchived changes
+  useEffect(() => {
+    refetchRevisions()
+  }, [showArchived, refetchRevisions])
 
   // Get selected revision with items
   const { data: selectedRevision, refetch: refetchSelectedRevision } = useApi<BomRevision>(
@@ -118,7 +143,7 @@ export default function ProductDetailPage() {
   useEffect(() => {
     if (selectedRevisionId) {
       refetchSelectedRevision()
-      setBomItemSearch("") // Clear search when switching revisions
+      setBomItemSearch("")
     }
   }, [selectedRevisionId, refetchSelectedRevision])
 
@@ -176,6 +201,28 @@ export default function ProductDetailPage() {
     }
   )
 
+  const archiveMutation = useMutation(
+    (revisionId: string) => api.post<BomRevision>(`/bom/revision/${revisionId}/archive`, {}),
+    {
+      onSuccess: () => {
+        toast.success("Revision archived")
+        refetchRevisions()
+      },
+      onError: (error) => toast.error(error.message || "Failed to archive revision"),
+    }
+  )
+
+  const unarchiveMutation = useMutation(
+    (revisionId: string) => api.post<BomRevision>(`/bom/revision/${revisionId}/unarchive`, {}),
+    {
+      onSuccess: () => {
+        toast.success("Revision unarchived")
+        refetchRevisions()
+      },
+      onError: (error) => toast.error(error.message || "Failed to unarchive revision"),
+    }
+  )
+
   const deleteItemMutation = useMutation(
     (itemId: string) => api.delete(`/bom/item/${itemId}`),
     {
@@ -186,6 +233,20 @@ export default function ProductDetailPage() {
       onError: (error) => toast.error(error.message || "Failed to remove item"),
     }
   )
+
+  const handleCompare = async () => {
+    if (!revision1Id || !revision2Id) return
+    setLoadingDiff(true)
+    try {
+      const diff = await api.get<BomDiff>(`/bom/revision/${revision1Id}/diff/${revision2Id}`)
+      setDiffResult(diff)
+      setShowDiffDialog(true)
+    } catch {
+      toast.error("Failed to compare revisions")
+    } finally {
+      setLoadingDiff(false)
+    }
+  }
 
   if (loadingProduct) {
     return (
@@ -287,6 +348,76 @@ export default function ProductDetailPage() {
             </div>
           </CardHeader>
           <CardContent>
+            {/* Show Archived toggle + Compare button */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="show-archived"
+                  checked={showArchived}
+                  onCheckedChange={(checked) => setShowArchived(checked === true)}
+                />
+                <Label htmlFor="show-archived" className="text-sm cursor-pointer">Show Archived</Label>
+              </div>
+              <Button
+                variant={compareMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setCompareMode(!compareMode)
+                  if (!compareMode) {
+                    setRevision1Id("")
+                    setRevision2Id("")
+                  }
+                }}
+              >
+                <GitCompare className="h-4 w-4 mr-2" />
+                {compareMode ? "Exit Compare" : "Compare"}
+              </Button>
+            </div>
+
+            {/* Compare Mode UI */}
+            {compareMode && revisions && (
+              <div className="flex items-end gap-3 mb-4 p-3 bg-muted/30 rounded-lg border">
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs font-medium">Revision 1</label>
+                  <Select value={revision1Id} onValueChange={setRevision1Id}>
+                    <SelectTrigger className="h-8">
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {revisions.map((rev) => (
+                        <SelectItem key={rev.id} value={rev.id} disabled={rev.id === revision2Id}>
+                          {rev.revision_number}{rev.is_active ? " (Active)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground mb-2 shrink-0" />
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs font-medium">Revision 2</label>
+                  <Select value={revision2Id} onValueChange={setRevision2Id}>
+                    <SelectTrigger className="h-8">
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {revisions.map((rev) => (
+                        <SelectItem key={rev.id} value={rev.id} disabled={rev.id === revision1Id}>
+                          {rev.revision_number}{rev.is_active ? " (Active)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleCompare}
+                  disabled={!revision1Id || !revision2Id || loadingDiff}
+                >
+                  {loadingDiff ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Compare"}
+                </Button>
+              </div>
+            )}
+
             {loadingRevisions ? (
               <div className="text-center py-4">Loading revisions...</div>
             ) : revisions && revisions.length > 0 ? (
@@ -297,7 +428,11 @@ export default function ProductDetailPage() {
                     className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
                       selectedRevisionId === revision.id
                         ? "border-primary bg-primary/5"
-                        : "hover:bg-muted/50"
+                        : revision.is_active
+                          ? "border-green-300 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20 hover:bg-green-50 dark:hover:bg-green-950/30"
+                          : revision.is_archived
+                            ? "opacity-60 hover:bg-muted/50"
+                            : "hover:bg-muted/50"
                     }`}
                     onClick={() => setSelectedRevisionId(revision.id)}
                   >
@@ -306,9 +441,15 @@ export default function ProductDetailPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{revision.revision_number}</span>
                           {revision.is_active && (
-                            <Badge variant="default" className="text-xs">
+                            <Badge variant="default" className="text-xs bg-green-600">
                               <CheckCircle className="h-3 w-3 mr-1" />
                               Active
+                            </Badge>
+                          )}
+                          {revision.is_archived && (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
+                              <Archive className="h-3 w-3 mr-1" />
+                              Archived
                             </Badge>
                           )}
                         </div>
@@ -319,7 +460,7 @@ export default function ProductDetailPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      {!revision.is_active && (
+                      {!revision.is_active && !revision.is_archived && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -343,7 +484,36 @@ export default function ProductDetailPage() {
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
-                      {!revision.is_active && (
+                      {/* Archive/Unarchive - admin only, not for active revision */}
+                      {isAdmin && !revision.is_active && (
+                        revision.is_archived ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              unarchiveMutation.mutate(revision.id)
+                            }}
+                            title="Unarchive revision"
+                          >
+                            <ArchiveRestore className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              archiveMutation.mutate(revision.id)
+                            }}
+                            title="Archive revision"
+                          >
+                            <Archive className="h-4 w-4" />
+                          </Button>
+                        )
+                      )}
+                      {/* Delete - admin only, not for active revision */}
+                      {isAdmin && !revision.is_active && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
@@ -525,6 +695,121 @@ export default function ProductDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Diff Dialog */}
+      <Dialog open={showDiffDialog} onOpenChange={setShowDiffDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>BOM Comparison</DialogTitle>
+            <DialogDescription>Comparing changes between revisions</DialogDescription>
+          </DialogHeader>
+          {diffResult && (
+            <div className="flex-1 overflow-auto space-y-4">
+              <div className="flex gap-4">
+                <Badge variant="default" className="gap-1">
+                  <Plus className="h-3 w-3" />
+                  {diffResult.added.length} Added
+                </Badge>
+                <Badge variant="destructive" className="gap-1">
+                  <Minus className="h-3 w-3" />
+                  {diffResult.removed.length} Removed
+                </Badge>
+                <Badge variant="secondary" className="gap-1">
+                  <RefreshCw className="h-3 w-3" />
+                  {diffResult.changed.length} Changed
+                </Badge>
+              </div>
+
+              {diffResult.added.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2 text-green-600 dark:text-green-400">Added Items</h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Internal P/N</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Qty</TableHead>
+                        <TableHead>Ref Des</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {diffResult.added.map((item) => (
+                        <TableRow key={item.id} className="bg-green-50 dark:bg-green-950/20">
+                          <TableCell className="font-medium">{item.material?.internal_part_number || "-"}</TableCell>
+                          <TableCell>{item.material?.description || "-"}</TableCell>
+                          <TableCell className="font-mono">{item.quantity_required}</TableCell>
+                          <TableCell className="font-mono text-sm">{item.reference_designators || "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {diffResult.removed.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2 text-red-600 dark:text-red-400">Removed Items</h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Internal P/N</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Qty</TableHead>
+                        <TableHead>Ref Des</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {diffResult.removed.map((item) => (
+                        <TableRow key={item.id} className="bg-red-50 dark:bg-red-950/20">
+                          <TableCell className="font-medium">{item.material?.internal_part_number || "-"}</TableCell>
+                          <TableCell>{item.material?.description || "-"}</TableCell>
+                          <TableCell className="font-mono">{item.quantity_required}</TableCell>
+                          <TableCell className="font-mono text-sm">{item.reference_designators || "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {diffResult.changed.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2 text-blue-600 dark:text-blue-400">Changed Items</h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Internal P/N</TableHead>
+                        <TableHead>Changes</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {diffResult.changed.map((change) => (
+                        <TableRow key={change.old.id} className="bg-blue-50 dark:bg-blue-950/20">
+                          <TableCell className="font-medium">{change.old.material?.internal_part_number || "-"}</TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              {change.changes.map((c, idx) => (
+                                <div key={idx} className="text-sm text-muted-foreground">{c}</div>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {diffResult.added.length === 0 && diffResult.removed.length === 0 && diffResult.changed.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No differences found between these revisions</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

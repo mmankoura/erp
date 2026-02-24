@@ -18,6 +18,7 @@ import {
   UpdateMaterialDto,
   BulkCreateMaterialDto,
 } from './dto';
+import { FilterMaterialsDto } from './dto/filter-materials.dto';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -39,6 +40,11 @@ export class MaterialsController {
   @Get(':id')
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.materialsService.findOne(id);
+  }
+
+  @Post('filter')
+  async filterMaterials(@Body() dto: FilterMaterialsDto) {
+    return this.materialsService.filterMaterials(dto);
   }
 
   @Post()

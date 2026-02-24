@@ -3,6 +3,7 @@
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type Material, type Customer } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
+import { RelationalFilterBuilder, type FilterGroup } from "@/components/relational-filter-builder"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -24,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Pencil, Trash2, X, Search, Filter, Eye } from "lucide-react"
+import { Plus, Pencil, Trash2, X, Search, Filter, Eye, ChevronDown, ChevronUp } from "lucide-react"
 import { useState, useMemo, useEffect } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
@@ -294,11 +295,40 @@ export default function MaterialsPage() {
   const [descriptionFilter, setDescriptionFilter] = useState("")
   const [showFilters, setShowFilters] = useState(false)
 
+  // Relational filter state
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [relationalFilterIds, setRelationalFilterIds] = useState<Set<string> | null>(null)
+  const [activeRelationalFilterCount, setActiveRelationalFilterCount] = useState(0)
+
+  // Relational filter handlers
+  const handleRelationalApply = async (filters: FilterGroup[], logic: "AND" | "OR") => {
+    try {
+      const result = await api.post<Material[]>("/materials/filter", { filters, logic })
+      const ids = new Set(result.map((m) => m.id))
+      setRelationalFilterIds(ids)
+      setActiveRelationalFilterCount(filters.length)
+    } catch {
+      // On error, clear relational filters
+      setRelationalFilterIds(null)
+      setActiveRelationalFilterCount(0)
+    }
+  }
+
+  const handleRelationalClear = () => {
+    setRelationalFilterIds(null)
+    setActiveRelationalFilterCount(0)
+  }
+
   // Filter materials based on search and filters
   const filteredMaterials = useMemo(() => {
     if (!materials) return null
 
     return materials.filter((material) => {
+      // Relational filter
+      if (relationalFilterIds !== null && !relationalFilterIds.has(material.id)) {
+        return false
+      }
+
       // Search across IPN, MPN, and description
       if (search) {
         const searchLower = search.toLowerCase()
@@ -331,7 +361,7 @@ export default function MaterialsPage() {
 
       return true
     })
-  }, [materials, search, customerFilter, ipnFilter, mpnFilter, descriptionFilter])
+  }, [materials, search, customerFilter, ipnFilter, mpnFilter, descriptionFilter, relationalFilterIds])
 
   const hasActiveFilters = customerFilter !== "all" || ipnFilter || mpnFilter || descriptionFilter
 
@@ -391,12 +421,15 @@ export default function MaterialsPage() {
       key: "customer",
       header: "Customer",
       defaultWidth: 140,
+      sortable: true,
+      sortAccessor: (m) => m.customer?.name || "",
       cell: (material) => material.customer?.name || "-",
     },
     {
       key: "internal_part_number",
       header: "IPN",
       defaultWidth: 150,
+      sortable: true,
       cell: (material) => (
         <span className="font-medium">{material.internal_part_number}</span>
       ),
@@ -405,18 +438,21 @@ export default function MaterialsPage() {
       key: "manufacturer_pn",
       header: "Manufacturer P/N",
       defaultWidth: 160,
+      sortable: true,
       cell: (material) => material.manufacturer_pn || "-",
     },
     {
       key: "manufacturer",
       header: "Manufacturer",
       defaultWidth: 140,
+      sortable: true,
       cell: (material) => material.manufacturer || "-",
     },
     {
       key: "description",
       header: "Description",
       defaultWidth: 250,
+      sortable: true,
       cell: (material) => (
         <span className="truncate block" title={material.description || ""}>
           {material.description || "-"}
@@ -427,6 +463,7 @@ export default function MaterialsPage() {
       key: "category",
       header: "Category",
       defaultWidth: 100,
+      sortable: true,
       cell: (material) =>
         material.category ? (
           <Badge variant="secondary">{material.category}</Badge>
@@ -438,6 +475,7 @@ export default function MaterialsPage() {
       key: "uom",
       header: "UOM",
       defaultWidth: 80,
+      sortable: true,
       cell: (material) => material.uom,
     },
     {
@@ -601,6 +639,32 @@ export default function MaterialsPage() {
             </div>
           </div>
         )}
+
+        {/* Advanced Relational Filters */}
+        <div>
+          <button
+            type="button"
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+          >
+            {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            Advanced Filters
+            {activeRelationalFilterCount > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {activeRelationalFilterCount} active
+              </Badge>
+            )}
+          </button>
+          {showAdvancedFilters && (
+            <div className="mt-2 p-4 bg-muted/30 rounded-lg border">
+              <RelationalFilterBuilder
+                onApply={handleRelationalApply}
+                onClear={handleRelationalClear}
+                activeFilterCount={activeRelationalFilterCount}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Selection toolbar */}

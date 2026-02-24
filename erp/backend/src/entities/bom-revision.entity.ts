@@ -54,6 +54,9 @@ export class BomRevision {
   @Column({ type: 'boolean', default: false })
   is_active: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  is_archived: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 

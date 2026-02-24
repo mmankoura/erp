@@ -761,6 +761,7 @@ export interface BomRevision {
   source: BomSource
   source_filename: string | null
   is_active: boolean
+  is_archived: boolean
   created_at: string
   items?: BomItem[]
 }

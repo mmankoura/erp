@@ -6,12 +6,19 @@ import {
   type InventoryStock,
   type InventoryTransaction,
   type InventoryLot,
+  type InventoryAllocation,
   type Material,
 } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
+import { RelationalFilterBuilder, type FilterGroup } from "@/components/relational-filter-builder"
 import { InventoryImportWizard } from "@/components/inventory-import-wizard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import {
   Dialog,
   DialogContent,
@@ -49,6 +56,8 @@ import {
   Package,
   Upload,
   Trash2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -429,6 +438,79 @@ function ReceiveStockDialog({
   )
 }
 
+// Allocation Popover - shows allocation breakdown when clicking allocated qty
+function AllocationPopover({ materialId, quantity }: { materialId: string; quantity: number }) {
+  const [open, setOpen] = useState(false)
+  const { data: allocations, isLoading } = useApi<InventoryAllocation[]>(
+    `/inventory/${materialId}/allocations`,
+    { enabled: open }
+  )
+
+  if (quantity <= 0) {
+    return <span className="font-mono">0</span>
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="font-mono text-yellow-600 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-yellow-700"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {quantity.toLocaleString()}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[400px] p-0" align="start" onClick={(e) => e.stopPropagation()}>
+        <div className="p-3 border-b">
+          <p className="text-sm font-medium">Allocation Breakdown</p>
+        </div>
+        <div className="max-h-[300px] overflow-auto">
+          {isLoading ? (
+            <p className="text-center text-muted-foreground py-4 text-sm">Loading...</p>
+          ) : allocations && allocations.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Order</TableHead>
+                  <TableHead className="text-xs text-right">Qty</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-xs">Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {allocations.map((alloc) => (
+                  <TableRow key={alloc.id}>
+                    <TableCell className="text-xs font-medium">
+                      {alloc.order?.order_number || "-"}
+                    </TableCell>
+                    <TableCell className="text-xs text-right font-mono">
+                      {alloc.quantity}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={alloc.status === "ACTIVE" ? "default" : "secondary"}
+                        className="text-[10px]"
+                      >
+                        {alloc.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(alloc.created_at).toLocaleDateString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-center text-muted-foreground py-4 text-sm">No allocations</p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 // Extended type with id for DataTable
 type InventoryStockWithId = InventoryStock & { id: string }
 
@@ -443,6 +525,28 @@ export default function InventoryPage() {
   )
   const { data: lotsRaw, isLoading: lotsLoading, refetch: refetchLots } = useApi<InventoryLot[]>("/inventory/lots")
   const [importWizardOpen, setImportWizardOpen] = useState(false)
+
+  // Relational filter state
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [relationalFilterIds, setRelationalFilterIds] = useState<Set<string> | null>(null)
+  const [activeRelationalFilterCount, setActiveRelationalFilterCount] = useState(0)
+
+  const handleRelationalApply = async (filters: FilterGroup[], logic: "AND" | "OR") => {
+    try {
+      const result = await api.post<InventoryStock[]>("/inventory/filter", { filters, logic })
+      const ids = new Set(result.map((s) => s.material_id))
+      setRelationalFilterIds(ids)
+      setActiveRelationalFilterCount(filters.length)
+    } catch {
+      setRelationalFilterIds(null)
+      setActiveRelationalFilterCount(0)
+    }
+  }
+
+  const handleRelationalClear = () => {
+    setRelationalFilterIds(null)
+    setActiveRelationalFilterCount(0)
+  }
 
   const deleteLotMutation = useMutation(
     (id: string) => api.delete(`/inventory/lots/${id}`),
@@ -480,6 +584,11 @@ export default function InventoryPage() {
     ? inventoryRaw.map((item) => ({ ...item, id: item.material_id }))
     : null
 
+  // Apply relational filter to inventory
+  const filteredInventory = relationalFilterIds !== null && inventory
+    ? inventory.filter((item) => relationalFilterIds.has(item.material_id))
+    : inventory
+
   // Calculate summary stats
   const totalItems = inventory?.length || 0
   const totalOnHand = inventory?.reduce((sum, item) => sum + item.quantity_on_hand, 0) || 0
@@ -490,37 +599,46 @@ export default function InventoryPage() {
     {
       key: "uid",
       header: "UID",
+      sortable: true,
       cell: (lot) => <span className="font-mono font-medium">{lot.uid}</span>,
     },
     {
       key: "customer",
       header: "Customer",
+      sortable: true,
+      sortAccessor: (lot) => lot.material?.customer?.name || "",
       cell: (lot) => lot.material?.customer?.name || "-",
     },
     {
       key: "ipn",
       header: "IPN",
+      sortable: true,
+      sortAccessor: (lot) => lot.material?.internal_part_number || "",
       cell: (lot) => lot.material?.internal_part_number,
     },
     {
       key: "quantity",
       header: "Quantity",
       className: "text-right",
+      sortable: true,
       cell: (lot) => <span className="font-mono">{lot.quantity.toLocaleString()}</span>,
     },
     {
       key: "package_type",
       header: "Package",
+      sortable: true,
       cell: (lot) => <Badge variant="outline">{lot.package_type}</Badge>,
     },
     {
       key: "po_reference",
       header: "PO Ref",
+      sortable: true,
       cell: (lot) => <span className="text-muted-foreground">{lot.po_reference || "-"}</span>,
     },
     {
       key: "status",
       header: "Status",
+      sortable: true,
       cell: (lot) => (
         <Badge
           variant={
@@ -538,6 +656,7 @@ export default function InventoryPage() {
     {
       key: "received_date",
       header: "Received",
+      sortable: true,
       cell: (lot) => (
         <span className="text-sm text-muted-foreground">
           {lot.received_date ? new Date(lot.received_date).toLocaleDateString() : "-"}
@@ -570,12 +689,16 @@ export default function InventoryPage() {
       key: "customer",
       header: "Customer",
       defaultWidth: 140,
+      sortable: true,
+      sortAccessor: (stock) => stock.material?.customer?.name || "",
       cell: (stock) => stock.material?.customer?.name || "-",
     },
     {
       key: "material",
       header: "Material",
       defaultWidth: 220,
+      sortable: true,
+      sortAccessor: (stock) => stock.material?.internal_part_number || "",
       cell: (stock) => (
         <div>
           <span className="font-medium">{stock.material?.internal_part_number}</span>
@@ -592,6 +715,7 @@ export default function InventoryPage() {
       header: "On Hand",
       defaultWidth: 100,
       className: "text-right",
+      sortable: true,
       cell: (stock) => (
         <span className="font-mono">{stock.quantity_on_hand.toLocaleString()}</span>
       ),
@@ -601,10 +725,9 @@ export default function InventoryPage() {
       header: "Allocated",
       defaultWidth: 100,
       className: "text-right",
+      sortable: true,
       cell: (stock) => (
-        <span className={`font-mono ${stock.quantity_allocated > 0 ? "text-yellow-600" : ""}`}>
-          {stock.quantity_allocated.toLocaleString()}
-        </span>
+        <AllocationPopover materialId={stock.material_id} quantity={stock.quantity_allocated} />
       ),
     },
     {
@@ -612,6 +735,7 @@ export default function InventoryPage() {
       header: "Available",
       defaultWidth: 100,
       className: "text-right",
+      sortable: true,
       cell: (stock) => (
         <span
           className={`font-mono font-medium ${
@@ -631,6 +755,7 @@ export default function InventoryPage() {
       header: "On Order",
       defaultWidth: 100,
       className: "text-right",
+      sortable: true,
       cell: (stock) => (
         <span className={`font-mono ${stock.quantity_on_order > 0 ? "text-blue-600" : ""}`}>
           {stock.quantity_on_order.toLocaleString()}
@@ -753,8 +878,34 @@ export default function InventoryPage() {
         </TabsList>
 
         <TabsContent value="stock" className="space-y-4">
+          {/* Advanced Relational Filters */}
+          <div>
+            <button
+              type="button"
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            >
+              {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              Advanced Filters
+              {activeRelationalFilterCount > 0 && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {activeRelationalFilterCount} active
+                </Badge>
+              )}
+            </button>
+            {showAdvancedFilters && (
+              <div className="mt-2 p-4 bg-muted/30 rounded-lg border">
+                <RelationalFilterBuilder
+                  onApply={handleRelationalApply}
+                  onClear={handleRelationalClear}
+                  activeFilterCount={activeRelationalFilterCount}
+                />
+              </div>
+            )}
+          </div>
+
           <DataTable
-            data={inventory}
+            data={filteredInventory}
             columns={columns}
             isLoading={isLoading}
             searchFilter={(stock, search) => {

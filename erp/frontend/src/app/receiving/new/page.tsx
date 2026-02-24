@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/auth-context"
 import { useApi, useMutation } from "@/hooks/use-api"
 import {
   api,
@@ -59,6 +60,7 @@ const PACKAGE_TYPES: PackageType[] = ["REEL", "TUBE", "TRAY", "BAG", "BOX", "BUL
 
 export default function ReceivingNewPage() {
   const router = useRouter()
+  const { user } = useAuth()
 
   // === SESSION STATE ===
   const [session, setSession] = useState<ReceivingSession | null>(null)
@@ -71,7 +73,7 @@ export default function ReceivingNewPage() {
   const [packingSlip, setPackingSlip] = useState("")
   const [selectedCustomerId, setSelectedCustomerId] = useState("")
   const [autoRelease, setAutoRelease] = useState(true)
-  const [startedBy, setStartedBy] = useState("")
+  const startedBy = user?.full_name || ""
 
   // Item entry form
   const [itemIpn, setItemIpn] = useState("")
@@ -360,13 +362,12 @@ export default function ReceivingNewPage() {
           <CardContent className="space-y-6">
             {/* Operator Name */}
             <div className="grid gap-2">
-              <Label htmlFor="started_by">Operator Name *</Label>
+              <Label htmlFor="started_by">Operator Name</Label>
               <Input
                 id="started_by"
                 value={startedBy}
-                onChange={(e) => setStartedBy(e.target.value)}
-                placeholder="Your name"
-                autoFocus
+                readOnly
+                className="bg-muted"
               />
             </div>
 

@@ -48,8 +48,12 @@ export class BomController {
   @Get('product/:productId')
   async findRevisionsByProduct(
     @Param('productId', ParseUUIDPipe) productId: string,
+    @Query('includeArchived') includeArchived?: string,
   ) {
-    return this.bomService.findRevisionsByProduct(productId);
+    return this.bomService.findRevisionsByProduct(
+      productId,
+      includeArchived === 'true',
+    );
   }
 
   @Get('product/:productId/active')
@@ -86,10 +90,22 @@ export class BomController {
   }
 
   @Delete('revision/:id')
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteRevision(@Param('id', ParseUUIDPipe) id: string) {
     await this.bomService.deleteRevision(id);
+  }
+
+  @Post('revision/:id/archive')
+  @Roles(UserRole.ADMIN)
+  async archiveRevision(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bomService.archiveRevision(id);
+  }
+
+  @Post('revision/:id/unarchive')
+  @Roles(UserRole.ADMIN)
+  async unarchiveRevision(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bomService.unarchiveRevision(id);
   }
 
   @Post('revision/:id/activate')

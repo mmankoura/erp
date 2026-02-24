@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, In } from 'typeorm';
+import { Repository, DataSource, In, Not, IsNull } from 'typeorm';
 import {
   InventoryTransaction,
   TransactionType,
@@ -28,6 +28,7 @@ import {
   CreateAllocationDto,
   UpdateAllocationDto,
 } from './dto';
+import { FilterInventoryDto } from './dto/filter-inventory.dto';
 import { AuditService } from '../audit/audit.service';
 import {
   AuditEventType,
@@ -197,6 +198,70 @@ export class InventoryService {
         quantity_on_order: quantityOnOrder,
       };
     });
+  }
+
+  /**
+   * Filter stock levels by relational criteria (product_revision, order)
+   */
+  async filterStock(dto: FilterInventoryDto): Promise<MaterialStock[]> {
+    if (!dto.filters || dto.filters.length === 0) {
+      return this.findAllStock();
+    }
+
+    const logic = dto.logic || 'OR';
+    const materialIdSets: Set<string>[] = [];
+
+    const bomItemRepository = this.dataSource.getRepository(BomItem);
+    const orderRepository = this.dataSource.getRepository(Order);
+
+    for (const filter of dto.filters) {
+      if (filter.ids.length === 0) continue;
+
+      if (filter.type === 'product_revision') {
+        const items = await bomItemRepository.find({
+          where: { bom_revision_id: In(filter.ids) },
+          select: ['material_id'],
+        });
+        materialIdSets.push(new Set(items.map((i) => i.material_id)));
+      } else if (filter.type === 'order') {
+        const orders = await orderRepository.find({
+          where: { id: In(filter.ids) },
+          select: ['bom_revision_id'],
+        });
+        const revisionIds = orders.map((o) => o.bom_revision_id).filter(Boolean);
+        if (revisionIds.length > 0) {
+          const items = await bomItemRepository.find({
+            where: { bom_revision_id: In(revisionIds) },
+            select: ['material_id'],
+          });
+          materialIdSets.push(new Set(items.map((i) => i.material_id)));
+        } else {
+          materialIdSets.push(new Set());
+        }
+      }
+    }
+
+    if (materialIdSets.length === 0) {
+      return this.findAllStock();
+    }
+
+    let resultIds: Set<string>;
+    if (logic === 'AND') {
+      resultIds = materialIdSets.reduce((acc, set) => {
+        return new Set([...acc].filter((id) => set.has(id)));
+      });
+    } else {
+      resultIds = new Set<string>();
+      for (const set of materialIdSets) {
+        for (const id of set) resultIds.add(id);
+      }
+    }
+
+    if (resultIds.size === 0) return [];
+
+    // Get full stock data and filter to matching material IDs
+    const allStock = await this.findAllStock();
+    return allStock.filter((s) => resultIds.has(s.material_id));
   }
 
   /**

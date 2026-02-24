@@ -26,6 +26,7 @@ import {
   ReturnMaterialsDto,
   ReturnFloorStockDto,
 } from './dto';
+import { FilterInventoryDto } from './dto/filter-inventory.dto';
 import { OwnerType } from '../../entities/inventory-transaction.entity';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -46,6 +47,11 @@ export class InventoryController {
    * GET /inventory
    * List all materials with current stock levels (includes allocation info)
    */
+  @Post('filter')
+  async filterStock(@Body() dto: FilterInventoryDto) {
+    return this.inventoryService.filterStock(dto);
+  }
+
   @Get()
   async findAllStock() {
     return this.inventoryService.findAllStock();
