@@ -639,8 +639,8 @@ export default function ProductDetailPage() {
                           </Button>
                         )
                       )}
-                      {/* Delete - admin only, not for active revision */}
-                      {isAdmin && !revision.is_active && (
+                      {/* Delete - admin only, only for archived revisions */}
+                      {isAdmin && !revision.is_active && revision.is_archived && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
@@ -648,7 +648,7 @@ export default function ProductDetailPage() {
                               size="sm"
                               className="text-destructive"
                               onClick={(e) => e.stopPropagation()}
-                              title="Delete revision"
+                              title="Delete revision permanently"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -658,6 +658,7 @@ export default function ProductDetailPage() {
                               <AlertDialogTitle>Delete BOM Revision?</AlertDialogTitle>
                               <AlertDialogDescription>
                                 This will permanently delete revision {revision.revision_number} and all its items.
+                                If orders reference this revision, deletion will be blocked.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>

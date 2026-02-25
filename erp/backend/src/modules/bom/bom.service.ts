@@ -9,6 +9,7 @@ import { Repository, DataSource } from 'typeorm';
 import { BomRevision } from '../../entities/bom-revision.entity';
 import { BomItem } from '../../entities/bom-item.entity';
 import { Product } from '../../entities/product.entity';
+import { Order } from '../../entities/order.entity';
 import {
   CreateBomRevisionDto,
   UpdateBomRevisionDto,
@@ -44,6 +45,8 @@ export class BomService {
     private readonly itemRepository: Repository<BomItem>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
   ) {}
@@ -276,6 +279,16 @@ export class BomService {
 
   async deleteRevision(id: string): Promise<void> {
     const revision = await this.findRevision(id);
+
+    // Check if any orders reference this revision
+    const orderCount = await this.orderRepository.count({
+      where: { bom_revision_id: id },
+    });
+    if (orderCount > 0) {
+      throw new ConflictException(
+        `Cannot delete: ${orderCount} order${orderCount !== 1 ? 's' : ''} reference this revision. Archive it instead.`,
+      );
+    }
 
     if (revision.is_active) {
       // Clear the product's active revision reference
