@@ -159,6 +159,11 @@
   - Receiving dashboard with tabs: Open Sessions (with resume), Flagged Items (with resolution dialog), Inspections
   - AML page: proof document upload/download, source badge (BOM Import vs Manual), customer scope column
 
+- [x] **BOM Item & Revision Editing (Feb 24)** - Admin/manager users can edit BOM items (qty, alternate IPN, ref des, resource type, notes) and revision metadata (number, date, change summary) via inline edit buttons
+- [x] **CSV Parser Multiline Fix (Feb 24)** - Fixed CSV parser to handle multiline quoted fields correctly
+- [x] **BOM Items DataTable (Feb 24)** - Replaced raw `<Table>` on product detail page with reusable `DataTable` component. Adds column visibility toggles, resizable columns with localStorage persistence, sorting, pagination, and built-in search
+- [x] **BOM Revision Deletion Guard (Feb 24)** - BOM revisions referenced by orders can no longer be deleted (returns clear error with order count). Delete button only appears on archived revisions; archive is now the primary action
+
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests
 - [x] **Edit Dialog Navigation** - Click/keyboard events in edit dialogs propagated to DataTable row click handler, causing unwanted navigation; fixed with stopPropagation on triggers and DialogContent
@@ -168,6 +173,7 @@
 - [x] **11 TypeScript Compilation Errors (Feb 19)** - DTO source typed as string vs AMLSource enum (7 cascading errors), missing @types/multer, import type needed for Response, null vs undefined for optional fields
 - [x] **Migration Enum Naming (Feb 20)** - TypeORM appends `_enum` suffix to PostgreSQL enum names; fixed `lot_status` → `lot_status_enum` and `package_type` → `package_type_enum` in migrations
 - [x] **TypeORM RETURNING Clause in Transactions (Feb 20)** - `EntityManager.query()` inside transactions doesn't reliably return RETURNING clause results; fixed by splitting into separate UPDATE + SELECT for UID generation and line_number allocation
+- [x] **BOM Revision Deletion FK Violation (Feb 24)** - Deleting a BOM revision referenced by orders caused a raw FK constraint error; added pre-check in `deleteRevision()` that returns friendly `ConflictException` with order count. Frontend restricts delete to archived revisions only
 
 ### Backend Testing (Feb 20) — Receiving Module Verified
 All 15 test scenarios passed against live backend:
