@@ -804,6 +804,20 @@ export interface CreateBomItemDto {
   notes?: string
 }
 
+export interface UpdateBomItemDto {
+  quantity_required?: number
+  alternate_ipn?: string
+  reference_designators?: string
+  resource_type?: ResourceType
+  notes?: string
+}
+
+export interface UpdateBomRevisionDto {
+  revision_number?: string
+  revision_date?: string
+  change_summary?: string
+}
+
 export interface BomDiff {
   added: BomItem[]
   removed: BomItem[]

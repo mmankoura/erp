@@ -10,6 +10,8 @@ import {
   type Material,
   type CreateBomRevisionDto,
   type CreateBomItemDto,
+  type UpdateBomItemDto,
+  type UpdateBomRevisionDto,
   type ResourceType,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -71,6 +73,7 @@ import {
   Upload,
   Search,
   X,
+  Pencil,
   Archive,
   ArchiveRestore,
   GitCompare,
@@ -98,6 +101,7 @@ export default function ProductDetailPage() {
   const productId = params.id as string
   const { hasRole } = useAuth()
   const isAdmin = hasRole(UserRole.ADMIN)
+  const canEditBom = hasRole(UserRole.ADMIN, UserRole.MANAGER)
 
   const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null)
   const [showNewRevisionDialog, setShowNewRevisionDialog] = useState(false)
@@ -105,6 +109,8 @@ export default function ProductDetailPage() {
   const [showImportWizard, setShowImportWizard] = useState(false)
   const [bomItemSearch, setBomItemSearch] = useState("")
   const [showArchived, setShowArchived] = useState(false)
+  const [editingItem, setEditingItem] = useState<BomItem | null>(null)
+  const [editingRevision, setEditingRevision] = useState<BomRevision | null>(null)
 
   // Diff comparison state
   const [compareMode, setCompareMode] = useState(false)
@@ -484,6 +490,20 @@ export default function ProductDetailPage() {
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
+                      {/* Edit revision - admin/manager only */}
+                      {canEditBom && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingRevision(revision)
+                          }}
+                          title="Edit revision"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
                       {/* Archive/Unarchive - admin only, not for active revision */}
                       {isAdmin && !revision.is_active && (
                         revision.is_archived ? (
@@ -609,18 +629,17 @@ export default function ProductDetailPage() {
             )}
             {selectedRevision.items && selectedRevision.items.length > 0 ? (
               filteredBomItems.length > 0 ? (
-              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[50px]">Line</TableHead>
-                      <TableHead>Internal P/N</TableHead>
-                      <TableHead>Alternate IPN</TableHead>
-                      <TableHead>Manufacturer</TableHead>
-                      <TableHead>Manufacturer P/N</TableHead>
-                      <TableHead className="w-[80px]">Qty Per</TableHead>
-                      <TableHead>Ref Des</TableHead>
-                      <TableHead className="w-[50px]"></TableHead>
+                      <TableHead className="w-[130px]">Internal P/N</TableHead>
+                      <TableHead className="w-[130px]">Alternate IPN</TableHead>
+                      <TableHead className="w-[140px]">Manufacturer</TableHead>
+                      <TableHead className="w-[150px]">Manufacturer P/N</TableHead>
+                      <TableHead className="w-[70px]">Qty Per</TableHead>
+                      <TableHead className="min-w-[180px]">Ref Des</TableHead>
+                      {canEditBom && <TableHead className="w-[80px]"></TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -646,40 +665,52 @@ export default function ProductDetailPage() {
                           <TableCell className="font-mono">
                             {item.quantity_required}
                           </TableCell>
-                          <TableCell className="text-sm font-mono max-w-[150px] truncate" title={item.reference_designators || ""}>
+                          <TableCell className="text-sm font-mono whitespace-normal break-all" title={item.reference_designators || ""}>
                             {item.reference_designators || "-"}
                           </TableCell>
-                          <TableCell>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                                  <Trash2 className="h-4 w-4" />
+                          {canEditBom && (
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => setEditingItem(item)}
+                                  title="Edit item"
+                                >
+                                  <Pencil className="h-4 w-4" />
                                 </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Remove Item?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Remove {item.material?.internal_part_number} from this BOM revision?
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => deleteItemMutation.mutate(item.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
-                                    Remove
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </TableCell>
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Remove Item?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Remove {item.material?.internal_part_number} from this BOM revision?
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => deleteItemMutation.mutate(item.id)}
+                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                      >
+                                        Remove
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </div>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                   </TableBody>
                 </Table>
-              </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <p>No items match your search</p>
@@ -695,6 +726,28 @@ export default function ProductDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Edit BOM Item Dialog */}
+      <EditItemDialog
+        item={editingItem}
+        open={!!editingItem}
+        onOpenChange={(open) => { if (!open) setEditingItem(null) }}
+        onSuccess={() => {
+          setEditingItem(null)
+          refetchSelectedRevision()
+        }}
+      />
+
+      {/* Edit Revision Dialog */}
+      <EditRevisionDialog
+        revision={editingRevision}
+        open={!!editingRevision}
+        onOpenChange={(open) => { if (!open) setEditingRevision(null) }}
+        onSuccess={() => {
+          setEditingRevision(null)
+          refetchRevisions()
+        }}
+      />
 
       {/* Diff Dialog */}
       <Dialog open={showDiffDialog} onOpenChange={setShowDiffDialog}>
@@ -726,10 +779,10 @@ export default function ProductDetailPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Internal P/N</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Qty</TableHead>
-                        <TableHead>Ref Des</TableHead>
+                        <TableHead className="w-[130px]">Internal P/N</TableHead>
+                        <TableHead className="w-[200px]">Description</TableHead>
+                        <TableHead className="w-[60px]">Qty</TableHead>
+                        <TableHead className="min-w-[150px]">Ref Des</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -738,7 +791,7 @@ export default function ProductDetailPage() {
                           <TableCell className="font-medium">{item.material?.internal_part_number || "-"}</TableCell>
                           <TableCell>{item.material?.description || "-"}</TableCell>
                           <TableCell className="font-mono">{item.quantity_required}</TableCell>
-                          <TableCell className="font-mono text-sm">{item.reference_designators || "-"}</TableCell>
+                          <TableCell className="font-mono text-sm whitespace-normal break-all">{item.reference_designators || "-"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -752,10 +805,10 @@ export default function ProductDetailPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Internal P/N</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Qty</TableHead>
-                        <TableHead>Ref Des</TableHead>
+                        <TableHead className="w-[130px]">Internal P/N</TableHead>
+                        <TableHead className="w-[200px]">Description</TableHead>
+                        <TableHead className="w-[60px]">Qty</TableHead>
+                        <TableHead className="min-w-[150px]">Ref Des</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -764,7 +817,7 @@ export default function ProductDetailPage() {
                           <TableCell className="font-medium">{item.material?.internal_part_number || "-"}</TableCell>
                           <TableCell>{item.material?.description || "-"}</TableCell>
                           <TableCell className="font-mono">{item.quantity_required}</TableCell>
-                          <TableCell className="font-mono text-sm">{item.reference_designators || "-"}</TableCell>
+                          <TableCell className="font-mono text-sm whitespace-normal break-all">{item.reference_designators || "-"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1095,6 +1148,264 @@ function AddItemDialog({
             </Button>
             <Button type="submit" disabled={createMutation.isLoading || !formData.material_id}>
               {createMutation.isLoading ? "Adding..." : "Add Item"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Edit BOM Item Dialog Component
+function EditItemDialog({
+  item,
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  item: BomItem | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess: () => void
+}) {
+  const [formData, setFormData] = useState({
+    quantity_required: 1,
+    alternate_ipn: "",
+    reference_designators: "",
+    resource_type: "" as ResourceType | "",
+    notes: "",
+  })
+
+  // Pre-populate form when item changes
+  useEffect(() => {
+    if (item) {
+      setFormData({
+        quantity_required: item.quantity_required,
+        alternate_ipn: item.alternate_ipn || "",
+        reference_designators: item.reference_designators || "",
+        resource_type: item.resource_type || "",
+        notes: item.notes || "",
+      })
+    }
+  }, [item])
+
+  const updateMutation = useMutation(
+    (data: UpdateBomItemDto) => api.patch<BomItem>(`/bom/item/${item!.id}`, data),
+    {
+      onSuccess: () => {
+        toast.success("BOM item updated")
+        onSuccess()
+      },
+      onError: (error) => toast.error(error.message || "Failed to update item"),
+    }
+  )
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    updateMutation.mutate({
+      quantity_required: Number(formData.quantity_required),
+      alternate_ipn: formData.alternate_ipn || undefined,
+      reference_designators: formData.reference_designators || undefined,
+      resource_type: formData.resource_type || undefined,
+      notes: formData.notes || undefined,
+    })
+  }
+
+  if (!item) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Edit BOM Item</DialogTitle>
+            <DialogDescription>
+              Edit item: {item.material?.internal_part_number || "Unknown"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Internal Part Number</Label>
+              <p className="text-sm font-medium text-muted-foreground">
+                {item.material?.internal_part_number || "-"}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_alternate_ipn">Alternate Internal P/N</Label>
+              <Input
+                id="edit_alternate_ipn"
+                value={formData.alternate_ipn}
+                onChange={(e) => setFormData({ ...formData, alternate_ipn: e.target.value })}
+                placeholder="Optional alternate part number"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_quantity_required">Qty Per *</Label>
+                <Input
+                  id="edit_quantity_required"
+                  type="number"
+                  min={0.0001}
+                  step="any"
+                  value={formData.quantity_required}
+                  onChange={(e) => setFormData({ ...formData, quantity_required: parseFloat(e.target.value) || 0 })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_resource_type">Resource Type</Label>
+                <Select
+                  value={formData.resource_type}
+                  onValueChange={(value) => setFormData({ ...formData, resource_type: value as ResourceType })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SMT">SMT</SelectItem>
+                    <SelectItem value="TH">Through-Hole</SelectItem>
+                    <SelectItem value="MECH">Mechanical</SelectItem>
+                    <SelectItem value="PCB">PCB</SelectItem>
+                    <SelectItem value="DNP">Do Not Place</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_reference_designators">Reference Designators</Label>
+              <Input
+                id="edit_reference_designators"
+                value={formData.reference_designators}
+                onChange={(e) => setFormData({ ...formData, reference_designators: e.target.value })}
+                placeholder="e.g., R1, R2, R3"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_notes">Notes</Label>
+              <Textarea
+                id="edit_notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Any special notes..."
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={updateMutation.isLoading}>
+              {updateMutation.isLoading ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Edit Revision Dialog Component
+function EditRevisionDialog({
+  revision,
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  revision: BomRevision | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess: () => void
+}) {
+  const [formData, setFormData] = useState({
+    revision_number: "",
+    revision_date: "",
+    change_summary: "",
+  })
+
+  // Pre-populate form when revision changes
+  useEffect(() => {
+    if (revision) {
+      setFormData({
+        revision_number: revision.revision_number,
+        revision_date: revision.revision_date.split("T")[0],
+        change_summary: revision.change_summary || "",
+      })
+    }
+  }, [revision])
+
+  const updateMutation = useMutation(
+    (data: UpdateBomRevisionDto) => api.patch<BomRevision>(`/bom/revision/${revision!.id}`, data),
+    {
+      onSuccess: () => {
+        toast.success("BOM revision updated")
+        onSuccess()
+      },
+      onError: (error) => toast.error(error.message || "Failed to update revision"),
+    }
+  )
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    updateMutation.mutate({
+      revision_number: formData.revision_number,
+      revision_date: formData.revision_date,
+      change_summary: formData.change_summary || undefined,
+    })
+  }
+
+  if (!revision) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Edit BOM Revision</DialogTitle>
+            <DialogDescription>
+              Update revision metadata
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit_revision_number">Revision Number *</Label>
+                <Input
+                  id="edit_revision_number"
+                  value={formData.revision_number}
+                  onChange={(e) => setFormData({ ...formData, revision_number: e.target.value })}
+                  placeholder="e.g., A, B, 1.0"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_revision_date">Revision Date *</Label>
+                <Input
+                  id="edit_revision_date"
+                  type="date"
+                  value={formData.revision_date}
+                  onChange={(e) => setFormData({ ...formData, revision_date: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_change_summary">Change Summary</Label>
+              <Textarea
+                id="edit_change_summary"
+                value={formData.change_summary}
+                onChange={(e) => setFormData({ ...formData, change_summary: e.target.value })}
+                placeholder="Describe the changes in this revision..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={updateMutation.isLoading}>
+              {updateMutation.isLoading ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </form>
