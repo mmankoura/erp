@@ -71,8 +71,6 @@ import {
   Trash2,
   Copy,
   Upload,
-  Search,
-  X,
   Pencil,
   Archive,
   ArchiveRestore,
@@ -87,6 +85,7 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { BomImportWizard } from "@/components/bom-import-wizard"
 import { useAuth, UserRole } from "@/contexts/auth-context"
+import { DataTable, type Column } from "@/components/data-table"
 
 const resourceTypeLabels: Record<ResourceType, string> = {
   SMT: "SMT",
@@ -107,7 +106,6 @@ export default function ProductDetailPage() {
   const [showNewRevisionDialog, setShowNewRevisionDialog] = useState(false)
   const [showAddItemDialog, setShowAddItemDialog] = useState(false)
   const [showImportWizard, setShowImportWizard] = useState(false)
-  const [bomItemSearch, setBomItemSearch] = useState("")
   const [showArchived, setShowArchived] = useState(false)
   const [editingItem, setEditingItem] = useState<BomItem | null>(null)
   const [editingRevision, setEditingRevision] = useState<BomRevision | null>(null)
@@ -149,27 +147,14 @@ export default function ProductDetailPage() {
   useEffect(() => {
     if (selectedRevisionId) {
       refetchSelectedRevision()
-      setBomItemSearch("")
     }
   }, [selectedRevisionId, refetchSelectedRevision])
 
-  // Filter BOM items by IPN or Ref Des
-  const filteredBomItems = useMemo(() => {
-    if (!selectedRevision?.items) return []
-    if (!bomItemSearch.trim()) {
-      return selectedRevision.items.sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
-    }
-
-    const query = bomItemSearch.toLowerCase().trim()
-    return selectedRevision.items
-      .filter((item) => {
-        const ipn = item.material?.internal_part_number?.toLowerCase() || ""
-        const altIpn = item.alternate_ipn?.toLowerCase() || ""
-        const refDes = item.reference_designators?.toLowerCase() || ""
-        return ipn.includes(query) || altIpn.includes(query) || refDes.includes(query)
-      })
-      .sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
-  }, [selectedRevision?.items, bomItemSearch])
+  // Sorted BOM items for DataTable
+  const sortedBomItems = useMemo(() => {
+    if (!selectedRevision?.items) return null
+    return [...selectedRevision.items].sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
+  }, [selectedRevision?.items])
 
   const activateMutation = useMutation(
     (revisionId: string) => api.post<BomRevision>(`/bom/revision/${revisionId}/activate`, {}),
@@ -253,6 +238,128 @@ export default function ProductDetailPage() {
       setLoadingDiff(false)
     }
   }
+
+  // BOM item columns for DataTable
+  const bomItemColumns = useMemo((): Column<BomItem>[] => {
+    const cols: Column<BomItem>[] = [
+      {
+        key: "line_number",
+        header: "Line",
+        defaultWidth: 60,
+        sortable: true,
+        cell: (item) => <span className="font-mono text-sm">{item.line_number || "-"}</span>,
+      },
+      {
+        key: "ipn",
+        header: "Internal P/N",
+        defaultWidth: 140,
+        sortable: true,
+        sortAccessor: (item) => item.material?.internal_part_number || "",
+        cell: (item) => <span className="font-medium">{item.material?.internal_part_number || "-"}</span>,
+      },
+      {
+        key: "alternate_ipn",
+        header: "Alternate IPN",
+        defaultWidth: 130,
+        cell: (item) => <span className="text-sm">{item.alternate_ipn || "-"}</span>,
+      },
+      {
+        key: "manufacturer",
+        header: "Manufacturer",
+        defaultWidth: 140,
+        cell: (item) => <span className="text-sm">{item.material?.manufacturer || "-"}</span>,
+      },
+      {
+        key: "manufacturer_pn",
+        header: "Manufacturer P/N",
+        defaultWidth: 150,
+        cell: (item) => <span className="text-sm">{item.material?.manufacturer_pn || "-"}</span>,
+      },
+      {
+        key: "quantity_required",
+        header: "Qty Per",
+        defaultWidth: 80,
+        sortable: true,
+        cell: (item) => <span className="font-mono">{item.quantity_required}</span>,
+      },
+      {
+        key: "resource_type",
+        header: "Type",
+        defaultWidth: 100,
+        defaultVisible: false,
+        cell: (item) => (
+          <span className="text-sm">
+            {item.resource_type ? resourceTypeLabels[item.resource_type] || item.resource_type : "-"}
+          </span>
+        ),
+      },
+      {
+        key: "reference_designators",
+        header: "Ref Des",
+        defaultWidth: 200,
+        cell: (item) => (
+          <span className="text-sm font-mono whitespace-normal break-all" title={item.reference_designators || ""}>
+            {item.reference_designators || "-"}
+          </span>
+        ),
+      },
+      {
+        key: "notes",
+        header: "Notes",
+        defaultVisible: false,
+        defaultWidth: 150,
+        cell: (item) => <span className="text-sm">{item.notes || "-"}</span>,
+      },
+    ]
+
+    if (canEditBom) {
+      cols.push({
+        key: "actions",
+        header: "",
+        defaultWidth: 80,
+        resizable: false,
+        cell: (item) => (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setEditingItem(item)}
+              title="Edit item"
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove Item?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Remove {item.material?.internal_part_number} from this BOM revision?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deleteItemMutation.mutate(item.id)}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Remove
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        ),
+      })
+    }
+
+    return cols
+  }, [canEditBom, deleteItemMutation])
 
   if (loadingProduct) {
     return (
@@ -587,9 +694,7 @@ export default function ProductDetailPage() {
             <div>
               <CardTitle>BOM Items - {selectedRevision.revision_number}</CardTitle>
               <CardDescription>
-                {bomItemSearch
-                  ? `${filteredBomItems.length} of ${selectedRevision.items?.length || 0} items`
-                  : `${selectedRevision.items?.length || 0} items in this revision`}
+                {selectedRevision.items?.length || 0} items in this revision
               </CardDescription>
             </div>
             <AddItemDialog
@@ -605,124 +710,21 @@ export default function ProductDetailPage() {
             />
           </CardHeader>
           <CardContent>
-            {/* Search for BOM Items */}
-            {selectedRevision.items && selectedRevision.items.length > 0 && (
-              <div className="mb-4">
-                <div className="relative max-w-sm">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by IPN or Ref Des..."
-                    value={bomItemSearch}
-                    onChange={(e) => setBomItemSearch(e.target.value)}
-                    className="pl-10 pr-10"
-                  />
-                  {bomItemSearch && (
-                    <button
-                      onClick={() => setBomItemSearch("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-            {selectedRevision.items && selectedRevision.items.length > 0 ? (
-              filteredBomItems.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[50px]">Line</TableHead>
-                      <TableHead className="w-[130px]">Internal P/N</TableHead>
-                      <TableHead className="w-[130px]">Alternate IPN</TableHead>
-                      <TableHead className="w-[140px]">Manufacturer</TableHead>
-                      <TableHead className="w-[150px]">Manufacturer P/N</TableHead>
-                      <TableHead className="w-[70px]">Qty Per</TableHead>
-                      <TableHead className="min-w-[180px]">Ref Des</TableHead>
-                      {canEditBom && <TableHead className="w-[80px]"></TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredBomItems.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell className="font-mono text-sm">
-                            {item.line_number || "-"}
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-medium">
-                              {item.material?.internal_part_number || "-"}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {item.alternate_ipn || "-"}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {item.material?.manufacturer || "-"}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {item.material?.manufacturer_pn || "-"}
-                          </TableCell>
-                          <TableCell className="font-mono">
-                            {item.quantity_required}
-                          </TableCell>
-                          <TableCell className="text-sm font-mono whitespace-normal break-all" title={item.reference_designators || ""}>
-                            {item.reference_designators || "-"}
-                          </TableCell>
-                          {canEditBom && (
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => setEditingItem(item)}
-                                  title="Edit item"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Remove Item?</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Remove {item.material?.internal_part_number} from this BOM revision?
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                      <AlertDialogAction
-                                        onClick={() => deleteItemMutation.mutate(item.id)}
-                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                      >
-                                        Remove
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>No items match your search</p>
-                  <p className="text-sm">Try a different IPN or Ref Des</p>
-                </div>
-              )
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No items in this BOM revision</p>
-                <p className="text-sm">Add materials to define the bill of materials</p>
-              </div>
-            )}
+            <DataTable
+              data={sortedBomItems}
+              columns={bomItemColumns}
+              searchPlaceholder="Search by IPN or Ref Des..."
+              searchFilter={(item, search) => {
+                const query = search.toLowerCase()
+                const ipn = item.material?.internal_part_number?.toLowerCase() || ""
+                const altIpn = item.alternate_ipn?.toLowerCase() || ""
+                const refDes = item.reference_designators?.toLowerCase() || ""
+                return ipn.includes(query) || altIpn.includes(query) || refDes.includes(query)
+              }}
+              storageKey="bom-items"
+              pageSize={50}
+              emptyMessage="No items in this BOM revision"
+            />
           </CardContent>
         </Card>
       )}
