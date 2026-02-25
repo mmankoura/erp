@@ -316,40 +316,50 @@ export class BomImportService {
   }
 
   private parseCSV(content: string): string[][] {
-    const lines = content.split(/\r?\n/).filter(line => line.trim());
     const rows: string[][] = [];
-
-    for (const line of lines) {
-      const row = this.parseCSVLine(line);
-      rows.push(row);
-    }
-
-    return rows;
-  }
-
-  private parseCSVLine(line: string): string[] {
-    const result: string[] = [];
     let current = '';
     let inQuotes = false;
+    let row: string[] = [];
 
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      const nextChar = line[i + 1];
+    for (let i = 0; i < content.length; i++) {
+      const char = content[i];
+      const nextChar = content[i + 1];
 
       if (inQuotes) {
         if (char === '"' && nextChar === '"') {
           current += '"';
-          i++; // Skip next quote
+          i++; // Skip escaped quote
         } else if (char === '"') {
           inQuotes = false;
         } else {
-          current += char;
+          // Inside quotes: newlines become spaces (normalize multiline cells)
+          if (char === '\n' || char === '\r') {
+            if (char === '\r' && nextChar === '\n') i++; // Skip \r\n
+            current += ' ';
+          } else {
+            current += char;
+          }
         }
       } else {
         if (char === '"') {
           inQuotes = true;
         } else if (char === ',') {
-          result.push(current.trim());
+          row.push(current.trim());
+          current = '';
+        } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
+          if (char === '\r') i++; // Skip \r\n
+          row.push(current.trim());
+          if (row.some(cell => cell !== '')) {
+            rows.push(row);
+          }
+          row = [];
+          current = '';
+        } else if (char === '\r') {
+          row.push(current.trim());
+          if (row.some(cell => cell !== '')) {
+            rows.push(row);
+          }
+          row = [];
           current = '';
         } else {
           current += char;
@@ -357,8 +367,13 @@ export class BomImportService {
       }
     }
 
-    result.push(current.trim());
-    return result;
+    // Push last field and row
+    row.push(current.trim());
+    if (row.some(cell => cell !== '')) {
+      rows.push(row);
+    }
+
+    return rows;
   }
 
   private buildColumnIndexMap(
