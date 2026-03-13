@@ -20,6 +20,7 @@ import {
   ClipboardPen,
   LogOut,
   UserCog,
+  PackageCheck,
 } from "lucide-react"
 
 import {
@@ -79,6 +80,11 @@ const navigation = {
       title: "Production",
       url: "/production",
       icon: Factory,
+    },
+    {
+      title: "Kitting",
+      url: "/kitting",
+      icon: PackageCheck,
     },
     {
       title: "Purchase Orders",

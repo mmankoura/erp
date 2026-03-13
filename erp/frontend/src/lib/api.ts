@@ -644,7 +644,7 @@ export interface ApprovedManufacturer {
   material_id: string
   material?: Material
   manufacturer: string
-  manufacturer_pn: string
+  manufacturer_part_number: string
   status: AmlStatus
   approved_by: string | null
   approved_at: string | null
@@ -1123,4 +1123,92 @@ export interface OrderWipDetails {
     started_at: string | null
   }>
   logs: ProductionLog[]
+}
+
+// ==================== Kitting ====================
+
+export type KittingListStatus = "DRAFT" | "PRINTED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED"
+
+export interface KittingList {
+  id: string
+  list_number: string
+  status: KittingListStatus
+  created_by: string | null
+  printed_at: string | null
+  completed_at: string | null
+  notes: string | null
+  orders: KittingListOrder[]
+  items: KittingListItem[]
+  created_at: string
+  updated_at: string
+}
+
+export interface KittingListOrder {
+  id: string
+  kitting_list_id: string
+  order_id: string
+  order: Order
+  order_quantity: number
+}
+
+export interface KittingListItem {
+  id: string
+  kitting_list_id: string
+  material_id: string
+  material: Material
+  resource_type: ResourceType | null
+  total_qty_required: number
+  qty_verified: number
+  is_short: boolean
+  shortage_qty: number
+  notes: string | null
+  scans: KittingListScan[]
+}
+
+export interface KittingListScan {
+  id: string
+  kitting_list_item_id: string
+  uid_id: string
+  uid_code: string
+  quantity: number
+  scanned_by: string | null
+  created_at: string
+}
+
+export interface KittingItemWithStock extends KittingListItem {
+  quantity_on_hand: number
+  quantity_available: number
+  uid_locations: Array<{
+    uid: string
+    quantity: number
+    location: string
+  }>
+}
+
+// ==================== PO History ====================
+
+export interface PoHistory {
+  id: string
+  po_number: string
+  order_date: string | null
+  supplier: string | null
+  ipn: string | null
+  manufacturer: string | null
+  mpn: string | null
+  description: string | null
+  quantity: number | null
+  mounting_type: string | null
+  packaging: string | null
+  customer: string | null
+  unit_price: number | null
+  currency: string | null
+  comments: string | null
+  created_at: string
+}
+
+export interface KittingStockResponse {
+  kitting_list: KittingList
+  smt_items: KittingItemWithStock[]
+  th_items: KittingItemWithStock[]
+  other_items: KittingItemWithStock[]
 }

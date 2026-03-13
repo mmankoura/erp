@@ -19,6 +19,7 @@ import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { ReceivingModule } from './modules/receiving/receiving.module';
 import { CycleCountModule } from './modules/cycle-count/cycle-count.module';
 import { ProductionModule } from './modules/production/production.module';
+import { KittingModule } from './modules/kitting/kitting.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ProductionModule } from './modules/production/production.module';
     MrpModule,
     CycleCountModule, // Cycle counting / physical inventory
     ProductionModule, // WIP / production tracking
+    KittingModule, // Kitting list management
   ],
 })
 export class AppModule {}

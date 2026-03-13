@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: February 20, 2026
+> **Last Updated**: March 13, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -12,7 +12,7 @@
 - [x] ValidationPipe configured (whitelist, forbidNonWhitelisted, transform)
 - [x] Environment validation (fail-fast on missing DATABASE_URL)
 
-#### Entities (17 complete)
+#### Entities (22 complete)
 - [x] **Materials** entity with soft delete + partial unique index + costing fields
 - [x] **Products** entity with soft delete + partial unique index + customer association (required)
 - [x] **Customers** entity with soft delete
@@ -30,8 +30,13 @@
 - [x] **Attachment** entity (entity-agnostic file attachments with SHA256 tamper evidence, soft-delete)
 - [x] **ReceivingSession** entity (WIP container for operator receiving sessions with receipt type, auto-release toggle)
 - [x] **ReceivingSessionLine** entity (individual received packages with UID, validation status, idempotency key, disposition workflow)
+- [x] **KittingList** entity (status: DRAFT→PRINTED→IN_PROGRESS→COMPLETED→CANCELLED, links to orders and aggregated material items)
+- [x] **KittingListOrder** entity (junction table linking kitting lists to orders with snapshotted order_quantity)
+- [x] **KittingListItem** entity (aggregated material line per material_id/resource_type with qty_required, qty_verified, shortage tracking)
+- [x] **KittingListScan** entity (individual UID scan records with uid_code, quantity, scanned_by)
+- [x] **PoHistory** entity (flat historical PO archive: po_number, supplier, ipn, mpn, qty, unit_price, currency, etc.)
 
-#### Migrations (26 applied)
+#### Migrations (28 applied)
 - [x] Initial schema (materials, products)
 - [x] AddSoftDeleteToMaterials
 - [x] AddSoftDeleteToProducts
@@ -58,8 +63,10 @@
 - [x] CreateReceivingSessions (receiving_session_status and receipt_type enums, receiving_sessions table)
 - [x] CreateReceivingSessionLines (validation_status, hold_reason_code, disposition_action enums, session_lines + uid_sequences tables)
 - [x] LinkLotsToReceivingLines (receiving_session_line_id FK on inventory_lots)
+- [x] CreateKittingTables (kitting_lists, kitting_list_orders, kitting_list_items, kitting_list_scans with indexes and FK constraints)
+- [x] CreatePoHistory (po_history table with indexes on po_number, supplier, ipn, mpn)
 
-#### Backend Modules (16 complete) - ~150 API Endpoints Total
+#### Backend Modules (17 complete) - ~165 API Endpoints Total
 - [x] **Materials Module** (7 endpoints) - CRUD + bulk create + restore
 - [x] **Products Module** (6 endpoints) - CRUD + restore
 - [x] **Customers Module** (6 endpoints) - CRUD + search + restore
@@ -76,6 +83,8 @@
 - [x] **Attachments Module** (4 endpoints) - Upload (multipart), list by entity, download, soft-delete (ADMIN/MANAGER only)
 - [x] **Receiving Module** (12 endpoints) - Session CRUD, receive item (11-step flow), close/cancel session, resolve discrepancy, manual release, PO/material/AML lookups, flagged items list
 - [x] **Production Module** - WIP tracking, stage transitions, production logs
+- [x] **Kitting Module** (7 endpoints) - Create kitting list from multiple orders (BOM aggregation), UID barcode scanning with verification, print pick sheet, complete with shortage reporting, cancel. Separates SMT/TH items
+- [x] **PO History** (3 endpoints) - Import historical PO data from Excel (SPO sheet), searchable archive, record count. Added to Purchase Orders module
 
 ### In Progress 🔄
 - [ ] **Frontend (Next.js)** (~99% complete)
@@ -105,6 +114,8 @@
   - [x] Operator Receiving form (/receiving/new) - scanner-friendly, PO/Customer Supplied modes, validation preview, offline retry
   - [x] Receiving dashboard - tabbed: Open Sessions, Flagged Items (with resolution dialog), Inspections
   - [x] AML page enhancements - proof document upload/download, source/customer columns, BOM Import badge
+  - [x] Kitting page - Full-screen create view (multi-select orders), detail view with barcode scanning, SMT/TH item separation, printable pick sheet, shortage reporting on completion
+  - [x] Purchase Orders History tab - One-time Excel import (SPO sheet), searchable DataTable archive with all historical PO fields
   - [ ] Settings page (placeholder - low priority)
 
 #### Recently Completed
@@ -163,6 +174,19 @@
 - [x] **CSV Parser Multiline Fix (Feb 24)** - Fixed CSV parser to handle multiline quoted fields correctly
 - [x] **BOM Items DataTable (Feb 24)** - Replaced raw `<Table>` on product detail page with reusable `DataTable` component. Adds column visibility toggles, resizable columns with localStorage persistence, sorting, pagination, and built-in search
 - [x] **BOM Revision Deletion Guard (Feb 24)** - BOM revisions referenced by orders can no longer be deleted (returns clear error with order count). Delete button only appears on archived revisions; archive is now the primary action
+- [x] **Kitting Module (Mar 13)** - Full kitting workflow for production:
+  - 4 new entities: kitting_lists, kitting_list_orders, kitting_list_items, kitting_list_scans
+  - BOM requirement aggregation across multiple orders (qty_per × order_qty × (1 + scrap_factor/100)), skips DNP items
+  - UID barcode scanning: looks up inventory lot, matches to kitting item by material_id, increments qty_verified, moves UID location to WIP
+  - Shortage reporting on completion (report only, non-blocking)
+  - Auto-generated kitting list number (KIT-YYYYMMDD-NNN)
+  - Frontend: full-screen create view with order multi-select, detail view with scan input, SMT/TH tab separation, printable pick sheet with stock levels and locations
+  - Sidebar navigation under Operations section
+- [x] **PO History Archive (Mar 13)** - Historical PO data import and search:
+  - po_history entity for flat archive of vendor PO records
+  - Excel import from SPO sheet (xlsx library), batch insert in chunks of 500
+  - Searchable across all text fields (po_number, supplier, ipn, mpn, description, manufacturer, customer, comments)
+  - Frontend: new "History" tab on Purchase Orders page with import button and DataTable
 
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests

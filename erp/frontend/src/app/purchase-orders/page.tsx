@@ -9,6 +9,7 @@ import {
   type Material,
   type CreatePurchaseOrderDto,
   type CreatePurchaseOrderLineDto,
+  type PoHistory,
 } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
@@ -47,6 +48,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Plus,
   Pencil,
@@ -57,8 +59,11 @@ import {
   XCircle,
   Eye,
   X,
+  Upload,
+  Loader2,
+  History,
 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
 
 // Status colors and labels
@@ -921,39 +926,261 @@ export default function PurchaseOrdersPage() {
         />
       </div>
 
-      {/* Status Filter */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="status-filter" className="text-sm font-medium">
-            Status:
-          </Label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]" id="status-filter">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="DRAFT">Draft</SelectItem>
-              <SelectItem value="SUBMITTED">Submitted</SelectItem>
-              <SelectItem value="CONFIRMED">Confirmed</SelectItem>
-              <SelectItem value="PARTIALLY_RECEIVED">Partially Received</SelectItem>
-              <SelectItem value="RECEIVED">Received</SelectItem>
-              <SelectItem value="CLOSED">Closed</SelectItem>
-              <SelectItem value="CANCELLED">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
+      <Tabs defaultValue="active">
+        <TabsList>
+          <TabsTrigger value="active">Active POs</TabsTrigger>
+          <TabsTrigger value="history">
+            <History className="h-4 w-4 mr-1" />
+            History
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="active" className="space-y-4">
+          {/* Status Filter */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="status-filter" className="text-sm font-medium">
+                Status:
+              </Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]" id="status-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="DRAFT">Draft</SelectItem>
+                  <SelectItem value="SUBMITTED">Submitted</SelectItem>
+                  <SelectItem value="CONFIRMED">Confirmed</SelectItem>
+                  <SelectItem value="PARTIALLY_RECEIVED">Partially Received</SelectItem>
+                  <SelectItem value="RECEIVED">Received</SelectItem>
+                  <SelectItem value="CLOSED">Closed</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DataTable
+            data={purchaseOrders}
+            columns={columns}
+            isLoading={isLoading}
+            searchKey="po_number"
+            searchPlaceholder="Search by PO number..."
+            emptyMessage="No purchase orders found. Create your first PO to get started."
+            storageKey="purchase-orders"
+          />
+        </TabsContent>
+
+        <TabsContent value="history">
+          <PoHistoryTab />
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+// ==================== PO History Tab ====================
+
+function PoHistoryTab() {
+  const [searchQuery, setSearchQuery] = useState("")
+  const endpoint = searchQuery
+    ? `/purchase-orders/history?search=${encodeURIComponent(searchQuery)}`
+    : "/purchase-orders/history"
+  const { data: history, isLoading, refetch } = useApi<PoHistory[]>(endpoint)
+  const { data: countData } = useApi<{ count: number }>("/purchase-orders/history/count")
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch("/api/purchase-orders/history/import", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.message || "Import failed")
+      }
+      const result = await res.json()
+      toast.success(`Imported ${result.imported} records`)
+      refetch()
+    } catch (err: any) {
+      toast.error(err.message || "Import failed")
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  const columns: Column<PoHistory>[] = [
+    {
+      key: "po_number",
+      header: "PO #",
+      defaultWidth: 120,
+      cell: (item) => <span className="font-mono font-medium">{item.po_number}</span>,
+      sortable: true,
+    },
+    {
+      key: "order_date",
+      header: "Date",
+      defaultWidth: 100,
+      cell: (item) => item.order_date ? new Date(item.order_date).toLocaleDateString() : "-",
+      sortable: true,
+      sortAccessor: (item) => item.order_date ?? "",
+    },
+    {
+      key: "supplier",
+      header: "Supplier",
+      defaultWidth: 130,
+      cell: (item) => item.supplier ?? "-",
+      sortable: true,
+      sortAccessor: (item) => item.supplier ?? "",
+    },
+    {
+      key: "ipn",
+      header: "IPN (AT&A#)",
+      defaultWidth: 120,
+      cell: (item) => <span className="font-mono text-sm">{item.ipn ?? "-"}</span>,
+      sortable: true,
+      sortAccessor: (item) => item.ipn ?? "",
+    },
+    {
+      key: "manufacturer",
+      header: "MFR",
+      defaultWidth: 130,
+      cell: (item) => item.manufacturer ?? "-",
+      sortable: true,
+      sortAccessor: (item) => item.manufacturer ?? "",
+    },
+    {
+      key: "mpn",
+      header: "MPN",
+      defaultWidth: 150,
+      cell: (item) => <span className="font-mono text-sm">{item.mpn ?? "-"}</span>,
+      sortable: true,
+      sortAccessor: (item) => item.mpn ?? "",
+    },
+    {
+      key: "description",
+      header: "Description",
+      defaultWidth: 200,
+      cell: (item) => (
+        <span className="text-sm truncate max-w-[200px] block">{item.description ?? "-"}</span>
+      ),
+    },
+    {
+      key: "quantity",
+      header: "Qty",
+      defaultWidth: 80,
+      className: "text-right",
+      cell: (item) => item.quantity != null ? parseFloat(String(item.quantity)).toLocaleString() : "-",
+      sortable: true,
+      sortAccessor: (item) => item.quantity ?? 0,
+    },
+    {
+      key: "mounting_type",
+      header: "Mount",
+      defaultWidth: 70,
+      cell: (item) => item.mounting_type ? <Badge variant="outline">{item.mounting_type}</Badge> : "-",
+    },
+    {
+      key: "customer",
+      header: "Customer",
+      defaultWidth: 100,
+      cell: (item) => item.customer ?? "-",
+      sortable: true,
+      sortAccessor: (item) => item.customer ?? "",
+    },
+    {
+      key: "unit_price",
+      header: "Unit Price",
+      defaultWidth: 100,
+      className: "text-right",
+      cell: (item) => {
+        if (item.unit_price == null) return "-"
+        return `${item.currency ?? ""} ${parseFloat(String(item.unit_price)).toFixed(4)}`
+      },
+      sortable: true,
+      sortAccessor: (item) => item.unit_price ?? 0,
+    },
+    {
+      key: "comments",
+      header: "Comments",
+      defaultWidth: 120,
+      cell: (item) => (
+        <span className="text-sm truncate max-w-[120px] block">{item.comments ?? "-"}</span>
+      ),
+    },
+  ]
+
+  const isEmpty = (countData?.count ?? 0) === 0 && !isLoading
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {countData?.count != null ? `${countData.count.toLocaleString()} historical records` : ""}
+        </p>
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx"
+            className="hidden"
+            onChange={handleImport}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
+            Import Excel
+          </Button>
         </div>
       </div>
 
-      <DataTable
-        data={purchaseOrders}
-        columns={columns}
-        isLoading={isLoading}
-        searchKey="po_number"
-        searchPlaceholder="Search by PO number..."
-        emptyMessage="No purchase orders found. Create your first PO to get started."
-        storageKey="purchase-orders"
-      />
+      {isEmpty ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <History className="mx-auto h-12 w-12 mb-4 opacity-50" />
+          <p className="text-lg font-medium">No historical PO data</p>
+          <p className="text-sm">Import your vendor PO record Excel file to view historical data here.</p>
+        </div>
+      ) : (
+        <DataTable
+          data={history ?? []}
+          columns={columns}
+          isLoading={isLoading}
+          searchFilter={(item, query) => {
+            const q = query.toLowerCase()
+            return (
+              (item.po_number ?? "").toLowerCase().includes(q) ||
+              (item.supplier ?? "").toLowerCase().includes(q) ||
+              (item.ipn ?? "").toLowerCase().includes(q) ||
+              (item.mpn ?? "").toLowerCase().includes(q) ||
+              (item.description ?? "").toLowerCase().includes(q) ||
+              (item.manufacturer ?? "").toLowerCase().includes(q) ||
+              (item.customer ?? "").toLowerCase().includes(q) ||
+              (item.comments ?? "").toLowerCase().includes(q)
+            )
+          }}
+          searchPlaceholder="Search by PO#, supplier, IPN, MPN, customer..."
+          emptyMessage="No records match your search."
+          storageKey="po-history"
+        />
+      )}
     </div>
   )
 }
