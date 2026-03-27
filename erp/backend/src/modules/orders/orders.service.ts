@@ -15,6 +15,7 @@ import { BomRevision } from '../../entities/bom-revision.entity';
 import { CreateOrderDto, UpdateOrderDto } from './dto';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
+import { SequenceGeneratorService } from '../shared/sequence-generator.service';
 import {
   AuditEventType,
   AuditEntityType,
@@ -64,6 +65,7 @@ export class OrdersService {
     private readonly bomRevisionRepository: Repository<BomRevision>,
     private readonly inventoryService: InventoryService,
     private readonly auditService: AuditService,
+    private readonly sequenceGenerator: SequenceGeneratorService,
   ) {}
 
   async findAll(filters?: OrderFilters): Promise<Order[]> {
@@ -612,23 +614,7 @@ export class OrdersService {
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
     const prefix = `ORD-${dateStr}-`;
 
-    // Find the highest sequence number for today
-    const latestOrder = await this.orderRepository
-      .createQueryBuilder('order')
-      .where('order.order_number LIKE :prefix', { prefix: `${prefix}%` })
-      .orderBy('order.order_number', 'DESC')
-      .getOne();
-
-    let sequence = 1;
-    if (latestOrder) {
-      const lastSequence = parseInt(
-        latestOrder.order_number.replace(prefix, ''),
-        10,
-      );
-      sequence = lastSequence + 1;
-    }
-
-    return `${prefix}${sequence.toString().padStart(4, '0')}`;
+    return this.sequenceGenerator.next(prefix, 'orders', 'order_number');
   }
 
   // ============ Statistics Methods ============
@@ -638,9 +624,12 @@ export class OrdersService {
     byStatus: Record<OrderStatus, number>;
     overdueCount: number;
   }> {
-    const orders = await this.orderRepository.find();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const statusCounts = await this.orderRepository
+      .createQueryBuilder('order')
+      .select('order.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('order.status')
+      .getRawMany<{ status: OrderStatus; count: string }>();
 
     const byStatus: Record<OrderStatus, number> = {
       [OrderStatus.ENTERED]: 0,
@@ -652,22 +641,27 @@ export class OrdersService {
       [OrderStatus.CANCELLED]: 0,
     };
 
-    let overdueCount = 0;
-
-    for (const order of orders) {
-      byStatus[order.status]++;
-      if (
-        order.due_date < today &&
-        !TERMINAL_STATUSES.includes(order.status)
-      ) {
-        overdueCount++;
-      }
+    let total = 0;
+    for (const row of statusCounts) {
+      byStatus[row.status] = parseInt(row.count, 10);
+      total += parseInt(row.count, 10);
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const overdueResult = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.due_date < :today', { today })
+      .andWhere('order.status NOT IN (:...terminalStatuses)', {
+        terminalStatuses: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
+      })
+      .getCount();
+
     return {
-      total: orders.length,
+      total,
       byStatus,
-      overdueCount,
+      overdueCount: overdueResult,
     };
   }
 

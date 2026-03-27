@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: March 13, 2026
+> **Last Updated**: March 27, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -187,6 +187,36 @@
   - Excel import from SPO sheet (xlsx library), batch insert in chunks of 500
   - Searchable across all text fields (po_number, supplier, ipn, mpn, description, manufacturer, customer, comments)
   - Frontend: new "History" tab on Purchase Orders page with import button and DataTable
+
+- [x] **Codebase Health Check (Mar 16)** - 44+ issues fixed across 42 files (334 insertions, 254 deletions):
+  - **Security:** Path traversal fix in attachments (entity type allowlist + ID sanitization), BOM import DTO nested validation bypass fixed
+  - **Race Conditions:** New `SequenceGeneratorService` using `pg_advisory_xact_lock` replaces SELECT-max-then-increment in 7 services (inspections, POs, orders, cycle counts, receiving sessions, kitting lists)
+  - **Route Conflicts:** `GET /purchase-orders/number/:poNumber` moved before `GET :id` catch-all; controller ordering documented
+  - **HTTP Error Codes:** 8 instances of `throw new Error()` (returning 500) replaced with `BadRequestException` (returning 400) across 3 controllers
+  - **Frontend Bugs:** MRP shortages type mismatch fixed (MrpShortagesResponse wrapper), useEffect dependency array added to Ctrl+Enter handler, supplier dialog stale form data fixed, BOM import quantity mapping validation enforced
+  - **Data Correctness:** Redundant `deleted_at: undefined` filters removed (3 services + bom-import), `@DeleteDateColumn` on attachment entity, filter DTO `@Transform` defaults, zero `unit_cost` no longer treated as null, `LotStatus.ACTIVE` enum instead of `In(['ACTIVE'] as any)`
+  - **Entity Consistency:** 8 missing barrel exports added, `ProductionStage` enum typed in production-log entity, 6 missing breadcrumb labels added
+  - **Performance:** Batch `getStockByMaterialIds()` eliminates N+1 queries in MRP (5 methods updated), `getOrderStats()` uses GROUP BY instead of loading all orders, pagination added to PO history
+  - **Cleanup:** Unused imports/variables removed (8 files), dead code patterns (`|| true`, `&& false`) removed (4 files), `console.error` removed from production (3 files), redundant `@Global()` AuditModule imports removed (4 modules)
+  - **New shared module:** `SharedModule` (`@Global()`) exports `SequenceGeneratorService` for reuse across all modules
+
+- [x] **Excel-Style Column Filtering in DataTable (Mar 27)** - Major DataTable enhancement with per-column filtering:
+  - Popover menu on each column header with Sort Ascending/Descending, filter by unique values with checkboxes
+  - Search within filter values (for columns with 8+ unique values), Select All/Clear/Reset controls
+  - Active filter count badges, "Clear all" button, "filtered from X total" in footer
+  - Applied across MRP/Shortages page (both tables) and AML page
+
+- [x] **AML Page DataTable Refactor (Mar 27)** - Replaced raw `<Table>` with `DataTable` component, added source filter dropdown, sortable/filterable columns, multi-field search
+
+- [x] **MRP Page Search & Filtering (Mar 27)** - Added global text search and per-column filtering/sorting to both Shortages and Requirements tables with `pageSize: 50`
+
+- [x] **Order Allocation UI (Mar 27)** - Added "Allocate Materials" and "Deallocate" buttons to order detail page, with confirmation dialog for deallocation
+
+- [x] **Inventory Lot Deletion FK Fix (Mar 27)** - Fixed 500 error on lot deletion by nullifying FK references in `receiving_session_lines` and `cycle_count_items` before deleting lots and transactions (both single and bulk delete)
+
+- [x] **BOM Import Empty Column Fix (Mar 27)** - Fixed validation error when CSV has blank header columns by filtering out ignored/empty-source column mappings before sending to parse endpoint
+
+- [x] **Verification Checklist (Mar 27)** - Created manual verification checklist for the 7-phase codebase health check
 
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests

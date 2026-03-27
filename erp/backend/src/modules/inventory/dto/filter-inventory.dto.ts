@@ -1,5 +1,5 @@
 import { IsArray, IsEnum, IsOptional, IsUUID, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export class FilterGroup {
   @IsEnum(['product_revision', 'order'])
@@ -18,5 +18,6 @@ export class FilterInventoryDto {
 
   @IsEnum(['AND', 'OR'])
   @IsOptional()
+  @Transform(({ value }) => value ?? 'OR')
   logic?: 'AND' | 'OR' = 'OR';
 }

@@ -12,7 +12,7 @@ import { KittingListItem } from '../../entities/kitting-list-item.entity';
 import { KittingListScan } from '../../entities/kitting-list-scan.entity';
 import { Order, OrderStatus } from '../../entities/order.entity';
 import { BomItem } from '../../entities/bom-item.entity';
-import { InventoryLot } from '../../entities/inventory-lot.entity';
+import { InventoryLot, LotStatus } from '../../entities/inventory-lot.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
 import {
@@ -21,6 +21,7 @@ import {
 } from '../../entities/audit-event.entity';
 import type { ResourceType } from '../../entities/bom-item.entity';
 import { CreateKittingListDto, ScanUidDto, CompleteKittingListDto } from './dto';
+import { SequenceGeneratorService } from '../shared/sequence-generator.service';
 
 @Injectable()
 export class KittingService {
@@ -44,6 +45,7 @@ export class KittingService {
     private readonly inventoryService: InventoryService,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly sequenceGenerator: SequenceGeneratorService,
   ) {}
 
   /**
@@ -178,7 +180,7 @@ export class KittingService {
         const stock = await this.inventoryService.getStockByMaterialId(item.material_id);
         // Get UIDs for this material to show location info
         const uids = await this.inventoryLotRepository.find({
-          where: { material_id: item.material_id, status: In(['ACTIVE'] as any) },
+          where: { material_id: item.material_id, status: LotStatus.ACTIVE },
           order: { location: 'ASC' },
         });
 
@@ -498,19 +500,7 @@ export class KittingService {
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
     const prefix = `KIT-${dateStr}-`;
 
-    const latest = await this.kittingListRepository
-      .createQueryBuilder('kl')
-      .where('kl.list_number LIKE :prefix', { prefix: `${prefix}%` })
-      .orderBy('kl.list_number', 'DESC')
-      .getOne();
-
-    let seq = 1;
-    if (latest) {
-      const lastSeq = parseInt(latest.list_number.replace(prefix, ''), 10);
-      if (!isNaN(lastSeq)) seq = lastSeq + 1;
-    }
-
-    return `${prefix}${String(seq).padStart(3, '0')}`;
+    return this.sequenceGenerator.next(prefix, 'kitting_lists', 'list_number', 3);
   }
 }
 

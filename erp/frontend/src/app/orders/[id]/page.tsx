@@ -41,7 +41,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ArrowLeft, Save, Truck, XCircle, Pencil, Package, FileText } from "lucide-react"
+import { ArrowLeft, Save, Truck, XCircle, Pencil, Package, FileText, PackageCheck, PackageX } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
@@ -160,6 +160,50 @@ export default function OrderDetailPage() {
       },
       onError: (error) => {
         toast.error(error.message || "Failed to cancel order")
+      },
+    }
+  )
+
+  const allocateMutation = useMutation(
+    (_: void) => api.post<{
+      order_id: string
+      order_number: string
+      total_materials: number
+      fully_allocated: number
+      partially_allocated: number
+      not_allocated: number
+    }>("/inventory/allocate-for-order", {
+      order_id: orderId,
+      allocate_available_only: true,
+    }),
+    {
+      onSuccess: (result) => {
+        if (result.not_allocated === 0) {
+          toast.success(`All ${result.total_materials} materials fully allocated`)
+        } else if (result.fully_allocated > 0 || result.partially_allocated > 0) {
+          toast.success(
+            `Allocated: ${result.fully_allocated} full, ${result.partially_allocated} partial, ${result.not_allocated} unavailable`
+          )
+        } else {
+          toast.error("No materials could be allocated — insufficient inventory")
+        }
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to allocate materials")
+      },
+    }
+  )
+
+  const deallocateMutation = useMutation(
+    (_: void) => api.delete<{ cancelled: number }>(`/inventory/allocations/order/${orderId}`),
+    {
+      onSuccess: (result) => {
+        toast.success(`${result.cancelled} allocation(s) released`)
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to deallocate materials")
       },
     }
   )
@@ -418,6 +462,54 @@ export default function OrderDetailPage() {
                   </Button>
                 </div>
               </div>
+            )}
+
+            {/* Material Allocation */}
+            {order.bom_revision_id && !["SHIPPED", "CANCELLED"].includes(order.status) && (
+              <>
+                <Separator />
+                <div>
+                  <Label className="text-muted-foreground">Material Allocation</Label>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => allocateMutation.mutate(undefined)}
+                      disabled={allocateMutation.isLoading || deallocateMutation.isLoading}
+                    >
+                      <PackageCheck className="h-4 w-4 mr-2" />
+                      {allocateMutation.isLoading ? "Allocating..." : "Allocate Materials"}
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={allocateMutation.isLoading || deallocateMutation.isLoading}
+                        >
+                          <PackageX className="h-4 w-4 mr-2" />
+                          Deallocate
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Deallocate Materials?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will release all active material allocations for order {order.order_number}.
+                            The inventory will become available for other orders.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => deallocateMutation.mutate(undefined)}>
+                            Deallocate
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              </>
             )}
 
             <Separator />

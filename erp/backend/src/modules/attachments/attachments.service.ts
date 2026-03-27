@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Attachment } from '../../entities/attachment.entity';
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
@@ -25,6 +25,18 @@ const ALLOWED_MIME_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+const ALLOWED_ENTITY_TYPES = [
+  'material',
+  'product',
+  'order',
+  'purchase_order',
+  'supplier',
+  'customer',
+  'receiving_inspection',
+  'cycle_count',
+  'kitting_list',
+];
+
 @Injectable()
 export class AttachmentsService {
   constructor(
@@ -41,6 +53,14 @@ export class AttachmentsService {
   ): Promise<Attachment> {
     if (!file) {
       throw new BadRequestException('No file provided');
+    }
+
+    // Sanitize entity type and entity ID to prevent path traversal
+    if (!ALLOWED_ENTITY_TYPES.includes(entityType)) {
+      throw new BadRequestException(`Invalid entity type "${entityType}"`);
+    }
+    if (/[\/\\\.]{2,}/.test(entityId) || /[\/\\]/.test(entityId)) {
+      throw new BadRequestException('Invalid entity ID');
     }
 
     if (file.size > MAX_FILE_SIZE) {
@@ -92,7 +112,6 @@ export class AttachmentsService {
       where: {
         entity_type: entityType,
         entity_id: entityId,
-        deleted_at: IsNull(),
       },
       order: { uploaded_at: 'DESC' },
     });
@@ -100,7 +119,7 @@ export class AttachmentsService {
 
   async findOne(id: string): Promise<Attachment> {
     const attachment = await this.attachmentRepository.findOne({
-      where: { id, deleted_at: IsNull() },
+      where: { id },
     });
     if (!attachment) {
       throw new NotFoundException(`Attachment with ID "${id}" not found`);

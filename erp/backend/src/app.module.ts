@@ -20,6 +20,7 @@ import { ReceivingModule } from './modules/receiving/receiving.module';
 import { CycleCountModule } from './modules/cycle-count/cycle-count.module';
 import { ProductionModule } from './modules/production/production.module';
 import { KittingModule } from './modules/kitting/kitting.module';
+import { SharedModule } from './modules/shared/shared.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { KittingModule } from './modules/kitting/kitting.module';
       autoLoadEntities: true,
       synchronize: false,
     }),
+    SharedModule, // Global shared services (SequenceGeneratorService)
     HealthModule, // Health checks - no dependencies
     AuditModule, // Global module - must be imported first so it's available to other modules
     AuthModule, // Authentication - must be before other protected modules

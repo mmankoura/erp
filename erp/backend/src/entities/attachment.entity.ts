@@ -3,6 +3,7 @@ import {
   PrimaryGeneratedColumn,
   Column,
   Index,
+  DeleteDateColumn,
 } from 'typeorm';
 
 @Entity('attachments')
@@ -41,7 +42,7 @@ export class Attachment {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @DeleteDateColumn({ type: 'timestamptz' })
   deleted_at: Date | null;
 
   @Column({ type: 'varchar', length: 100, nullable: true })

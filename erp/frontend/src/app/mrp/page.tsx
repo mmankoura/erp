@@ -52,12 +52,44 @@ function getSeverity(shortage: number, totalRequired: number) {
   return "low"
 }
 
+// Search filter for shortages table
+function shortagesSearchFilter(item: MrpShortageWithId, search: string): boolean {
+  const q = search.toLowerCase()
+  return (
+    item.material.internal_part_number.toLowerCase().includes(q) ||
+    (item.material.description || "").toLowerCase().includes(q) ||
+    item.total_required.toString().includes(q) ||
+    item.quantity_available.toString().includes(q) ||
+    item.quantity_on_order.toString().includes(q) ||
+    Math.abs(item.shortage).toString().includes(q)
+  )
+}
+
+// Search filter for requirements table
+function requirementsSearchFilter(item: MrpRequirementWithId, search: string): boolean {
+  const q = search.toLowerCase()
+  return (
+    item.material.internal_part_number.toLowerCase().includes(q) ||
+    (item.material.description || "").toLowerCase().includes(q) ||
+    item.total_required.toString().includes(q) ||
+    item.quantity_on_hand.toString().includes(q) ||
+    item.quantity_allocated.toString().includes(q) ||
+    item.quantity_available.toString().includes(q) ||
+    item.quantity_on_order.toString().includes(q) ||
+    item.net_requirement.toString().includes(q)
+  )
+}
+
 // Column definitions for Shortages table
 const shortagesColumns: Column<MrpShortageWithId>[] = [
   {
     key: "material",
     header: "Material",
     defaultWidth: 250,
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.material.internal_part_number,
+    filterAccessor: (item) => item.material.internal_part_number,
     cell: (item) => (
       <div>
         <span className="font-medium">
@@ -76,6 +108,10 @@ const shortagesColumns: Column<MrpShortageWithId>[] = [
     header: "Required",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.total_required,
+    filterAccessor: (item) => item.total_required.toLocaleString(),
     cell: (item) => (
       <span className="font-mono">{item.total_required.toLocaleString()}</span>
     ),
@@ -85,6 +121,10 @@ const shortagesColumns: Column<MrpShortageWithId>[] = [
     header: "Available",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.quantity_available,
+    filterAccessor: (item) => item.quantity_available.toLocaleString(),
     cell: (item) => (
       <span className="font-mono">{item.quantity_available.toLocaleString()}</span>
     ),
@@ -94,6 +134,10 @@ const shortagesColumns: Column<MrpShortageWithId>[] = [
     header: "On Order",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.quantity_on_order,
+    filterAccessor: (item) => item.quantity_on_order.toLocaleString(),
     cell: (item) => (
       <span className="font-mono text-blue-600">{item.quantity_on_order.toLocaleString()}</span>
     ),
@@ -103,6 +147,10 @@ const shortagesColumns: Column<MrpShortageWithId>[] = [
     header: "Shortage",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => Math.abs(item.shortage),
+    filterAccessor: (item) => Math.abs(item.shortage).toLocaleString(),
     cell: (item) => (
       <span className="font-mono font-bold text-red-600">
         {Math.abs(item.shortage).toLocaleString()}
@@ -114,6 +162,16 @@ const shortagesColumns: Column<MrpShortageWithId>[] = [
     header: "Status",
     defaultWidth: 100,
     resizable: false,
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => {
+      const severity = getSeverity(item.shortage, item.total_required)
+      return severity === "critical" ? 0 : severity === "warning" ? 1 : 2
+    },
+    filterAccessor: (item) => {
+      const severity = getSeverity(item.shortage, item.total_required)
+      return severity === "critical" ? "Critical" : severity === "warning" ? "Warning" : "Low"
+    },
     cell: (item) => {
       const severity = getSeverity(item.shortage, item.total_required)
       return (
@@ -143,6 +201,10 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     key: "material",
     header: "Material",
     defaultWidth: 250,
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.material.internal_part_number,
+    filterAccessor: (item) => item.material.internal_part_number,
     cell: (item) => (
       <div>
         <span className="font-medium">
@@ -161,6 +223,10 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     header: "Required",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.total_required,
+    filterAccessor: (item) => item.total_required.toLocaleString(),
     cell: (item) => (
       <span className="font-mono">{item.total_required.toLocaleString()}</span>
     ),
@@ -170,6 +236,10 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     header: "On Hand",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.quantity_on_hand,
+    filterAccessor: (item) => item.quantity_on_hand.toLocaleString(),
     cell: (item) => (
       <span className="font-mono">{item.quantity_on_hand.toLocaleString()}</span>
     ),
@@ -179,6 +249,10 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     header: "Allocated",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.quantity_allocated,
+    filterAccessor: (item) => item.quantity_allocated.toLocaleString(),
     cell: (item) => (
       <span className="font-mono text-yellow-600">{item.quantity_allocated.toLocaleString()}</span>
     ),
@@ -188,6 +262,10 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     header: "Available",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.quantity_available,
+    filterAccessor: (item) => item.quantity_available.toLocaleString(),
     cell: (item) => (
       <span className="font-mono text-green-600">{item.quantity_available.toLocaleString()}</span>
     ),
@@ -197,6 +275,10 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     header: "On Order",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.quantity_on_order,
+    filterAccessor: (item) => item.quantity_on_order.toLocaleString(),
     cell: (item) => (
       <span className="font-mono text-blue-600">{item.quantity_on_order.toLocaleString()}</span>
     ),
@@ -206,6 +288,10 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     header: "Net Need",
     defaultWidth: 100,
     className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.net_requirement,
+    filterAccessor: (item) => item.net_requirement > 0 ? item.net_requirement.toLocaleString() : "0",
     cell: (item) => {
       const hasShortage = item.net_requirement > 0
       return (
@@ -220,6 +306,16 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     header: "Status",
     defaultWidth: 100,
     resizable: false,
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => {
+      const isCovered = item.quantity_available + item.quantity_on_order >= item.total_required
+      return isCovered ? 1 : 0
+    },
+    filterAccessor: (item) => {
+      const isCovered = item.quantity_available + item.quantity_on_order >= item.total_required
+      return isCovered ? "Covered" : "Short"
+    },
     cell: (item) => {
       const isCovered = item.quantity_available + item.quantity_on_order >= item.total_required
       return isCovered ? (
@@ -347,8 +443,11 @@ export default function MRPPage() {
             data={shortages}
             columns={shortagesColumns}
             isLoading={shortagesLoading}
+            searchFilter={shortagesSearchFilter}
+            searchPlaceholder="Search by IPN, description, quantity..."
             emptyMessage="No shortages found"
             storageKey="mrp-shortages"
+            pageSize={50}
           />
         ) : shortagesLoading ? (
           <div className="space-y-2">
@@ -548,8 +647,11 @@ export default function MRPPage() {
                   data={requirements}
                   columns={requirementsColumns}
                   isLoading={requirementsLoading}
+                  searchFilter={requirementsSearchFilter}
+                  searchPlaceholder="Search by IPN, description, quantity..."
                   emptyMessage="No material requirements found. No active orders require materials."
                   storageKey="mrp-requirements"
+                  pageSize={50}
                 />
               ) : requirementsLoading ? (
                 <div className="space-y-2">

@@ -28,7 +28,7 @@ export class AmlService {
 
   async findAll(): Promise<ApprovedManufacturer[]> {
     return this.amlRepository.find({
-      relations: ['material', 'preferred_supplier'],
+      relations: ['material', 'preferred_supplier', 'customer'],
       order: { material_id: 'ASC', priority: 'ASC' },
     });
   }
@@ -36,7 +36,7 @@ export class AmlService {
   async findAllIncludingDeleted(): Promise<ApprovedManufacturer[]> {
     return this.amlRepository.find({
       withDeleted: true,
-      relations: ['material', 'preferred_supplier'],
+      relations: ['material', 'preferred_supplier', 'customer'],
       order: { material_id: 'ASC', priority: 'ASC' },
     });
   }
@@ -44,7 +44,7 @@ export class AmlService {
   async findOne(id: string): Promise<ApprovedManufacturer> {
     const aml = await this.amlRepository.findOne({
       where: { id },
-      relations: ['material', 'preferred_supplier'],
+      relations: ['material', 'preferred_supplier', 'customer'],
     });
     if (!aml) {
       throw new NotFoundException(`AML entry with ID "${id}" not found`);
@@ -55,7 +55,7 @@ export class AmlService {
   async findByMaterial(materialId: string): Promise<ApprovedManufacturer[]> {
     return this.amlRepository.find({
       where: { material_id: materialId },
-      relations: ['material', 'preferred_supplier'],
+      relations: ['material', 'preferred_supplier', 'customer'],
       order: { priority: 'ASC', manufacturer: 'ASC' },
     });
   }
@@ -65,7 +65,7 @@ export class AmlService {
   ): Promise<ApprovedManufacturer[]> {
     return this.amlRepository.find({
       where: { material_id: materialId, status: AMLStatus.APPROVED },
-      relations: ['material', 'preferred_supplier'],
+      relations: ['material', 'preferred_supplier', 'customer'],
       order: { priority: 'ASC', manufacturer: 'ASC' },
     });
   }
@@ -320,7 +320,7 @@ export class AmlService {
         manufacturer: manufacturer,
         manufacturer_part_number: mpn,
       },
-      relations: ['material', 'preferred_supplier'],
+      relations: ['material', 'preferred_supplier', 'customer'],
     });
   }
 
@@ -389,7 +389,7 @@ export class AmlService {
           manufacturer_part_number: mpn,
           customer_id: customerId,
         },
-        relations: ['material', 'preferred_supplier'],
+        relations: ['material', 'preferred_supplier', 'customer'],
       });
 
       if (customerMatch && customerMatch.status === AMLStatus.APPROVED) {
@@ -495,7 +495,7 @@ export class AmlService {
 
     const existing = await this.amlRepository.findOne({
       where: query,
-      relations: ['material', 'preferred_supplier'],
+      relations: ['material', 'preferred_supplier', 'customer'],
     });
 
     if (existing) {
@@ -527,7 +527,7 @@ export class AmlService {
 
     const full = await this.amlRepository.findOne({
       where: { id: saved.id },
-      relations: ['material', 'preferred_supplier'],
+      relations: ['material', 'preferred_supplier', 'customer'],
     });
 
     return { aml: full!, created: true };

@@ -246,18 +246,6 @@ export default function ReceivingNewPage() {
     }
   }
 
-  // Handle Ctrl+Enter to submit
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === "Enter" && session && itemIpn && itemQty) {
-        e.preventDefault()
-        handleConfirmReceive()
-      }
-    }
-    window.addEventListener("keydown", handler)
-    return () => window.removeEventListener("keydown", handler)
-  })
-
   const clearItemForm = () => {
     setItemIpn("")
     setItemMpn("")
@@ -290,6 +278,21 @@ export default function ReceivingNewPage() {
 
     receiveItemMutation.mutate(dto)
   }
+
+  // Handle Ctrl+Enter to submit
+  const handleConfirmReceiveRef = useRef(handleConfirmReceive)
+  handleConfirmReceiveRef.current = handleConfirmReceive
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === "Enter" && session && itemIpn && itemQty) {
+        e.preventDefault()
+        handleConfirmReceiveRef.current()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [session, itemIpn, itemQty])
 
   const handleRetry = async (idx: number) => {
     const retry = pendingRetries[idx]

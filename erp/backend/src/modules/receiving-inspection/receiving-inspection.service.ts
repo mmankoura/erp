@@ -6,7 +6,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import {
   ReceivingInspection,
   InspectionStatus,
@@ -25,13 +25,12 @@ import {
 import {
   TransactionType,
   ReferenceType,
-  InventoryTransaction,
 } from '../../entities/inventory-transaction.entity';
+import type { InventoryTransaction } from '../../entities/inventory-transaction.entity';
+import { SequenceGeneratorService } from '../shared/sequence-generator.service';
 
 @Injectable()
 export class ReceivingInspectionService {
-  private inspectionCounter = 0;
-
   constructor(
     @InjectRepository(ReceivingInspection)
     private readonly inspectionRepository: Repository<ReceivingInspection>,
@@ -43,6 +42,7 @@ export class ReceivingInspectionService {
     @Inject(forwardRef(() => InventoryService))
     private readonly inventoryService: InventoryService,
     private readonly auditService: AuditService,
+    private readonly sequenceGenerator: SequenceGeneratorService,
   ) {}
 
   async findAll(): Promise<ReceivingInspection[]> {
@@ -537,24 +537,8 @@ export class ReceivingInspectionService {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
+    const prefix = `INS-${year}${month}${day}-`;
 
-    // Find the highest inspection number for today
-    const todayPrefix = `INS-${year}${month}${day}`;
-    const latest = await this.inspectionRepository
-      .createQueryBuilder('i')
-      .where('i.inspection_number LIKE :prefix', { prefix: `${todayPrefix}%` })
-      .orderBy('i.inspection_number', 'DESC')
-      .getOne();
-
-    let sequence = 1;
-    if (latest) {
-      const lastSequence = parseInt(
-        latest.inspection_number.split('-').pop() ?? '0',
-        10,
-      );
-      sequence = lastSequence + 1;
-    }
-
-    return `${todayPrefix}-${String(sequence).padStart(4, '0')}`;
+    return this.sequenceGenerator.next(prefix, 'receiving_inspections', 'inspection_number');
   }
 }

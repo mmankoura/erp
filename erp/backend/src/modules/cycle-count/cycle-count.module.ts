@@ -7,7 +7,6 @@ import { CycleCountItem } from '../../entities/cycle-count-item.entity';
 import { Material } from '../../entities/material.entity';
 import { InventoryLot } from '../../entities/inventory-lot.entity';
 import { InventoryTransaction } from '../../entities/inventory-transaction.entity';
-import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -18,7 +17,6 @@ import { AuditModule } from '../audit/audit.module';
       InventoryLot,
       InventoryTransaction,
     ]),
-    AuditModule,
   ],
   controllers: [CycleCountController],
   providers: [CycleCountService],

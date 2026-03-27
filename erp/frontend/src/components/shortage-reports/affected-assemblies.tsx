@@ -186,7 +186,7 @@ export function AffectedAssemblies({ shortages, isLoading }: AffectedAssembliesP
                 </div>
               </CardHeader>
 
-              {(isExpanded || true) && (
+              {isExpanded && (
                 <CardContent className={!isExpanded ? "hidden print:block" : ""}>
                   <Table>
                     <TableHeader>

@@ -197,7 +197,7 @@ export class InventoryImportService {
           initial_quantity: item.quantity,
           package_type: packageType,
           po_reference: item.po_reference || null,
-          unit_cost: item.unit_cost || null,
+          unit_cost: item.unit_cost != null ? item.unit_cost : null,
           expiration_date: item.expiration_date
             ? new Date(item.expiration_date)
             : null,
@@ -300,6 +300,15 @@ export class InventoryImportService {
     }
 
     await this.dataSource.transaction(async (manager) => {
+      // Nullify FK references in related tables
+      await manager.query(
+        `UPDATE receiving_session_lines SET lot_id = NULL WHERE lot_id = $1`,
+        [id],
+      );
+      await manager.query(
+        `UPDATE cycle_count_items SET lot_id = NULL WHERE lot_id = $1`,
+        [id],
+      );
       // Delete associated transactions
       await manager.delete(InventoryTransaction, { lot_id: id });
       // Delete the lot
@@ -313,6 +322,15 @@ export class InventoryImportService {
     }
 
     const result = await this.dataSource.transaction(async (manager) => {
+      // Nullify FK references in related tables
+      await manager.query(
+        `UPDATE receiving_session_lines SET lot_id = NULL WHERE lot_id = ANY($1)`,
+        [ids],
+      );
+      await manager.query(
+        `UPDATE cycle_count_items SET lot_id = NULL WHERE lot_id = ANY($1)`,
+        [ids],
+      );
       // Delete associated transactions
       await manager.delete(InventoryTransaction, { lot_id: In(ids) });
       // Delete the lots
@@ -459,9 +477,7 @@ export class InventoryImportService {
 
     // Batch fetch all materials
     const uniqueIpns = [...new Set(items.map((item) => item.ipn))];
-    const materials = await this.materialRepository.find({
-      where: { deleted_at: undefined as unknown as Date },
-    });
+    const materials = await this.materialRepository.find();
 
     const materialByIpn = new Map<string, Material>();
     const materialByIpnLower = new Map<string, Material>();

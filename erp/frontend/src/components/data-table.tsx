@@ -29,6 +29,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+// ScrollArea from Radix doesn't work well with max-h constraints in popovers,
+// so we use a plain div with overflow-y-auto for the filter list.
+import {
   Search,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +46,9 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  ListFilter,
+  X,
+  Check,
 } from "lucide-react"
 
 export interface Column<T> {
@@ -47,8 +57,9 @@ export interface Column<T> {
   cell?: (item: T) => React.ReactNode
   sortable?: boolean
   sortAccessor?: (item: T) => string | number | null
+  filterable?: boolean
+  filterAccessor?: (item: T) => string
   className?: string
-  // New properties for dynamic columns
   defaultWidth?: number
   minWidth?: number
   maxWidth?: number
@@ -61,35 +72,38 @@ interface ColumnSettings {
   width: number
 }
 
+// Per-column filter state
+interface ColumnFilterState {
+  text: string
+  selectedValues: Set<string> | null // null = all selected (no filter)
+}
+
 interface DataTableProps<T> {
   data: T[] | null
   columns: Column<T>[]
   isLoading?: boolean
   searchPlaceholder?: string
-  searchKey?: keyof T | (keyof T)[]  // Single key or array of keys to search
-  searchFilter?: (item: T, search: string) => boolean  // Custom search filter function
+  searchKey?: keyof T | (keyof T)[]
+  searchFilter?: (item: T, search: string) => boolean
   onRowClick?: (item: T) => void
   emptyMessage?: string
   pageSize?: number
-  // Selection props (controlled mode)
   selectable?: boolean
   selectedIds?: string[]
   onSelectionChange?: (selectedIds: string[]) => void
-  // Selection props (uncontrolled mode with bulk delete)
   enableSelection?: boolean
   onBulkDelete?: (ids: string[]) => void
-  // Column customization props
   enableColumnVisibility?: boolean
   enableColumnResize?: boolean
-  storageKey?: string // For persisting column settings to localStorage
+  storageKey?: string
 }
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100]
 const DEFAULT_COLUMN_WIDTH = 150
 const MIN_COLUMN_WIDTH = 50
 const MAX_COLUMN_WIDTH = 500
+const MAX_FILTER_VALUES = 200
 
-// Helper to get stored column settings
 function getStoredColumnSettings(storageKey: string): Record<string, ColumnSettings> | null {
   if (typeof window === "undefined") return null
   try {
@@ -100,7 +114,6 @@ function getStoredColumnSettings(storageKey: string): Record<string, ColumnSetti
   }
 }
 
-// Helper to save column settings
 function saveColumnSettings(storageKey: string, settings: Record<string, ColumnSettings>) {
   if (typeof window === "undefined") return
   try {
@@ -110,6 +123,253 @@ function saveColumnSettings(storageKey: string, settings: Record<string, ColumnS
   }
 }
 
+// Get the raw string value for a column from a row (used for filtering)
+function getColumnValue<T>(item: T, column: Column<T>): string {
+  if (column.filterAccessor) {
+    return column.filterAccessor(item)
+  }
+  if (column.sortAccessor) {
+    const val = column.sortAccessor(item)
+    return val != null ? String(val) : ""
+  }
+  const val = (item as Record<string, unknown>)[column.key]
+  return val != null ? String(val) : ""
+}
+
+// ============================================================
+// ColumnHeaderMenu — Excel-style popover per column
+// ============================================================
+function ColumnHeaderMenu<T extends { id: string }>({
+  column,
+  data,
+  sortKey,
+  sortDirection,
+  onSort,
+  columnFilter,
+  onFilterChange,
+}: {
+  column: Column<T>
+  data: T[]
+  sortKey: string | null
+  sortDirection: "asc" | "desc"
+  onSort: (key: string) => void
+  columnFilter: ColumnFilterState | undefined
+  onFilterChange: (key: string, filter: ColumnFilterState | undefined) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [filterSearch, setFilterSearch] = React.useState("")
+
+  const isSorted = sortKey === column.key
+  const hasFilter = columnFilter && columnFilter.selectedValues !== null
+
+  // Compute unique values for the filter list
+  const uniqueValues = React.useMemo(() => {
+    if (!column.filterable) return []
+    const values = new Map<string, number>()
+    for (const item of data) {
+      const val = getColumnValue(item, column)
+      const display = val || "(Blank)"
+      values.set(display, (values.get(display) || 0) + 1)
+    }
+    // Sort alphabetically, blanks last
+    return [...values.entries()]
+      .sort(([a], [b]) => {
+        if (a === "(Blank)") return 1
+        if (b === "(Blank)") return -1
+        return a.localeCompare(b, undefined, { sensitivity: "base" })
+      })
+      .slice(0, MAX_FILTER_VALUES)
+  }, [data, column])
+
+  // Filter the unique values by the search input
+  const filteredValues = React.useMemo(() => {
+    if (!filterSearch) return uniqueValues
+    const q = filterSearch.toLowerCase()
+    return uniqueValues.filter(([val]) => val.toLowerCase().includes(q))
+  }, [uniqueValues, filterSearch])
+
+  const selectedSet = columnFilter?.selectedValues ?? null
+
+  const toggleValue = (val: string) => {
+    let newSet: Set<string>
+    if (selectedSet === null) {
+      // Currently "all selected" — deselect this one value
+      newSet = new Set(uniqueValues.map(([v]) => v))
+      newSet.delete(val)
+    } else {
+      newSet = new Set(selectedSet)
+      if (newSet.has(val)) {
+        newSet.delete(val)
+      } else {
+        newSet.add(val)
+      }
+    }
+
+    // If all values are selected again, clear the filter
+    if (newSet.size === uniqueValues.length) {
+      onFilterChange(column.key, undefined)
+    } else {
+      onFilterChange(column.key, { text: "", selectedValues: newSet })
+    }
+  }
+
+  const selectAll = () => {
+    onFilterChange(column.key, undefined)
+  }
+
+  const clearAll = () => {
+    onFilterChange(column.key, { text: "", selectedValues: new Set() })
+  }
+
+  const isValueSelected = (val: string) => {
+    if (selectedSet === null) return true
+    return selectedSet.has(val)
+  }
+
+  const allSelected = selectedSet === null
+  const noneSelected = selectedSet !== null && selectedSet.size === 0
+
+  const hasSortOrFilter = column.sortable || column.filterable
+  if (!hasSortOrFilter) return null
+
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setFilterSearch("") }}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={`shrink-0 p-0.5 rounded hover:bg-accent ${hasFilter || isSorted ? "text-foreground" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {hasFilter ? (
+            <ListFilter className="h-3.5 w-3.5" />
+          ) : isSorted ? (
+            sortDirection === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />
+          ) : (
+            <ListFilter className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-56 p-0"
+        onInteractOutside={() => setOpen(false)}
+      >
+        <div className="p-2 space-y-1">
+          {/* Sort options */}
+          {column.sortable && (
+            <>
+              <button
+                type="button"
+                className={`flex items-center gap-2 w-full rounded px-2 py-1.5 text-sm hover:bg-accent ${isSorted && sortDirection === "asc" ? "bg-accent font-medium" : ""}`}
+                onClick={() => { onSort(column.key); if (!isSorted || sortDirection === "desc") { /* will become asc */ } setOpen(false) }}
+              >
+                <ArrowUp className="h-3.5 w-3.5" />
+                Sort Ascending
+                {isSorted && sortDirection === "asc" && <Check className="h-3.5 w-3.5 ml-auto" />}
+              </button>
+              <button
+                type="button"
+                className={`flex items-center gap-2 w-full rounded px-2 py-1.5 text-sm hover:bg-accent ${isSorted && sortDirection === "desc" ? "bg-accent font-medium" : ""}`}
+                onClick={() => {
+                  // If already sorted asc on this key, clicking again will toggle to desc
+                  // If not sorted on this key, first click sets asc, so click twice
+                  if (isSorted && sortDirection === "asc") {
+                    onSort(column.key) // toggles to desc
+                  } else if (!isSorted) {
+                    onSort(column.key) // sets asc
+                    // We need to call again immediately for desc
+                    setTimeout(() => onSort(column.key), 0)
+                  }
+                  setOpen(false)
+                }}
+              >
+                <ArrowDown className="h-3.5 w-3.5" />
+                Sort Descending
+                {isSorted && sortDirection === "desc" && <Check className="h-3.5 w-3.5 ml-auto" />}
+              </button>
+            </>
+          )}
+
+          {/* Filter section */}
+          {column.filterable && uniqueValues.length > 0 && (
+            <>
+              {column.sortable && <div className="border-t my-1" />}
+              <div className="px-1 py-1">
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">Filter</p>
+                {uniqueValues.length > 8 && (
+                  <div className="relative mb-1.5">
+                    <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search..."
+                      value={filterSearch}
+                      onChange={(e) => setFilterSearch(e.target.value)}
+                      className="h-7 pl-7 text-xs"
+                    />
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mb-1">
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline"
+                    onClick={selectAll}
+                  >
+                    Select All
+                  </button>
+                  <span className="text-xs text-muted-foreground">|</span>
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline"
+                    onClick={clearAll}
+                  >
+                    Clear
+                  </button>
+                  {hasFilter && (
+                    <>
+                      <span className="text-xs text-muted-foreground">|</span>
+                      <button
+                        type="button"
+                        className="text-xs text-destructive hover:underline flex items-center gap-0.5"
+                        onClick={() => { onFilterChange(column.key, undefined); setOpen(false) }}
+                      >
+                        <X className="h-3 w-3" />
+                        Reset
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="max-h-48 overflow-y-auto border rounded">
+                  <div className="space-y-0.5 p-1">
+                    {filteredValues.map(([val, count]) => (
+                      <label
+                        key={val}
+                        className="flex items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-accent cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={isValueSelected(val)}
+                          onCheckedChange={() => toggleValue(val)}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span className="truncate flex-1">{val}</span>
+                        <span className="text-muted-foreground shrink-0">{count}</span>
+                      </label>
+                    ))}
+                    {filteredValues.length === 0 && (
+                      <p className="text-xs text-muted-foreground py-1 text-center">No matches</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// ============================================================
+// DataTable
+// ============================================================
 export function DataTable<T extends { id: string }>({
   data,
   columns,
@@ -136,14 +396,15 @@ export function DataTable<T extends { id: string }>({
   const [sortKey, setSortKey] = React.useState<string | null>(null)
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc")
 
+  // Per-column filters
+  const [columnFilters, setColumnFilters] = React.useState<Record<string, ColumnFilterState>>({})
+
   // Column settings state
   const [columnSettings, setColumnSettings] = React.useState<Record<string, ColumnSettings>>(() => {
-    // Try to load from storage first
     if (storageKey) {
       const stored = getStoredColumnSettings(storageKey)
       if (stored) return stored
     }
-    // Initialize from column defaults
     const initial: Record<string, ColumnSettings> = {}
     columns.forEach((col) => {
       initial[col.key] = {
@@ -158,7 +419,7 @@ export function DataTable<T extends { id: string }>({
   const [resizing, setResizing] = React.useState<{ key: string; startX: number; startWidth: number } | null>(null)
   const tableRef = React.useRef<HTMLDivElement>(null)
 
-  // Sync column settings when columns prop changes (add new columns)
+  // Sync column settings when columns prop changes
   React.useEffect(() => {
     setColumnSettings((prev) => {
       const updated = { ...prev }
@@ -215,27 +476,28 @@ export function DataTable<T extends { id: string }>({
     }
   }, [resizing, columns])
 
-  // Use internal state if enableSelection is true, otherwise use controlled state
   const isSelectable = selectable || enableSelection
   const selectedIds = enableSelection ? internalSelectedIds : controlledSelectedIds
   const setSelectedIds = enableSelection ? setInternalSelectedIds : onSelectionChange
 
-  // Get visible columns
   const visibleColumns = React.useMemo(() => {
     return columns.filter((col) => columnSettings[col.key]?.visible !== false)
   }, [columns, columnSettings])
 
-  // Filter data based on search
-  const filteredData = React.useMemo(() => {
+  // Count active column filters
+  const activeFilterCount = Object.keys(columnFilters).length
+
+  // ---- Data pipeline: global search → column filters → sort → paginate ----
+
+  // Step 1: Global search filter
+  const searchFilteredData = React.useMemo(() => {
     if (!data) return []
     if (!search) return data
 
-    // Use custom filter if provided
     if (searchFilter) {
       return data.filter((item) => searchFilter(item, search))
     }
 
-    // No search key specified
     if (!searchKey) return data
 
     const searchLower = search.toLowerCase()
@@ -255,7 +517,24 @@ export function DataTable<T extends { id: string }>({
     })
   }, [data, search, searchKey, searchFilter])
 
-  // Sort data
+  // Step 2: Per-column filters
+  const filteredData = React.useMemo(() => {
+    if (activeFilterCount === 0) return searchFilteredData
+
+    return searchFilteredData.filter((item) => {
+      for (const [colKey, filter] of Object.entries(columnFilters)) {
+        if (filter.selectedValues === null) continue
+        const column = columns.find((c) => c.key === colKey)
+        if (!column) continue
+
+        const val = getColumnValue(item, column) || "(Blank)"
+        if (!filter.selectedValues.has(val)) return false
+      }
+      return true
+    })
+  }, [searchFilteredData, columnFilters, activeFilterCount, columns])
+
+  // Sort
   const handleSort = React.useCallback((key: string) => {
     if (sortKey === key) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))
@@ -284,7 +563,6 @@ export function DataTable<T extends { id: string }>({
         bVal = (b as Record<string, unknown>)[sortKey] as string | number | null
       }
 
-      // Nulls always sort last
       if (aVal == null && bVal == null) return 0
       if (aVal == null) return 1
       if (bVal == null) return -1
@@ -300,7 +578,7 @@ export function DataTable<T extends { id: string }>({
     })
   }, [filteredData, sortKey, sortDirection, columns])
 
-  // Paginate data
+  // Paginate
   const paginatedData = React.useMemo(() => {
     const start = (currentPage - 1) * pageSize
     return sortedData.slice(start, start + pageSize)
@@ -308,10 +586,10 @@ export function DataTable<T extends { id: string }>({
 
   const totalPages = Math.ceil(sortedData.length / pageSize)
 
-  // Reset to page 1 when search or page size changes
+  // Reset page when filters change
   React.useEffect(() => {
     setCurrentPage(1)
-  }, [search, pageSize])
+  }, [search, pageSize, columnFilters])
 
   // Selection helpers
   const allFilteredIds = React.useMemo(() => filteredData.map((item) => item.id), [filteredData])
@@ -378,6 +656,23 @@ export function DataTable<T extends { id: string }>({
     })
   }
 
+  const handleColumnFilterChange = React.useCallback((key: string, filter: ColumnFilterState | undefined) => {
+    setColumnFilters((prev) => {
+      const next = { ...prev }
+      if (!filter) {
+        delete next[key]
+      } else {
+        next[key] = filter
+      }
+      return next
+    })
+  }, [])
+
+  const clearAllFilters = () => {
+    setColumnFilters({})
+    setSearch("")
+  }
+
   const hiddenColumnsCount = columns.length - visibleColumns.length
 
   if (isLoading) {
@@ -439,10 +734,24 @@ export function DataTable<T extends { id: string }>({
             />
           </div>
         )}
-        {search && (
-          <span className="text-sm text-muted-foreground">
-            {filteredData.length} result{filteredData.length !== 1 ? "s" : ""}
-          </span>
+        {(search || activeFilterCount > 0) && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {sortedData.length} result{sortedData.length !== 1 ? "s" : ""}
+            </span>
+            {activeFilterCount > 0 && (
+              <Badge variant="secondary" className="text-xs gap-1">
+                <ListFilter className="h-3 w-3" />
+                {activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""}
+              </Badge>
+            )}
+            {(search || activeFilterCount > 0) && (
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={clearAllFilters}>
+                <X className="h-3 w-3 mr-1" />
+                Clear all
+              </Button>
+            )}
+          </div>
         )}
         {enableSelection && selectedIds.length > 0 && (
           <div className="flex items-center gap-2 ml-auto">
@@ -521,29 +830,44 @@ export function DataTable<T extends { id: string }>({
               {visibleColumns.map((column) => {
                 const width = columnSettings[column.key]?.width || column.defaultWidth || DEFAULT_COLUMN_WIDTH
                 const canResize = enableColumnResize && column.resizable !== false
+                const isRightAligned = column.className?.includes("text-right")
+                const isCenterAligned = column.className?.includes("text-center")
+                const hasColumnFilter = !!columnFilters[column.key]
                 const isSorted = sortKey === column.key
-                const SortIcon = isSorted
-                  ? sortDirection === "asc" ? ArrowUp : ArrowDown
-                  : ArrowUpDown
+
                 return (
                   <TableHead
                     key={column.key}
                     className={`relative ${column.className || ""}`}
                     style={enableColumnResize ? { width, minWidth: column.minWidth || MIN_COLUMN_WIDTH } : undefined}
                   >
-                    <div className="flex items-center justify-between gap-1">
-                      {column.sortable ? (
-                        <button
-                          type="button"
-                          className="flex items-center gap-1 hover:text-foreground text-left"
-                          onClick={() => handleSort(column.key)}
-                        >
-                          <span className="truncate">{column.header}</span>
-                          <SortIcon className={`h-3.5 w-3.5 shrink-0 ${isSorted ? "text-foreground" : "text-muted-foreground/50"}`} />
-                        </button>
-                      ) : (
-                        <span className="truncate">{column.header}</span>
-                      )}
+                    <div className={`flex items-center gap-1 ${isRightAligned ? "justify-end" : isCenterAligned ? "justify-center" : "justify-between"}`}>
+                      <span
+                        className={`truncate ${column.sortable ? "cursor-pointer hover:text-foreground" : ""}`}
+                        onClick={column.sortable ? () => handleSort(column.key) : undefined}
+                      >
+                        {column.header}
+                      </span>
+                      <div className="flex items-center shrink-0">
+                        {/* Sort indicator (shown inline when sorted but no filter menu) */}
+                        {isSorted && !(column.sortable || column.filterable) && (
+                          sortDirection === "asc"
+                            ? <ArrowUp className="h-3.5 w-3.5" />
+                            : <ArrowDown className="h-3.5 w-3.5" />
+                        )}
+                        {/* Column header menu */}
+                        {(column.sortable || column.filterable) && (
+                          <ColumnHeaderMenu
+                            column={column}
+                            data={data || []}
+                            sortKey={sortKey}
+                            sortDirection={sortDirection}
+                            onSort={handleSort}
+                            columnFilter={columnFilters[column.key]}
+                            onFilterChange={handleColumnFilterChange}
+                          />
+                        )}
+                      </div>
                       {canResize && (
                         <div
                           className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-primary/50 active:bg-primary"
@@ -593,7 +917,7 @@ export function DataTable<T extends { id: string }>({
                         className={column.className}
                         style={enableColumnResize ? { width, maxWidth: width } : undefined}
                       >
-                        <div className="truncate">
+                        <div className={`truncate ${column.className?.includes("text-right") ? "text-right" : column.className?.includes("text-center") ? "text-center" : ""}`}>
                           {column.cell
                             ? column.cell(item)
                             : String((item as Record<string, unknown>)[column.key] ?? "")}
@@ -613,6 +937,9 @@ export function DataTable<T extends { id: string }>({
           <p className="text-sm text-muted-foreground">
             Showing {sortedData.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{" "}
             {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length}
+            {data && sortedData.length !== data.length && (
+              <span> (filtered from {data.length})</span>
+            )}
           </p>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Rows per page:</span>
@@ -667,3 +994,6 @@ export function DataTable<T extends { id: string }>({
     </div>
   )
 }
+
+// Re-export Badge for internal use in filter count display
+import { Badge } from "@/components/ui/badge"

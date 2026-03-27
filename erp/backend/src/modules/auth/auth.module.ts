@@ -8,13 +8,11 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { SessionSerializer } from './session.serializer';
 import { AuthenticatedGuard } from './guards/authenticated.guard';
 import { RolesGuard } from './guards/roles.guard';
-import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User]),
     PassportModule.register({ session: true }),
-    AuditModule,
   ],
   controllers: [AuthController],
   providers: [

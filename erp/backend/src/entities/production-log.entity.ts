@@ -39,10 +39,10 @@ export class ProductionLog {
   order: Order;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  from_stage: string | null;
+  from_stage: ProductionStage | null;
 
   @Column({ type: 'varchar', length: 50 })
-  to_stage: string;
+  to_stage: ProductionStage;
 
   @Column({ type: 'int' })
   quantity: number;

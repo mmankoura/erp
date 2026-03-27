@@ -52,6 +52,13 @@ export interface OwnerFilter {
   owner_id?: string | null;
 }
 
+export interface BatchStockLevel {
+  material_id: string;
+  quantity_on_hand: number;
+  quantity_allocated: number;
+  quantity_available: number;
+}
+
 export interface StockLevel {
   material_id: string;
   quantity_on_hand: number;
@@ -147,7 +154,6 @@ export class InventoryService {
   async findAllStock(): Promise<MaterialStock[]> {
     // Get all materials with customer relation
     const materials = await this.materialRepository.find({
-      where: { deleted_at: undefined },
       relations: ['customer'],
       order: { internal_part_number: 'ASC' },
     });
@@ -288,6 +294,61 @@ export class InventoryService {
       quantity_available: quantityOnHand - quantityAllocated,
       quantity_on_order: quantityOnOrder,
     };
+  }
+
+  /**
+   * Get stock levels for multiple materials in a single query (batch).
+   * Does not load Material entities or on-order quantities – callers
+   * handle those separately.
+   */
+  async getStockByMaterialIds(materialIds: string[]): Promise<Map<string, BatchStockLevel>> {
+    if (materialIds.length === 0) return new Map();
+
+    const stockLevels = await this.transactionRepository
+      .createQueryBuilder('t')
+      .select('t.material_id', 'material_id')
+      .addSelect('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
+      .where('t.material_id IN (:...materialIds)', { materialIds })
+      .groupBy('t.material_id')
+      .getRawMany<{ material_id: string; quantity_on_hand: string }>();
+
+    const allocations = await this.allocationRepository
+      .createQueryBuilder('a')
+      .select('a.material_id', 'material_id')
+      .addSelect('COALESCE(SUM(a.quantity), 0)', 'quantity_allocated')
+      .where('a.material_id IN (:...materialIds)', { materialIds })
+      .andWhere('a.status = :status', { status: AllocationStatus.ACTIVE })
+      .groupBy('a.material_id')
+      .getRawMany<{ material_id: string; quantity_allocated: string }>();
+
+    const stockMap = new Map<string, { on_hand: number; allocated: number }>();
+    for (const s of stockLevels) {
+      stockMap.set(s.material_id, {
+        on_hand: parseFloat(s.quantity_on_hand),
+        allocated: 0,
+      });
+    }
+    for (const a of allocations) {
+      const existing = stockMap.get(a.material_id);
+      if (existing) {
+        existing.allocated = parseFloat(a.quantity_allocated);
+      }
+    }
+
+    const result = new Map<string, BatchStockLevel>();
+    for (const id of materialIds) {
+      const stock = stockMap.get(id);
+      const onHand = stock?.on_hand ?? 0;
+      const allocated = stock?.allocated ?? 0;
+      result.set(id, {
+        material_id: id,
+        quantity_on_hand: onHand,
+        quantity_allocated: allocated,
+        quantity_available: onHand - allocated,
+      });
+    }
+
+    return result;
   }
 
   /**

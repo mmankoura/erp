@@ -2,7 +2,7 @@
 
 import { useApi, useMutation } from "@/hooks/use-api"
 import { toast } from "sonner"
-import { api, type Order, type MrpShortage, type MaterialStatus } from "@/lib/api"
+import { api, type Order, type MrpShortage, type MrpShortagesResponse, type MaterialStatus } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -103,7 +103,7 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
   const { data: orders, isLoading, refetch } = useApi<Order[]>("/orders")
-  const { data: shortages } = useApi<MrpShortage[]>("/mrp/shortages")
+  const { data: shortagesResponse } = useApi<MrpShortagesResponse>("/mrp/shortages")
 
   const deleteMutation = useMutation<void, string>(
     (id) => api.delete(`/orders/${id}`),
@@ -196,7 +196,7 @@ export default function OrdersPage() {
         if (["CANCELLED", "SHIPPED"].includes(order.status)) {
           return <span className="text-muted-foreground text-sm">-</span>
         }
-        const materialStatus = computeMaterialStatus(order.id, shortages)
+        const materialStatus = computeMaterialStatus(order.id, shortagesResponse?.shortages ?? null)
         return <MaterialStatusBadge status={materialStatus} />
       },
     },

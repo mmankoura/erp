@@ -8,7 +8,6 @@ import {
   Param,
   ParseUUIDPipe,
   Query,
-  ParseBoolPipe,
   UseGuards,
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';

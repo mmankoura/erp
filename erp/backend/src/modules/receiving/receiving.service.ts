@@ -48,6 +48,7 @@ import {
   AuditEventType,
   AuditEntityType,
 } from '../../entities/audit-event.entity';
+import { SequenceGeneratorService } from '../shared/sequence-generator.service';
 
 @Injectable()
 export class ReceivingService {
@@ -74,6 +75,7 @@ export class ReceivingService {
     private readonly uidGenerator: UidGeneratorService,
     private readonly amlService: AmlService,
     private readonly auditService: AuditService,
+    private readonly sequenceGenerator: SequenceGeneratorService,
   ) {}
 
   // ==================== SESSION MANAGEMENT ====================
@@ -934,55 +936,19 @@ export class ReceivingService {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    const prefix = `RCV-${year}${month}${day}`;
+    const prefix = `RCV-${year}${month}${day}-`;
 
-    const latest = await this.sessionRepository
-      .createQueryBuilder('s')
-      .where('s.session_number LIKE :prefix', {
-        prefix: `${prefix}%`,
-      })
-      .orderBy('s.session_number', 'DESC')
-      .getOne();
-
-    let seq = 1;
-    if (latest) {
-      const lastSeq = parseInt(
-        latest.session_number.split('-').pop() ?? '0',
-        10,
-      );
-      seq = lastSeq + 1;
-    }
-
-    return `${prefix}-${seq.toString().padStart(4, '0')}`;
+    return this.sequenceGenerator.next(prefix, 'receiving_sessions', 'session_number');
   }
 
-  private async generateInspectionNumber(
-    manager: any,
-  ): Promise<string> {
+  private async generateInspectionNumber(manager: any): Promise<string> {
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    const prefix = `INS-${year}${month}${day}`;
+    const prefix = `INS-${year}${month}${day}-`;
 
-    const latest = await manager
-      .createQueryBuilder(ReceivingInspection, 'i')
-      .where('i.inspection_number LIKE :prefix', {
-        prefix: `${prefix}%`,
-      })
-      .orderBy('i.inspection_number', 'DESC')
-      .getOne();
-
-    let seq = 1;
-    if (latest) {
-      const lastSeq = parseInt(
-        latest.inspection_number.split('-').pop() ?? '0',
-        10,
-      );
-      seq = lastSeq + 1;
-    }
-
-    return `${prefix}-${seq.toString().padStart(4, '0')}`;
+    return this.sequenceGenerator.next(prefix, 'receiving_inspections', 'inspection_number', 4, manager);
   }
 
   private async updatePOStatusIfFullyReceived(

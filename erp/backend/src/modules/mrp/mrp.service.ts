@@ -380,12 +380,14 @@ export class MrpService {
     // Get on-order quantities for all materials in one batch
     const onOrderQuantities = await this.purchaseOrdersService.getQuantitiesOnOrder(materialIds);
 
+    // Batch fetch stock levels for all materials
+    const batchStock = await this.inventoryService.getStockByMaterialIds(materialIds);
     for (const materialId of materialIds) {
-      const stock = await this.inventoryService.getStockByMaterialId(materialId);
+      const stock = batchStock.get(materialId);
       stockLevels.set(materialId, {
-        on_hand: stock.quantity_on_hand,
-        allocated: stock.quantity_allocated,
-        available: stock.quantity_available,
+        on_hand: stock?.quantity_on_hand ?? 0,
+        allocated: stock?.quantity_allocated ?? 0,
+        available: stock?.quantity_available ?? 0,
         on_order: onOrderQuantities.get(materialId) ?? 0,
       });
     }
@@ -518,8 +520,11 @@ export class MrpService {
     const materialIds = [...materialRequirements.keys()];
     const onOrderQuantities = await this.purchaseOrdersService.getQuantitiesOnOrder(materialIds);
 
+    // Batch fetch stock levels for all materials
+    const batchStock = await this.inventoryService.getStockByMaterialIds(materialIds);
+
     for (const [materialId, req] of materialRequirements) {
-      const stock = await this.inventoryService.getStockByMaterialId(materialId);
+      const stock = batchStock.get(materialId) ?? { quantity_on_hand: 0, quantity_allocated: 0, quantity_available: 0 };
       const quantityOnOrder = onOrderQuantities.get(materialId) ?? 0;
 
       // Net requirement factors in on-order quantities
@@ -609,12 +614,15 @@ export class MrpService {
     const bomMaterialIds = bomItems.map((item) => item.material_id);
     const onOrderQuantities = await this.purchaseOrdersService.getQuantitiesOnOrder(bomMaterialIds);
 
+    // Batch fetch stock levels for all BOM materials
+    const batchStock = await this.inventoryService.getStockByMaterialIds(bomMaterialIds);
+
     for (const item of bomItems) {
       const bomQuantity = parseFloat(String(item.quantity_required));
       const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
       const requiredQuantity = order.quantity * bomQuantity * (1 + scrapFactor / 100);
 
-      const stock = await this.inventoryService.getStockByMaterialId(item.material_id);
+      const stock = batchStock.get(item.material_id) ?? { quantity_on_hand: 0, quantity_allocated: 0, quantity_available: 0 };
       const allocatedToOrder = allocationMap.get(item.material_id) ?? 0;
       const quantityOnOrder = onOrderQuantities.get(item.material_id) ?? 0;
 
@@ -824,12 +832,14 @@ export class MrpService {
     const stockLevels = new Map<string, { on_hand: number; allocated: number; available: number; on_order: number }>();
     const onOrderQuantities = await this.purchaseOrdersService.getQuantitiesOnOrder(materialIds);
 
+    // Batch fetch stock levels for all materials
+    const batchStock = await this.inventoryService.getStockByMaterialIds(materialIds);
     for (const materialId of materialIds) {
-      const stock = await this.inventoryService.getStockByMaterialId(materialId);
+      const stock = batchStock.get(materialId);
       stockLevels.set(materialId, {
-        on_hand: stock.quantity_on_hand,
-        allocated: stock.quantity_allocated,
-        available: stock.quantity_available,
+        on_hand: stock?.quantity_on_hand ?? 0,
+        allocated: stock?.quantity_allocated ?? 0,
+        available: stock?.quantity_available ?? 0,
         on_order: onOrderQuantities.get(materialId) ?? 0,
       });
     }
@@ -1068,14 +1078,15 @@ export class MrpService {
     const allMaterialIds = [...new Set(bomItems.map((item) => item.material_id))];
     const onOrderQuantities = await this.purchaseOrdersService.getQuantitiesOnOrder(allMaterialIds);
 
-    // Pre-fetch stock levels for all materials
+    // Batch fetch stock levels for all materials
     const stockLevels = new Map<string, { on_hand: number; allocated: number; available: number }>();
+    const batchStock = await this.inventoryService.getStockByMaterialIds(allMaterialIds);
     for (const materialId of allMaterialIds) {
-      const stock = await this.inventoryService.getStockByMaterialId(materialId);
+      const stock = batchStock.get(materialId);
       stockLevels.set(materialId, {
-        on_hand: stock.quantity_on_hand,
-        allocated: stock.quantity_allocated,
-        available: stock.quantity_available,
+        on_hand: stock?.quantity_on_hand ?? 0,
+        allocated: stock?.quantity_allocated ?? 0,
+        available: stock?.quantity_available ?? 0,
       });
     }
 

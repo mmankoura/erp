@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import * as XLSX from "xlsx"
-import { useApi, useMutation } from "@/hooks/use-api"
+import { useApi } from "@/hooks/use-api"
 import {
   api,
   type BomImportPreviewResult,
@@ -149,7 +149,6 @@ export function BomImportWizard({
           setFileContent(base64)
         } catch (error) {
           toast.error("Failed to parse Excel file")
-          console.error("Excel parse error:", error)
         }
       }
       reader.readAsArrayBuffer(file)
@@ -185,30 +184,32 @@ export function BomImportWizard({
       // Initialize column mappings with smart defaults
       const initialMappings: ColumnMapping[] = result.headers.map((header) => {
         const lowerHeader = header.toLowerCase().trim()
+        // Normalize commas/special chars to spaces for matching (e.g. "MANUFACTURER,PART,#" → "manufacturer part #")
+        const normalized = lowerHeader.replace(/[,;]+/g, " ").replace(/\s+/g, " ").trim()
         let targetField: BomImportField = "ignore"
 
         // Try to auto-detect field mappings
-        if (lowerHeader.includes("ipn") || lowerHeader.includes("internal") || lowerHeader.includes("part number")) {
+        if (normalized.includes("ipn") || normalized.includes("internal") || normalized.includes("part number") || normalized === "part #" || normalized === "part no") {
           targetField = "internal_part_number"
-        } else if (lowerHeader === "description" || lowerHeader.includes("desc")) {
+        } else if (lowerHeader === "description" || normalized.includes("desc")) {
           targetField = "description"
-        } else if (lowerHeader.includes("alternate")) {
+        } else if (normalized.includes("alternate")) {
           targetField = "alternate_ipn"
-        } else if (lowerHeader === "manufacturer" || lowerHeader === "mfr") {
+        } else if (lowerHeader === "manufacturer" || lowerHeader === "mfr" || normalized === "mfg") {
           targetField = "manufacturer"
-        } else if (lowerHeader.includes("mpn") || lowerHeader.includes("manufacturer p")) {
+        } else if (normalized.includes("mpn") || normalized.includes("mfg p") || normalized.includes("manufacturer p") || normalized.includes("mfr p")) {
           targetField = "manufacturer_pn"
-        } else if (lowerHeader.includes("qty") || lowerHeader.includes("quantity")) {
+        } else if (normalized.includes("qty") || normalized.includes("quantity")) {
           targetField = "quantity_required"
-        } else if (lowerHeader.includes("ref") || lowerHeader.includes("designator")) {
+        } else if (normalized.includes("ref") || normalized.includes("designator")) {
           targetField = "reference_designators"
-        } else if (lowerHeader === "line" || lowerHeader.includes("line number")) {
+        } else if (lowerHeader === "line" || normalized.includes("line number")) {
           targetField = "line_number"
-        } else if (lowerHeader.includes("type") || lowerHeader.includes("resource")) {
+        } else if (normalized.includes("type") || normalized.includes("resource")) {
           targetField = "resource_type"
-        } else if (lowerHeader.includes("polarized") || lowerHeader.includes("polarity")) {
+        } else if (normalized.includes("polarized") || normalized.includes("polarity")) {
           targetField = "polarized"
-        } else if (lowerHeader.includes("note")) {
+        } else if (normalized.includes("note")) {
           targetField = "notes"
         }
 
@@ -252,11 +253,20 @@ export function BomImportWizard({
       return
     }
 
+    if (!qtyMapped) {
+      toast.error("Please map at least one column to 'Quantity Required'")
+      return
+    }
+
     setIsLoading(true)
     try {
+      // Filter out ignored/unmapped columns and columns with empty source names
+      const activeMappings = columnMappings.filter(
+        (m) => m.target_field !== "ignore" && m.source_column.trim() !== ""
+      )
       const result = await api.post<BomImportParseResult>("/bom/import/parse", {
         file_content: fileContent,
-        column_mappings: columnMappings,
+        column_mappings: activeMappings,
         has_header_row: hasHeaderRow,
         skip_rows: skipRows,
         multi_row_designators: multiRowDesignators,
@@ -656,44 +666,43 @@ export function BomImportWizard({
                 </Card>
               )}
 
-              {/* Items preview */}
-              <Card>
+              {/* Items preview - show all rows */}
+              <Card className="flex flex-col min-h-0 flex-1">
                 <CardHeader className="py-3">
                   <CardTitle className="text-sm">Items to Import ({parseResult.items.length})</CardTitle>
                 </CardHeader>
-                <CardContent className="py-2">
-                  <div className="overflow-x-auto max-h-64">
+                <CardContent className="py-2 flex-1 min-h-0">
+                  <div className="overflow-auto max-h-[50vh]">
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead className="text-xs">#</TableHead>
                           <TableHead className="text-xs">IPN</TableHead>
-                          <TableHead className="text-xs">Alternate</TableHead>
+                          <TableHead className="text-xs">Description</TableHead>
                           <TableHead className="text-xs">Manufacturer</TableHead>
                           <TableHead className="text-xs">MPN</TableHead>
                           <TableHead className="text-xs">Qty</TableHead>
                           <TableHead className="text-xs">Ref Des</TableHead>
+                          <TableHead className="text-xs">Type</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {parseResult.items.slice(0, 20).map((item, i) => (
+                        {parseResult.items.map((item, i) => (
                           <TableRow key={i}>
+                            <TableCell className="text-xs text-muted-foreground">{i + 1}</TableCell>
                             <TableCell className="text-xs font-medium">{item.internal_part_number}</TableCell>
-                            <TableCell className="text-xs">{item.alternate_ipn || "-"}</TableCell>
+                            <TableCell className="text-xs max-w-[200px] truncate">{item.description || "-"}</TableCell>
                             <TableCell className="text-xs">{item.manufacturer || "-"}</TableCell>
                             <TableCell className="text-xs">{item.manufacturer_pn || "-"}</TableCell>
                             <TableCell className="text-xs">{item.quantity_required}</TableCell>
                             <TableCell className="text-xs max-w-[150px] truncate">
                               {item.reference_designators || "-"}
                             </TableCell>
+                            <TableCell className="text-xs">{item.resource_type || "-"}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
-                    {parseResult.items.length > 20 && (
-                      <p className="text-sm text-muted-foreground text-center py-2">
-                        ...and {parseResult.items.length - 20} more items
-                      </p>
-                    )}
                   </div>
                 </CardContent>
               </Card>

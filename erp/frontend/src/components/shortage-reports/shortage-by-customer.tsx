@@ -107,7 +107,7 @@ export function ShortageByCustomer({ customers, isLoading }: ShortageByCustomerP
               </div>
             </CardHeader>
 
-            {(isCustomerExpanded || true) && (
+            {isCustomerExpanded && (
               <CardContent className={!isCustomerExpanded ? "hidden print:block" : ""}>
                 <div className="space-y-3">
                   {customer.orders.map((order) => {
@@ -146,7 +146,7 @@ export function ShortageByCustomer({ customers, isLoading }: ShortageByCustomerP
                           </Badge>
                         </div>
 
-                        {(isOrderExpanded || true) && (
+                        {isOrderExpanded && (
                           <div className={!isOrderExpanded ? "hidden print:block" : "mt-3"}>
                             <Table>
                               <TableHeader>

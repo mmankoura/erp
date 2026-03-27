@@ -4,9 +4,9 @@ import {
   Post,
   Body,
   Param,
-  Query,
   ParseUUIDPipe,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ReceivingInspectionService } from './receiving-inspection.service';
 import { InspectionStatus } from '../../entities/receiving-inspection.entity';
@@ -37,7 +37,7 @@ export class ReceivingInspectionController {
   async findByStatus(@Param('status') status: InspectionStatus) {
     // Validate status is a valid enum value
     if (!Object.values(InspectionStatus).includes(status)) {
-      throw new Error(`Invalid status: ${status}`);
+      throw new BadRequestException(`Invalid status: ${status}`);
     }
     return this.inspectionService.findByStatus(status);
   }
@@ -116,10 +116,10 @@ export class ReceivingInspectionController {
     @Body('actor') actor: string,
   ) {
     if (!ids || ids.length === 0) {
-      throw new Error('ids array is required');
+      throw new BadRequestException('ids array is required');
     }
     if (!actor) {
-      throw new Error('actor is required');
+      throw new BadRequestException('actor is required');
     }
     return this.inspectionService.bulkRelease(ids, actor);
   }

@@ -25,6 +25,7 @@ import {
   OwnerType,
 } from '../../entities/inventory-transaction.entity';
 import { AuditService } from '../audit/audit.service';
+import { SequenceGeneratorService } from '../shared/sequence-generator.service';
 import {
   AuditEventType,
   AuditEntityType,
@@ -75,6 +76,7 @@ export class CycleCountService {
     private readonly transactionRepository: Repository<InventoryTransaction>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly sequenceGenerator: SequenceGeneratorService,
   ) {}
 
   // ==================== CYCLE COUNT CRUD ====================
@@ -87,19 +89,7 @@ export class CycleCountService {
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
     const prefix = `CC-${dateStr}-`;
 
-    const lastCount = await this.cycleCountRepository
-      .createQueryBuilder('cc')
-      .where('cc.count_number LIKE :prefix', { prefix: `${prefix}%` })
-      .orderBy('cc.count_number', 'DESC')
-      .getOne();
-
-    let sequence = 1;
-    if (lastCount) {
-      const lastSeq = parseInt(lastCount.count_number.slice(-3), 10);
-      sequence = lastSeq + 1;
-    }
-
-    return `${prefix}${sequence.toString().padStart(3, '0')}`;
+    return this.sequenceGenerator.next(prefix, 'cycle_counts', 'count_number', 3);
   }
 
   /**
@@ -125,7 +115,7 @@ export class CycleCountService {
     let materials: Material[] = [];
     if (input.material_ids && input.material_ids.length > 0) {
       materials = await this.materialRepository.find({
-        where: { id: In(input.material_ids), deleted_at: undefined },
+        where: { id: In(input.material_ids) },
       });
 
       if (materials.length !== input.material_ids.length) {
@@ -156,7 +146,7 @@ export class CycleCountService {
       const materialIds = materialsWithStock.map((m) => m.material_id);
       if (materialIds.length > 0) {
         materials = await this.materialRepository.find({
-          where: { id: In(materialIds), deleted_at: undefined },
+          where: { id: In(materialIds) },
         });
       }
     }

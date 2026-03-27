@@ -242,7 +242,7 @@ export function OrderBuildability({ data, isLoading }: OrderBuildabilityProps) {
                   </div>
 
                   {/* Expanded: Critical Shortages */}
-                  {(isExpanded || (order.critical_shortages.length > 0 && false)) &&
+                  {isExpanded &&
                     order.critical_shortages.length > 0 && (
                       <div className={`border-t bg-muted/30 p-4 ${!isExpanded ? "hidden print:block" : ""}`}>
                         <p className="text-sm font-medium mb-2 text-red-600">

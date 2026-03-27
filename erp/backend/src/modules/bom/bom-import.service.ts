@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, IsNull } from 'typeorm';
+import { Repository, ILike } from 'typeorm';
 import { BomImportMapping, ColumnMapping } from '../../entities/bom-import-mapping.entity';
 import { Material } from '../../entities/material.entity';
 import { Product } from '../../entities/product.entity';
@@ -231,6 +231,24 @@ export class BomImportService {
         });
         material = await this.materialRepository.save(material);
         createdMaterials.push(item.internal_part_number);
+      } else {
+        // Backfill manufacturer/MPN/description on existing materials if empty
+        let needsUpdate = false;
+        if (!material.manufacturer && item.manufacturer) {
+          material.manufacturer = item.manufacturer;
+          needsUpdate = true;
+        }
+        if (!material.manufacturer_pn && item.manufacturer_pn) {
+          material.manufacturer_pn = item.manufacturer_pn;
+          needsUpdate = true;
+        }
+        if (!material.description && (item.description || item.notes)) {
+          material.description = item.description || item.notes || '';
+          needsUpdate = true;
+        }
+        if (needsUpdate) {
+          material = await this.materialRepository.save(material);
+        }
       }
 
       materialIds.add(material.id);
@@ -491,13 +509,13 @@ export class BomImportService {
     for (const item of items) {
       // Try exact match first
       let material = await this.materialRepository.findOne({
-        where: { internal_part_number: item.internal_part_number, deleted_at: IsNull() },
+        where: { internal_part_number: item.internal_part_number },
       });
 
       // Try case-insensitive match
       if (!material) {
         material = await this.materialRepository.findOne({
-          where: { internal_part_number: ILike(item.internal_part_number), deleted_at: IsNull() },
+          where: { internal_part_number: ILike(item.internal_part_number) },
         });
         if (material) {
           warnings.push(

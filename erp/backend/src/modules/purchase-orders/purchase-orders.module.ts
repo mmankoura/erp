@@ -24,6 +24,9 @@ import { ReceivingInspectionModule } from '../receiving-inspection/receiving-ins
     ]),
     forwardRef(() => ReceivingInspectionModule),
   ],
+  // IMPORTANT: PoHistoryController MUST be listed before PurchaseOrdersController
+  // because PurchaseOrdersController has a @Get(':id') catch-all route that would
+  // shadow the /purchase-orders/history/* routes.
   controllers: [PoHistoryController, PurchaseOrdersController],
   providers: [PurchaseOrdersService, PoHistoryService],
   exports: [PurchaseOrdersService],

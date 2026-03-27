@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Plus, Pencil, Trash2, X } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -70,6 +70,23 @@ function SupplierDialog({
         }
       : defaultFormData
   )
+
+  useEffect(() => {
+    if (open) {
+      setFormData(
+        supplier
+          ? {
+              name: supplier.name,
+              code: supplier.code,
+              email: supplier.email || "",
+              phone: supplier.phone || "",
+              address: supplier.address || "",
+              notes: supplier.notes || "",
+            }
+          : defaultFormData
+      )
+    }
+  }, [open, supplier])
 
   const createMutation = useMutation(
     (data: SupplierFormData) => api.post<Supplier>("/suppliers", data),

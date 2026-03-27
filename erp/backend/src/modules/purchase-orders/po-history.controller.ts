@@ -22,8 +22,16 @@ export class PoHistoryController {
   constructor(private readonly poHistoryService: PoHistoryService) {}
 
   @Get()
-  async findAll(@Query('search') search?: string) {
-    return this.poHistoryService.findAll(search);
+  async findAll(
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.poHistoryService.findAll(
+      search,
+      limit ? parseInt(limit, 10) : 1000,
+      offset ? parseInt(offset, 10) : 0,
+    );
   }
 
   @Get('count')

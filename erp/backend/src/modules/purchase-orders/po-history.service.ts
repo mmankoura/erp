@@ -87,10 +87,12 @@ export class PoHistoryService {
   /**
    * Search/list all PO history with optional text search.
    */
-  async findAll(search?: string): Promise<PoHistory[]> {
+  async findAll(search?: string, limit = 1000, offset = 0): Promise<PoHistory[]> {
     if (!search || search.trim() === '') {
       return this.poHistoryRepository.find({
         order: { order_date: 'DESC', po_number: 'ASC' },
+        take: limit,
+        skip: offset,
       });
     }
 
@@ -111,6 +113,8 @@ export class PoHistoryService {
       )
       .orderBy('ph.order_date', 'DESC')
       .addOrderBy('ph.po_number', 'ASC')
+      .take(limit)
+      .skip(offset)
       .getMany();
   }
 

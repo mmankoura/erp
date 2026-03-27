@@ -163,7 +163,6 @@ export default function BomValidatePage() {
       }
     } catch (error) {
       toast.error("Failed to parse file")
-      console.error(error)
     }
   }
 
@@ -357,7 +356,6 @@ export default function BomValidatePage() {
       setStep("results")
     } catch (error) {
       toast.error("Validation failed")
-      console.error(error)
     } finally {
       setIsLoading(false)
     }

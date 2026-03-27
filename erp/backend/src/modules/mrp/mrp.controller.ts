@@ -5,6 +5,7 @@ import {
   ParseUUIDPipe,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { MrpService } from './mrp.service';
 import { OrderStatus } from '../../entities/order.entity';
@@ -22,7 +23,7 @@ export class MrpController {
     return statuses.split(',').map((s) => {
       const status = s.trim().toUpperCase() as OrderStatus;
       if (!Object.values(OrderStatus).includes(status)) {
-        throw new Error(`Invalid status: ${s}`);
+        throw new BadRequestException(`Invalid status: ${s}`);
       }
       return status;
     });

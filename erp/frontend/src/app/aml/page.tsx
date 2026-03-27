@@ -2,6 +2,7 @@
 
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type ApprovedManufacturer, type AmlStatus, type Material, type Attachment } from "@/lib/api"
+import { DataTable, type Column } from "@/components/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,14 +17,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import {
   Select,
   SelectContent,
@@ -47,7 +40,7 @@ import {
   Upload,
   FileText,
 } from "lucide-react"
-import { useState, useRef } from "react"
+import { useState, useRef, useMemo } from "react"
 import { toast } from "sonner"
 
 // Status config
@@ -161,7 +154,7 @@ function AmlDialog({
   const [formData, setFormData] = useState({
     material_id: aml?.material_id || "",
     manufacturer: aml?.manufacturer || "",
-    manufacturer_part_number: aml?.manufacturer_pn || "",
+    manufacturer_part_number: aml?.manufacturer_part_number || "",
     notes: aml?.notes || "",
     created_by: "",
   })
@@ -419,7 +412,7 @@ function AmlDetailDialog({
             </Badge>
           </DialogTitle>
           <DialogDescription>
-            {aml.manufacturer} - {aml.manufacturer_pn}
+            {aml.manufacturer} - {aml.manufacturer_part_number}
           </DialogDescription>
         </DialogHeader>
 
@@ -435,7 +428,7 @@ function AmlDetailDialog({
             </div>
             <div>
               <span className="text-muted-foreground">MPN:</span>
-              <p className="font-medium">{aml.manufacturer_pn}</p>
+              <p className="font-medium">{aml.manufacturer_part_number}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Approved By:</span>
@@ -555,20 +548,119 @@ function AmlDetailDialog({
 
 export default function AMLPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [sourceFilter, setSourceFilter] = useState<string>("all")
 
   const { data: amlEntries, isLoading, refetch } = useApi<ApprovedManufacturer[]>("/aml")
 
-  // Filter entries
-  const filteredEntries = amlEntries?.filter((entry) => {
-    if (statusFilter !== "all" && entry.status !== statusFilter) return false
-    return true
-  })
+  // Apply dropdown filters before passing to DataTable
+  const filteredEntries = useMemo(() => {
+    if (!amlEntries) return null
+    return amlEntries.filter((entry) => {
+      if (statusFilter !== "all" && entry.status !== statusFilter) return false
+      if (sourceFilter !== "all" && entry.source !== sourceFilter) return false
+      return true
+    })
+  }, [amlEntries, statusFilter, sourceFilter])
 
-  // Calculate stats
+  // Calculate stats from unfiltered data
   const pendingCount = amlEntries?.filter((e) => e.status === "PENDING").length || 0
   const approvedCount = amlEntries?.filter((e) => e.status === "APPROVED").length || 0
   const suspendedCount = amlEntries?.filter((e) => e.status === "SUSPENDED").length || 0
   const totalCount = amlEntries?.length || 0
+
+  const columns: Column<ApprovedManufacturer>[] = useMemo(() => [
+    {
+      key: "ipn",
+      header: "Material IPN",
+      sortable: true,
+      sortAccessor: (entry) => entry.material?.internal_part_number || "",
+      cell: (entry) => (
+        <span className="font-medium">{entry.material?.internal_part_number || "-"}</span>
+      ),
+      defaultWidth: 160,
+    },
+    {
+      key: "manufacturer",
+      header: "Manufacturer",
+      sortable: true,
+      cell: (entry) => entry.manufacturer,
+      defaultWidth: 180,
+    },
+    {
+      key: "manufacturer_part_number",
+      header: "MPN",
+      sortable: true,
+      cell: (entry) => <span className="font-mono">{entry.manufacturer_part_number}</span>,
+      defaultWidth: 180,
+    },
+    {
+      key: "approved_by",
+      header: "Approved By",
+      sortable: true,
+      sortAccessor: (entry) => entry.approved_by || "",
+      cell: (entry) => entry.approved_by || "-",
+      defaultWidth: 130,
+    },
+    {
+      key: "source",
+      header: "Source",
+      sortable: true,
+      cell: (entry) => (
+        <Badge variant={entry.source === "BOM_IMPORT" ? "secondary" : "outline"} className="text-xs">
+          {entry.source === "BOM_IMPORT" ? "BOM Import" : "Manual"}
+        </Badge>
+      ),
+      defaultWidth: 110,
+    },
+    {
+      key: "customer",
+      header: "Customer",
+      sortable: true,
+      sortAccessor: (entry) => entry.customer?.name || "Global",
+      cell: (entry) => entry.customer?.name || "Global",
+      defaultWidth: 130,
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      cell: (entry) => (
+        <Badge variant={statusConfig[entry.status].variant}>
+          {statusConfig[entry.status].icon}
+          <span className="ml-1">{statusConfig[entry.status].label}</span>
+        </Badge>
+      ),
+      defaultWidth: 120,
+    },
+    {
+      key: "actions",
+      header: "",
+      cell: (entry) => (
+        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+          <AmlDetailDialog
+            aml={entry}
+            onSuccess={refetch}
+            trigger={
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Eye className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <AmlDialog
+            aml={entry}
+            onSuccess={refetch}
+            trigger={
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Factory className="h-4 w-4" />
+              </Button>
+            }
+          />
+        </div>
+      ),
+      defaultWidth: 80,
+      resizable: false,
+    },
+  ], [refetch])
 
   return (
     <div className="space-y-6">
@@ -634,111 +726,59 @@ export default function AMLPage() {
         </Card>
       </div>
 
-      {/* Filter */}
-      <div className="flex items-center gap-4">
-        <Label className="text-sm font-medium">Status:</Label>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="PENDING">Pending</SelectItem>
-            <SelectItem value="APPROVED">Approved</SelectItem>
-            <SelectItem value="SUSPENDED">Suspended</SelectItem>
-            <SelectItem value="OBSOLETE">Obsolete</SelectItem>
-          </SelectContent>
-        </Select>
+      {/* Filters */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium">Status:</Label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="PENDING">Pending</SelectItem>
+              <SelectItem value="APPROVED">Approved</SelectItem>
+              <SelectItem value="SUSPENDED">Suspended</SelectItem>
+              <SelectItem value="OBSOLETE">Obsolete</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-sm font-medium">Source:</Label>
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sources</SelectItem>
+              <SelectItem value="MANUAL">Manual</SelectItem>
+              <SelectItem value="BOM_IMPORT">BOM Import</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* AML Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Factory className="h-5 w-5" />
-            AML Entries
-          </CardTitle>
-          <CardDescription>Approved manufacturer/part number combinations for materials</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : filteredEntries && filteredEntries.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Material IPN</TableHead>
-                  <TableHead>Manufacturer</TableHead>
-                  <TableHead>MPN</TableHead>
-                  <TableHead>Approved By</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[80px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredEntries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>
-                      <span className="font-medium">
-                        {entry.material?.internal_part_number || "-"}
-                      </span>
-                    </TableCell>
-                    <TableCell>{entry.manufacturer}</TableCell>
-                    <TableCell className="font-mono">{entry.manufacturer_pn}</TableCell>
-                    <TableCell>{entry.approved_by || "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={entry.source === "BOM_IMPORT" ? "secondary" : "outline"} className="text-xs">
-                        {entry.source === "BOM_IMPORT" ? "BOM Import" : "Manual"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {entry.customer?.name || "Global"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusConfig[entry.status].variant}>
-                        {statusConfig[entry.status].icon}
-                        <span className="ml-1">{statusConfig[entry.status].label}</span>
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <AmlDetailDialog
-                          aml={entry}
-                          onSuccess={refetch}
-                          trigger={
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          }
-                        />
-                        <AmlDialog
-                          aml={entry}
-                          onSuccess={refetch}
-                          trigger={
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <Factory className="h-4 w-4" />
-                            </Button>
-                          }
-                        />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <p className="text-center text-muted-foreground py-8">
-              No AML entries found. Add your first approved manufacturer.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <DataTable
+        data={filteredEntries}
+        columns={columns}
+        isLoading={isLoading}
+        searchPlaceholder="Search IPN, manufacturer, MPN, customer..."
+        searchFilter={(item, search) => {
+          const q = search.toLowerCase()
+          return (
+            (item.material?.internal_part_number || "").toLowerCase().includes(q) ||
+            item.manufacturer.toLowerCase().includes(q) ||
+            item.manufacturer_part_number.toLowerCase().includes(q) ||
+            (item.approved_by || "").toLowerCase().includes(q) ||
+            (item.customer?.name || "").toLowerCase().includes(q) ||
+            (item.notes || "").toLowerCase().includes(q)
+          )
+        }}
+        emptyMessage="No AML entries found. Add your first approved manufacturer."
+        storageKey="aml"
+        pageSize={50}
+      />
     </div>
   )
 }

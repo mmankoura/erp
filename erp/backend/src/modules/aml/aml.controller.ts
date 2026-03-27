@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { AmlService } from './aml.service';
 import { CreateAmlDto, UpdateAmlDto } from './dto';
@@ -89,7 +90,7 @@ export class AmlController {
     @Body('approved_by') approvedBy: string,
   ) {
     if (!approvedBy) {
-      throw new Error('approved_by is required');
+      throw new BadRequestException('approved_by is required');
     }
     return this.amlService.approve(id, approvedBy);
   }
@@ -102,7 +103,7 @@ export class AmlController {
     @Body('reason') reason?: string,
   ) {
     if (!suspendedBy) {
-      throw new Error('suspended_by is required');
+      throw new BadRequestException('suspended_by is required');
     }
     return this.amlService.suspend(id, suspendedBy, reason);
   }
@@ -114,7 +115,7 @@ export class AmlController {
     @Body('reinstated_by') reinstatedBy: string,
   ) {
     if (!reinstatedBy) {
-      throw new Error('reinstated_by is required');
+      throw new BadRequestException('reinstated_by is required');
     }
     return this.amlService.reinstate(id, reinstatedBy);
   }
@@ -127,7 +128,7 @@ export class AmlController {
     @Body('reason') reason?: string,
   ) {
     if (!obsoletedBy) {
-      throw new Error('obsoleted_by is required');
+      throw new BadRequestException('obsoleted_by is required');
     }
     return this.amlService.obsolete(id, obsoletedBy, reason);
   }

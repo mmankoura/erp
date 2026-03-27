@@ -59,11 +59,6 @@ export class PurchaseOrdersController {
     return this.poService.getAllQuantitiesOnOrder();
   }
 
-  @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.poService.findOne(id);
-  }
-
   @Get('number/:poNumber')
   async findByPoNumber(@Param('poNumber') poNumber: string) {
     const po = await this.poService.findByPoNumber(poNumber);
@@ -71,6 +66,11 @@ export class PurchaseOrdersController {
       return { message: `PO with number "${poNumber}" not found` };
     }
     return po;
+  }
+
+  @Get(':id')
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.poService.findOne(id);
   }
 
   @Post()

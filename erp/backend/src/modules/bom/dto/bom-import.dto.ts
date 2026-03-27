@@ -68,6 +68,8 @@ export class BomImportCommitDto {
 
   @IsArray()
   @IsNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => BomImportItemDto)
   items: BomImportItemDto[];
 }
 

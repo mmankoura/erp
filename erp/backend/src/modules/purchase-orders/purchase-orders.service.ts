@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, In, MoreThanOrEqual } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import {
   PurchaseOrder,
   PurchaseOrderStatus,
@@ -21,7 +21,6 @@ import {
   InventoryTransaction,
   TransactionType,
   ReferenceType,
-  InventoryBucket,
 } from '../../entities/inventory-transaction.entity';
 import {
   CreatePurchaseOrderDto,
@@ -32,6 +31,7 @@ import {
 } from './dto';
 import { AuditService } from '../audit/audit.service';
 import { ReceivingInspectionService } from '../receiving-inspection/receiving-inspection.service';
+import { SequenceGeneratorService } from '../shared/sequence-generator.service';
 
 // Open statuses for quantity_on_order calculation
 const OPEN_PO_STATUSES = [
@@ -79,6 +79,7 @@ export class PurchaseOrdersService {
     private readonly auditService: AuditService,
     @Inject(forwardRef(() => ReceivingInspectionService))
     private readonly receivingInspectionService: ReceivingInspectionService,
+    private readonly sequenceGenerator: SequenceGeneratorService,
   ) {}
 
   // ==================== CRUD OPERATIONS ====================
@@ -557,7 +558,10 @@ export class PurchaseOrdersService {
           );
         }
 
-        // Create receiving inspection (items go to inspection queue)
+        // NOTE: Inspection creation is not wrapped in this transaction.
+        // This is acceptable because the new receiving module (receiving.service.ts)
+        // handles inspection creation atomically within its own transaction.
+        // This legacy receiveAgainstPO flow is maintained for backward compatibility.
         const unitCost = receiptLine.unit_cost ?? poLine.unit_cost;
         const inspection = await this.receivingInspectionService.create({
           po_line_id: poLine.id,
@@ -740,15 +744,9 @@ export class PurchaseOrdersService {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `PO-${year}${month}-`;
 
-    // Get count of POs this month for sequence
-    const startOfMonth = new Date(year, now.getMonth(), 1);
-    const count = await this.poRepository.count({
-      where: { created_at: MoreThanOrEqual(startOfMonth) },
-      withDeleted: true,
-    });
-
-    return `PO-${year}${month}-${String(count + 1).padStart(4, '0')}`;
+    return this.sequenceGenerator.next(prefix, 'purchase_orders', 'po_number');
   }
 
   async getOpenPOsForMaterial(materialId: string): Promise<PurchaseOrder[]> {

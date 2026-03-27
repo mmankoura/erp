@@ -10,7 +10,6 @@ import { Order } from '../../entities/order.entity';
 import { BomItem } from '../../entities/bom-item.entity';
 import { InventoryLot } from '../../entities/inventory-lot.entity';
 import { InventoryModule } from '../inventory/inventory.module';
-import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -24,7 +23,6 @@ import { AuditModule } from '../audit/audit.module';
       InventoryLot,
     ]),
     InventoryModule,
-    AuditModule,
   ],
   controllers: [KittingController],
   providers: [KittingService],
