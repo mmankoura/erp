@@ -600,20 +600,26 @@ export default function InventoryPage() {
       key: "uid",
       header: "UID",
       sortable: true,
+      filterable: true,
+      filterAccessor: (lot) => lot.uid,
       cell: (lot) => <span className="font-mono font-medium">{lot.uid}</span>,
     },
     {
       key: "customer",
       header: "Customer",
       sortable: true,
+      filterable: true,
       sortAccessor: (lot) => lot.material?.customer?.name || "",
+      filterAccessor: (lot) => lot.material?.customer?.name || "-",
       cell: (lot) => lot.material?.customer?.name || "-",
     },
     {
       key: "ipn",
       header: "IPN",
       sortable: true,
+      filterable: true,
       sortAccessor: (lot) => lot.material?.internal_part_number || "",
+      filterAccessor: (lot) => lot.material?.internal_part_number || "",
       cell: (lot) => lot.material?.internal_part_number,
     },
     {
@@ -621,24 +627,32 @@ export default function InventoryPage() {
       header: "Quantity",
       className: "text-right",
       sortable: true,
+      filterable: true,
+      filterAccessor: (lot) => lot.quantity.toLocaleString(),
       cell: (lot) => <span className="font-mono">{lot.quantity.toLocaleString()}</span>,
     },
     {
       key: "package_type",
       header: "Package",
       sortable: true,
+      filterable: true,
+      filterAccessor: (lot) => lot.package_type,
       cell: (lot) => <Badge variant="outline">{lot.package_type}</Badge>,
     },
     {
       key: "po_reference",
       header: "PO Ref",
       sortable: true,
+      filterable: true,
+      filterAccessor: (lot) => lot.po_reference || "-",
       cell: (lot) => <span className="text-muted-foreground">{lot.po_reference || "-"}</span>,
     },
     {
       key: "status",
       header: "Status",
       sortable: true,
+      filterable: true,
+      filterAccessor: (lot) => lot.status,
       cell: (lot) => (
         <Badge
           variant={
@@ -657,6 +671,8 @@ export default function InventoryPage() {
       key: "received_date",
       header: "Received",
       sortable: true,
+      filterable: true,
+      filterAccessor: (lot) => lot.received_date ? new Date(lot.received_date).toLocaleDateString() : "-",
       cell: (lot) => (
         <span className="text-sm text-muted-foreground">
           {lot.received_date ? new Date(lot.received_date).toLocaleDateString() : "-"}
@@ -690,7 +706,9 @@ export default function InventoryPage() {
       header: "Customer",
       defaultWidth: 140,
       sortable: true,
+      filterable: true,
       sortAccessor: (stock) => stock.material?.customer?.name || "",
+      filterAccessor: (stock) => stock.material?.customer?.name || "-",
       cell: (stock) => stock.material?.customer?.name || "-",
     },
     {
@@ -698,7 +716,9 @@ export default function InventoryPage() {
       header: "Material",
       defaultWidth: 220,
       sortable: true,
+      filterable: true,
       sortAccessor: (stock) => stock.material?.internal_part_number || "",
+      filterAccessor: (stock) => stock.material?.internal_part_number || "",
       cell: (stock) => (
         <div>
           <span className="font-medium">{stock.material?.internal_part_number}</span>
@@ -716,6 +736,8 @@ export default function InventoryPage() {
       defaultWidth: 100,
       className: "text-right",
       sortable: true,
+      filterable: true,
+      filterAccessor: (stock) => stock.quantity_on_hand.toLocaleString(),
       cell: (stock) => (
         <span className="font-mono">{stock.quantity_on_hand.toLocaleString()}</span>
       ),
@@ -726,6 +748,8 @@ export default function InventoryPage() {
       defaultWidth: 100,
       className: "text-right",
       sortable: true,
+      filterable: true,
+      filterAccessor: (stock) => stock.quantity_allocated.toLocaleString(),
       cell: (stock) => (
         <AllocationPopover materialId={stock.material_id} quantity={stock.quantity_allocated} />
       ),
@@ -736,6 +760,8 @@ export default function InventoryPage() {
       defaultWidth: 100,
       className: "text-right",
       sortable: true,
+      filterable: true,
+      filterAccessor: (stock) => stock.quantity_available.toLocaleString(),
       cell: (stock) => (
         <span
           className={`font-mono font-medium ${
@@ -756,6 +782,8 @@ export default function InventoryPage() {
       defaultWidth: 100,
       className: "text-right",
       sortable: true,
+      filterable: true,
+      filterAccessor: (stock) => stock.quantity_on_order.toLocaleString(),
       cell: (stock) => (
         <span className={`font-mono ${stock.quantity_on_order > 0 ? "text-blue-600" : ""}`}>
           {stock.quantity_on_order.toLocaleString()}
@@ -909,16 +937,20 @@ export default function InventoryPage() {
             columns={columns}
             isLoading={isLoading}
             searchFilter={(stock, search) => {
-              const searchLower = search.toLowerCase()
-              // Search by IPN
-              if (stock.material?.internal_part_number?.toLowerCase().includes(searchLower)) return true
-              // Search by description
-              if (stock.material?.description?.toLowerCase().includes(searchLower)) return true
-              return false
+              const q = search.toLowerCase()
+              return (
+                (stock.material?.internal_part_number?.toLowerCase().includes(q)) ||
+                (stock.material?.description?.toLowerCase().includes(q)) ||
+                (stock.material?.customer?.name?.toLowerCase().includes(q)) ||
+                stock.quantity_on_hand.toString().includes(q) ||
+                stock.quantity_available.toString().includes(q) ||
+                stock.quantity_on_order.toString().includes(q)
+              ) as boolean
             }}
-            searchPlaceholder="Search by IPN or description..."
+            searchPlaceholder="Search by IPN, description, customer, or quantity..."
             emptyMessage="No inventory found."
             storageKey="inventory-stock"
+            pageSize={50}
           />
         </TabsContent>
 
@@ -928,14 +960,17 @@ export default function InventoryPage() {
             columns={lotColumns}
             isLoading={lotsLoading}
             searchFilter={(lot, search) => {
-              const searchLower = search.toLowerCase()
-              // Search by UID
-              if (lot.uid.toLowerCase().includes(searchLower)) return true
-              // Search by IPN
-              if (lot.material?.internal_part_number?.toLowerCase().includes(searchLower)) return true
-              return false
+              const q = search.toLowerCase()
+              return (
+                lot.uid.toLowerCase().includes(q) ||
+                (lot.material?.internal_part_number?.toLowerCase().includes(q)) ||
+                (lot.material?.customer?.name?.toLowerCase().includes(q)) ||
+                lot.package_type.toLowerCase().includes(q) ||
+                (lot.po_reference?.toLowerCase().includes(q)) ||
+                lot.status.toLowerCase().includes(q)
+              ) as boolean
             }}
-            searchPlaceholder="Search by UID or IPN..."
+            searchPlaceholder="Search by UID, IPN, customer, PO ref, or status..."
             emptyMessage="No lots found. Import inventory to add lots."
             enableSelection
             onBulkDelete={(ids) => {
@@ -944,6 +979,7 @@ export default function InventoryPage() {
               }
             }}
             storageKey="inventory-lots"
+            pageSize={50}
           />
         </TabsContent>
 

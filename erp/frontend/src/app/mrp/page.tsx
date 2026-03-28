@@ -59,6 +59,7 @@ function shortagesSearchFilter(item: MrpShortageWithId, search: string): boolean
     item.material.internal_part_number.toLowerCase().includes(q) ||
     (item.material.description || "").toLowerCase().includes(q) ||
     item.total_required.toString().includes(q) ||
+    item.quantity_on_hand.toString().includes(q) ||
     item.quantity_available.toString().includes(q) ||
     item.quantity_on_order.toString().includes(q) ||
     Math.abs(item.shortage).toString().includes(q)
@@ -114,6 +115,19 @@ const shortagesColumns: Column<MrpShortageWithId>[] = [
     filterAccessor: (item) => item.total_required.toLocaleString(),
     cell: (item) => (
       <span className="font-mono">{item.total_required.toLocaleString()}</span>
+    ),
+  },
+  {
+    key: "quantity_on_hand",
+    header: "On Hand",
+    defaultWidth: 100,
+    className: "text-right",
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.quantity_on_hand,
+    filterAccessor: (item) => item.quantity_on_hand.toLocaleString(),
+    cell: (item) => (
+      <span className="font-mono">{item.quantity_on_hand.toLocaleString()}</span>
     ),
   },
   {

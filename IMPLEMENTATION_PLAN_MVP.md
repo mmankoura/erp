@@ -218,6 +218,14 @@
 
 - [x] **Verification Checklist (Mar 27)** - Created manual verification checklist for the 7-phase codebase health check
 
+- [x] **Inventory Column Filtering (Mar 27)** - Added Excel-style per-column filtering (`filterable`/`filterAccessor`) to both Stock Levels and Lots/Reels DataTables, expanded global search to cover customer, quantities, PO ref, status
+
+- [x] **MRP Shortages On Hand Column (Mar 27)** - Added "On Hand" column to the shortages table between Required and Available
+
+- [x] **Allocation Owner Filter Fix (Mar 27)** - Fixed TURNKEY order allocation returning 0 available stock. Root cause: `getAvailableQuantitiesByOwner` filtered by `owner_type`/`owner_id` but general stock queries (MRP, inventory page) did not. Fix: TURNKEY orders now use the same unfiltered stock query as MRP; CONSIGNMENT orders still use owner-filtered query
+
+- [x] **PO Decimal String Fix (Mar 27)** - Fixed `toFixed is not a function` errors on Purchase Orders page. PostgreSQL decimal columns serialize as strings; wrapped `total_amount`, `unit_cost`, `quantity_ordered` with `parseFloat(String(...))`
+
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests
 - [x] **Edit Dialog Navigation** - Click/keyboard events in edit dialogs propagated to DataTable row click handler, causing unwanted navigation; fixed with stopPropagation on triggers and DialogContent

@@ -973,9 +973,22 @@ export class InventoryService {
       order: { line_number: 'ASC' },
     });
 
-    // Calculate requirements and available quantities FOR THIS OWNER ONLY
+    // Calculate requirements and available quantities
     const materialIds = bomItems.map((item) => item.material_id);
-    const availableQuantities = await this.getAvailableQuantitiesByOwner(materialIds, ownerType, ownerId);
+
+    // For TURNKEY orders, use the standard stock query (same as MRP/inventory page)
+    // For CONSIGNMENT orders, filter by customer-owned stock only
+    let availableQuantities: Map<string, number>;
+    if (ownerType === OwnerType.CUSTOMER && ownerId) {
+      availableQuantities = await this.getAvailableQuantitiesByOwner(materialIds, ownerType, ownerId);
+    } else {
+      // Use unfiltered stock query — consistent with MRP shortage calculations
+      const batchStock = await this.getStockByMaterialIds(materialIds);
+      availableQuantities = new Map<string, number>();
+      for (const [id, stock] of batchStock) {
+        availableQuantities.set(id, stock.quantity_available);
+      }
+    }
 
     // Get existing active allocations for this order
     const existingAllocations = await this.allocationRepository.find({

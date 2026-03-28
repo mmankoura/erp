@@ -527,7 +527,7 @@ function PurchaseOrderDetailDialog({
 
   const totalAmount =
     po.lines?.reduce((sum, line) => {
-      return sum + (line.unit_cost || 0) * line.quantity_ordered
+      return sum + (parseFloat(String(line.unit_cost)) || 0) * parseFloat(String(line.quantity_ordered))
     }, 0) || 0
 
   return (
@@ -680,11 +680,11 @@ function PurchaseOrderDetailDialog({
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        {line.unit_cost ? `${po.currency} ${line.unit_cost.toFixed(2)}` : "-"}
+                        {line.unit_cost ? `${po.currency} ${parseFloat(String(line.unit_cost)).toFixed(2)}` : "-"}
                       </TableCell>
                       <TableCell className="text-right">
                         {line.unit_cost
-                          ? `${po.currency} ${(line.unit_cost * line.quantity_ordered).toFixed(2)}`
+                          ? `${po.currency} ${(parseFloat(String(line.unit_cost)) * parseFloat(String(line.quantity_ordered))).toFixed(2)}`
                           : "-"}
                       </TableCell>
                       {canEdit && (
@@ -847,7 +847,7 @@ export default function PurchaseOrdersPage() {
       defaultWidth: 120,
       className: "text-right",
       cell: (po) =>
-        po.total_amount ? `${po.currency} ${po.total_amount.toFixed(2)}` : "-",
+        po.total_amount ? `${po.currency} ${parseFloat(String(po.total_amount)).toFixed(2)}` : "-",
     },
     {
       key: "actions",
