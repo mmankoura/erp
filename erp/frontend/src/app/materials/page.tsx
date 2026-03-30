@@ -43,6 +43,7 @@ import { useAuth } from "@/contexts/auth-context"
 
 const uomOptions = ["EA", "FT", "IN", "M", "CM", "MM", "KG", "G", "LB", "OZ", "L", "ML", "GAL"]
 const categoryOptions = ["Resistors", "Capacitors", "Inductors", "ICs", "Connectors", "PCBs", "Mechanical", "Labels", "Other"]
+const resourceTypeOptions = ["SMT", "TH", "MECH", "PCB", "DNP"] as const
 
 interface MaterialFormData {
   customer_id: string
@@ -52,6 +53,7 @@ interface MaterialFormData {
   description: string
   category: string
   uom: string
+  resource_type: string
 }
 
 const defaultFormData: MaterialFormData = {
@@ -62,6 +64,7 @@ const defaultFormData: MaterialFormData = {
   description: "",
   category: "",
   uom: "EA",
+  resource_type: "",
 }
 
 function MaterialDialog({
@@ -91,6 +94,7 @@ function MaterialDialog({
               description: material.description || "",
               category: material.category || "",
               uom: material.uom,
+              resource_type: material.resource_type || "",
             }
           : defaultFormData
       )
@@ -128,10 +132,14 @@ function MaterialDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    const payload = {
+      ...formData,
+      resource_type: formData.resource_type || null,
+    }
     if (material) {
-      updateMutation.mutate(formData)
+      updateMutation.mutate(payload as MaterialFormData)
     } else {
-      createMutation.mutate(formData)
+      createMutation.mutate(payload as MaterialFormData)
     }
   }
 
@@ -224,7 +232,7 @@ function MaterialDialog({
                 rows={2}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="category">Category</Label>
                 <Select
@@ -240,6 +248,24 @@ function MaterialDialog({
                     {categoryOptions.map((cat) => (
                       <SelectItem key={cat} value={cat}>
                         {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="resource_type">Resource Type</Label>
+                <Select
+                  value={formData.resource_type}
+                  onValueChange={(value) => setFormData({ ...formData, resource_type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {resourceTypeOptions.map((rt) => (
+                      <SelectItem key={rt} value={rt}>
+                        {rt}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -458,6 +484,18 @@ export default function MaterialsPage() {
           {material.description || "-"}
         </span>
       ),
+    },
+    {
+      key: "resource_type",
+      header: "Type",
+      defaultWidth: 80,
+      sortable: true,
+      cell: (material) =>
+        material.resource_type ? (
+          <Badge variant="outline">{material.resource_type}</Badge>
+        ) : (
+          "-"
+        ),
     },
     {
       key: "category",

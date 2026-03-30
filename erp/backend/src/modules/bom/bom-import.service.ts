@@ -222,17 +222,19 @@ export class BomImportService {
       if (!material) {
         // Auto-create the material with available data from import
         // Assign the product's customer to the new material
+        const resourceType = this.parseResourceType(item.resource_type);
         material = this.materialRepository.create({
           internal_part_number: item.internal_part_number,
           manufacturer: item.manufacturer,
           manufacturer_pn: item.manufacturer_pn,
           description: item.description || item.notes,
           customer_id: product.customer_id, // Auto-assign customer from product
+          ...(resourceType ? { resource_type: resourceType as ResourceType } : {}),
         });
         material = await this.materialRepository.save(material);
         createdMaterials.push(item.internal_part_number);
       } else {
-        // Backfill manufacturer/MPN/description on existing materials if empty
+        // Backfill manufacturer/MPN/description/resource_type on existing materials if empty
         let needsUpdate = false;
         if (!material.manufacturer && item.manufacturer) {
           material.manufacturer = item.manufacturer;
@@ -246,6 +248,11 @@ export class BomImportService {
           material.description = item.description || item.notes || '';
           needsUpdate = true;
         }
+        const resourceType = this.parseResourceType(item.resource_type);
+        if (!material.resource_type && resourceType) {
+          material.resource_type = resourceType as ResourceType;
+          needsUpdate = true;
+        }
         if (needsUpdate) {
           material = await this.materialRepository.save(material);
         }
@@ -255,17 +262,15 @@ export class BomImportService {
       ipnToMaterial.set(item.internal_part_number, material);
     }
 
-    // Create BOM revision with items
+    // Create BOM revision with items (resource_type is on the material, not BOM item)
     const bomItems = dto.items.map((item, index) => {
       const material = ipnToMaterial.get(item.internal_part_number)!;
-      const resourceType = this.parseResourceType(item.resource_type);
       return {
         material_id: material.id,
         alternate_ipn: item.alternate_ipn,
         line_number: item.line_number ?? index + 1,
         reference_designators: item.reference_designators,
         quantity_required: item.quantity_required,
-        resource_type: resourceType as ResourceType | undefined,
         polarized: item.polarized ?? false,
         scrap_factor: 0,
         notes: item.notes,

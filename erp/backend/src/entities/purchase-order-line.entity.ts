@@ -43,8 +43,17 @@ export class PurchaseOrderLine {
   @Column({ type: 'decimal', precision: 12, scale: 4, default: 0 })
   quantity_received: number;
 
-  @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true })
+  @Column({ type: 'decimal', precision: 12, scale: 6, nullable: true })
   unit_cost: number | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  manufacturer: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  manufacturer_pn: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  packaging: string | null;
 
   @Column({ type: 'text', nullable: true })
   notes: string | null;

@@ -731,6 +731,21 @@ export default function InventoryPage() {
       ),
     },
     {
+      key: "resource_type",
+      header: "Type",
+      defaultWidth: 80,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (stock) => stock.material?.resource_type || "",
+      filterAccessor: (stock) => stock.material?.resource_type || "-",
+      cell: (stock) =>
+        stock.material?.resource_type ? (
+          <Badge variant="outline">{stock.material.resource_type}</Badge>
+        ) : (
+          "-"
+        ),
+    },
+    {
       key: "quantity_on_hand",
       header: "On Hand",
       defaultWidth: 100,
@@ -740,6 +755,20 @@ export default function InventoryPage() {
       filterAccessor: (stock) => stock.quantity_on_hand.toLocaleString(),
       cell: (stock) => (
         <span className="font-mono">{stock.quantity_on_hand.toLocaleString()}</span>
+      ),
+    },
+    {
+      key: "quantity_required",
+      header: "Required",
+      defaultWidth: 100,
+      className: "text-right",
+      sortable: true,
+      filterable: true,
+      filterAccessor: (stock) => stock.quantity_required.toLocaleString(),
+      cell: (stock) => (
+        <span className={`font-mono ${stock.quantity_required > 0 ? "text-purple-600" : ""}`}>
+          {stock.quantity_required.toLocaleString()}
+        </span>
       ),
     },
     {
@@ -943,6 +972,7 @@ export default function InventoryPage() {
                 (stock.material?.description?.toLowerCase().includes(q)) ||
                 (stock.material?.customer?.name?.toLowerCase().includes(q)) ||
                 stock.quantity_on_hand.toString().includes(q) ||
+                stock.quantity_required.toString().includes(q) ||
                 stock.quantity_available.toString().includes(q) ||
                 stock.quantity_on_order.toString().includes(q)
               ) as boolean
@@ -1064,6 +1094,7 @@ export default function InventoryPage() {
                       <TableHead>Customer</TableHead>
                       <TableHead>Material</TableHead>
                       <TableHead className="text-right">On Hand</TableHead>
+                      <TableHead className="text-right">Required</TableHead>
                       <TableHead className="text-right">Allocated</TableHead>
                       <TableHead className="text-right">Available</TableHead>
                       <TableHead className="text-right">On Order</TableHead>
@@ -1078,6 +1109,9 @@ export default function InventoryPage() {
                         </TableCell>
                         <TableCell className="text-right font-mono">
                           {stock.quantity_on_hand}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-purple-600">
+                          {stock.quantity_required}
                         </TableCell>
                         <TableCell className="text-right font-mono">
                           {stock.quantity_allocated}

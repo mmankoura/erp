@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { useApi, useMutation } from "@/hooks/use-api"
 import {
   api,
@@ -66,6 +67,18 @@ import {
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
 
+// Calculate date + N business days (skips weekends)
+function addBusinessDays(date: Date, days: number): Date {
+  const result = new Date(date)
+  let added = 0
+  while (added < days) {
+    result.setDate(result.getDate() + 1)
+    const dow = result.getDay()
+    if (dow !== 0 && dow !== 6) added++
+  }
+  return result
+}
+
 // Status colors and labels
 const statusConfig: Record<
   PurchaseOrderStatus,
@@ -83,12 +96,19 @@ const statusConfig: Record<
 // Line item form state
 interface LineItemForm {
   material_id: string
+  ipn_search: string
   quantity_ordered: number
   unit_cost: number | null
+  manufacturer: string
+  manufacturer_pn: string
   notes: string
+  // Auto-populated display fields
+  customer_name: string
+  description: string
+  resource_type: string
 }
 
-// Create/Edit PO Dialog
+// Create/Edit PO Dialog — full-window with excel-style line table
 function PurchaseOrderDialog({
   purchaseOrder,
   onSuccess,
@@ -103,27 +123,165 @@ function PurchaseOrderDialog({
   const [orderDate, setOrderDate] = useState(
     purchaseOrder?.order_date?.split("T")[0] || new Date().toISOString().split("T")[0]
   )
+  const defaultExpected = addBusinessDays(new Date(), 2).toISOString().split("T")[0]
   const [expectedDate, setExpectedDate] = useState(
-    purchaseOrder?.expected_date?.split("T")[0] || ""
+    purchaseOrder?.expected_date?.split("T")[0] || defaultExpected
   )
   const [currency, setCurrency] = useState(purchaseOrder?.currency || "USD")
   const [notes, setNotes] = useState(purchaseOrder?.notes || "")
   const [lines, setLines] = useState<LineItemForm[]>([])
+  const [activeNoteIndex, setActiveNoteIndex] = useState<number | null>(null)
+  const [showPasteModal, setShowPasteModal] = useState(false)
+  const [pasteText, setPasteText] = useState("")
 
   const { data: suppliers } = useApi<Supplier[]>("/suppliers")
   const { data: materials } = useApi<Material[]>("/materials")
 
-  // Reset form when dialog opens
   useEffect(() => {
     if (open && !purchaseOrder) {
       setSupplierId("")
       setOrderDate(new Date().toISOString().split("T")[0])
-      setExpectedDate("")
+      setExpectedDate(addBusinessDays(new Date(), 2).toISOString().split("T")[0])
       setCurrency("USD")
       setNotes("")
-      setLines([])
+      setLines([createEmptyLine()])
+      setActiveNoteIndex(null)
     }
   }, [open, purchaseOrder])
+
+  function createEmptyLine(): LineItemForm {
+    return {
+      material_id: "", ipn_search: "", quantity_ordered: 1, unit_cost: null,
+      manufacturer: "", manufacturer_pn: "",
+      notes: "", customer_name: "", description: "", resource_type: "",
+    }
+  }
+
+  const updateLine = (index: number, updates: Partial<LineItemForm>) => {
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...updates } : l)))
+  }
+
+  const handleIpnChange = (index: number, value: string) => {
+    updateLine(index, { ipn_search: value, material_id: "" })
+  }
+
+  const handleIpnSelect = (index: number, materialId: string) => {
+    const material = materials?.find((m) => m.id === materialId)
+    if (!material) return
+    updateLine(index, {
+      material_id: materialId,
+      ipn_search: material.internal_part_number,
+      manufacturer: material.manufacturer || "",
+      manufacturer_pn: material.manufacturer_pn || "",
+      customer_name: material.customer?.name || "",
+      description: material.description || "",
+      resource_type: material.resource_type || "",
+    })
+  }
+
+  const handleAddLine = () => {
+    setLines((prev) => [...prev, createEmptyLine()])
+  }
+
+  const handlePasteImport = () => {
+    if (!pasteText.trim()) return
+    const rows = pasteText.trim().split("\n")
+    // Detect header row and find column indices
+    const firstRow = rows[0].split("\t")
+    const headerMap: Record<string, number> = {}
+    const headerKeywords: Record<string, string[]> = {
+      index: ["index", "#"],
+      mpn: ["manufacturer part number", "manufacturer part #", "mfg part", "mpn"],
+      manufacturer: ["manufacturer"],
+      description: ["description"],
+      customerRef: ["customer reference", "customer ref", "reference"],
+      quantity: ["quantity", "qty"],
+      unitPrice: ["unit price", "price"],
+    }
+
+    // Try to match headers — check longer/more specific keywords first,
+    // and don't let two keys claim the same column index
+    const usedColumns = new Set<number>()
+    // Process mpn before manufacturer so "Manufacturer Part Number" maps to mpn, not manufacturer
+    const keyOrder = ["mpn", "customerRef", "unitPrice", "manufacturer", "description", "quantity", "index"]
+    for (let i = 0; i < firstRow.length; i++) {
+      const col = firstRow[i].trim().toLowerCase()
+      for (const key of keyOrder) {
+        if (key in headerMap) continue
+        const keywords = headerKeywords[key]
+        if (keywords?.some((kw) => col.includes(kw)) && !usedColumns.has(i)) {
+          headerMap[key] = i
+          usedColumns.add(i)
+          break
+        }
+      }
+    }
+
+    const hasHeaders = "mpn" in headerMap || "manufacturer" in headerMap
+    const dataRows = hasHeaders ? rows.slice(1) : rows
+
+    const materialMap = new Map<string, Material>()
+    materials?.forEach((m) => {
+      materialMap.set(m.internal_part_number.toLowerCase(), m)
+    })
+
+    const newLines: LineItemForm[] = []
+    for (const row of dataRows) {
+      const cols = row.split("\t")
+      if (cols.length < 3) continue
+      // Skip subtotal/empty rows
+      if (cols.every((c) => !c.trim()) || row.toLowerCase().includes("subtotal")) continue
+
+      const get = (key: string, fallbackIdx?: number): string => {
+        const idx = headerMap[key] ?? fallbackIdx
+        return idx !== undefined && idx < cols.length ? cols[idx].trim() : ""
+      }
+
+      const mpn = get("mpn", 2)
+      const mfg = get("manufacturer", 3)
+      const desc = get("description", 4)
+      const custRef = get("customerRef", 5)
+      const qtyStr = get("quantity", 6)
+      const priceStr = get("unitPrice", 8)
+
+      const qty = parseInt(qtyStr) || 1
+      const price = parseFloat(priceStr.replace(/[$,]/g, "")) || null
+
+      // Try to match customer reference to IPN
+      const matchedMaterial = custRef ? materialMap.get(custRef.toLowerCase()) : undefined
+
+      newLines.push({
+        material_id: matchedMaterial?.id || "",
+        ipn_search: matchedMaterial?.internal_part_number || custRef || "",
+        quantity_ordered: qty,
+        unit_cost: price,
+        manufacturer: mfg,
+        manufacturer_pn: mpn,
+        notes: "",
+        customer_name: matchedMaterial?.customer?.name || "",
+        description: matchedMaterial?.description || desc,
+        resource_type: matchedMaterial?.resource_type || "",
+      })
+    }
+
+    if (newLines.length > 0) {
+      // Replace the empty starting line if it exists
+      const hasOnlyEmpty = lines.length === 1 && !lines[0].material_id && !lines[0].ipn_search
+      setLines(hasOnlyEmpty ? newLines : [...lines, ...newLines])
+      toast.success(`Imported ${newLines.length} line(s)`)
+    } else {
+      toast.error("Could not parse any lines from pasted data")
+    }
+
+    setPasteText("")
+    setShowPasteModal(false)
+  }
+
+  const handleRemoveLine = (index: number) => {
+    if (lines.length <= 1) return
+    setLines((prev) => prev.filter((_, i) => i !== index))
+    if (activeNoteIndex === index) setActiveNoteIndex(null)
+  }
 
   const createMutation = useMutation(
     (data: CreatePurchaseOrderDto) => api.post<PurchaseOrder>("/purchase-orders", data),
@@ -133,9 +291,7 @@ function PurchaseOrderDialog({
         setOpen(false)
         onSuccess()
       },
-      onError: (error) => {
-        toast.error(error.message || "Failed to create purchase order")
-      },
+      onError: (error) => toast.error(error.message || "Failed to create purchase order"),
     }
   )
 
@@ -148,35 +304,21 @@ function PurchaseOrderDialog({
         setOpen(false)
         onSuccess()
       },
-      onError: (error) => {
-        toast.error(error.message || "Failed to update purchase order")
-      },
+      onError: (error) => toast.error(error.message || "Failed to update purchase order"),
     }
   )
 
-  const handleAddLine = () => {
-    setLines([...lines, { material_id: "", quantity_ordered: 1, unit_cost: null, notes: "" }])
-  }
-
-  const handleRemoveLine = (index: number) => {
-    setLines(lines.filter((_, i) => i !== index))
-  }
-
-  const handleLineChange = (index: number, field: keyof LineItemForm, value: string | number | null) => {
-    const newLines = [...lines]
-    newLines[index] = { ...newLines[index], [field]: value }
-    setLines(newLines)
-  }
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-
     const lineItems: CreatePurchaseOrderLineDto[] = lines
       .filter((line) => line.material_id)
       .map((line) => ({
         material_id: line.material_id,
         quantity_ordered: line.quantity_ordered,
         unit_cost: line.unit_cost || undefined,
+        manufacturer: line.manufacturer,
+        manufacturer_pn: line.manufacturer_pn,
+        packaging: "",
         notes: line.notes || undefined,
       }))
 
@@ -200,211 +342,288 @@ function PurchaseOrderDialog({
   }
 
   const isLoading = createMutation.isLoading || updateMutation.isLoading
-  const totalAmount = lines.reduce((sum, line) => {
-    if (line.unit_cost && line.quantity_ordered) {
-      return sum + line.unit_cost * line.quantity_ordered
-    }
-    return sum
-  }, 0)
+  const totalAmount = lines.reduce((sum, l) => sum + (l.unit_cost || 0) * l.quantity_ordered, 0)
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>
-              {purchaseOrder ? "Edit Purchase Order" : "Create Purchase Order"}
-            </DialogTitle>
-            <DialogDescription>
-              {purchaseOrder
-                ? "Update the purchase order details."
-                : "Create a new purchase order for your supplier."}
-            </DialogDescription>
-          </DialogHeader>
+      <DialogContent showCloseButton={false} className="!max-w-[95vw] w-full !h-[90vh] flex flex-col p-0">
+        <DialogTitle className="sr-only">
+          {purchaseOrder ? "Edit Purchase Order" : "New Purchase Order"}
+        </DialogTitle>
+        <form onSubmit={handleSubmit} className="flex flex-col h-full">
+          {/* Header bar */}
+          <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
+            <div>
+              <h2 className="text-lg font-semibold">
+                {purchaseOrder ? "Edit Purchase Order" : "New Purchase Order"}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {!purchaseOrder && (
+                <Button type="button" variant="outline" onClick={() => setShowPasteModal(true)}>
+                  <Upload className="h-4 w-4 mr-1" />
+                  Paste from DigiKey
+                </Button>
+              )}
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isLoading || !supplierId}>
+                {isLoading ? "Saving..." : purchaseOrder ? "Update" : "Create PO"}
+              </Button>
+            </div>
+          </div>
 
-          <div className="grid gap-4 py-4">
-            {/* Supplier and Dates */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="supplier">Supplier *</Label>
-                <Select value={supplierId} onValueChange={setSupplierId} required>
-                  <SelectTrigger>
+          {/* PO header fields */}
+          <div className="px-6 py-3 border-b shrink-0 bg-muted/30">
+            <div className="grid grid-cols-5 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs">Supplier *</Label>
+                <Select value={supplierId} onValueChange={setSupplierId}>
+                  <SelectTrigger className="h-8">
                     <SelectValue placeholder="Select supplier" />
                   </SelectTrigger>
                   <SelectContent>
-                    {suppliers?.map((supplier) => (
-                      <SelectItem key={supplier.id} value={supplier.id}>
-                        {supplier.name} ({supplier.code})
+                    {suppliers?.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name} ({s.code})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="currency">Currency</Label>
+              <div className="space-y-1">
+                <Label className="text-xs">Order Date *</Label>
+                <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)}
+                  className="h-8" required disabled={!!purchaseOrder} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Expected Date</Label>
+                <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)}
+                  className="h-8" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Currency</Label>
                 <Select value={currency} onValueChange={setCurrency}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="CAD">CAD</SelectItem>
                     <SelectItem value="EUR">EUR</SelectItem>
                     <SelectItem value="GBP">GBP</SelectItem>
-                    <SelectItem value="CAD">CAD</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="orderDate">Order Date *</Label>
-                <Input
-                  id="orderDate"
-                  type="date"
-                  value={orderDate}
-                  onChange={(e) => setOrderDate(e.target.value)}
-                  required
-                  disabled={!!purchaseOrder}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="expectedDate">Expected Date</Label>
-                <Input
-                  id="expectedDate"
-                  type="date"
-                  value={expectedDate}
-                  onChange={(e) => setExpectedDate(e.target.value)}
-                />
+              <div className="space-y-1">
+                <Label className="text-xs">PO Notes</Label>
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Optional notes..." className="h-8" />
               </div>
             </div>
+          </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Additional notes..."
-                rows={2}
-              />
-            </div>
+          {/* Excel-style line items table */}
+          {!purchaseOrder && (
+            <div className="flex-1 overflow-auto px-6 py-3">
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="w-[40px] text-center">#</TableHead>
+                      <TableHead className="w-[180px]">IPN</TableHead>
+                      <TableHead className="w-[120px]">Client</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-[60px]">Type</TableHead>
+                      <TableHead className="w-[150px]">Manufacturer *</TableHead>
+                      <TableHead className="w-[150px]">MPN *</TableHead>
+                      <TableHead className="w-[80px] text-right">Qty *</TableHead>
+                      <TableHead className="w-[100px] text-right">Unit Cost</TableHead>
+                      <TableHead className="w-[70px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lines.map((line, index) => {
+                      const filtered = line.ipn_search && !line.material_id
+                        ? (materials?.filter((m) =>
+                            m.internal_part_number.toLowerCase().includes(line.ipn_search.toLowerCase())
+                          ) || [])
+                        : []
 
-            {/* Line Items - only for new POs */}
-            {!purchaseOrder && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>Line Items</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={handleAddLine}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Line
-                  </Button>
-                </div>
-
-                {lines.length > 0 && (
-                  <div className="border rounded-md">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Material</TableHead>
-                          <TableHead className="w-[100px]">Qty</TableHead>
-                          <TableHead className="w-[120px]">Unit Cost</TableHead>
-                          <TableHead className="w-[50px]"></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {lines.map((line, index) => (
-                          <TableRow key={index}>
-                            <TableCell>
-                              <Select
-                                value={line.material_id}
-                                onValueChange={(v) => handleLineChange(index, "material_id", v)}
-                              >
-                                <SelectTrigger className="h-8">
-                                  <SelectValue placeholder="Select material" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {materials?.map((m) => (
-                                    <SelectItem key={m.id} value={m.id}>
-                                      {m.internal_part_number}
-                                    </SelectItem>
+                      return (
+                        <React.Fragment key={index}>
+                          <TableRow className="group">
+                            <TableCell className="text-center text-muted-foreground text-xs">{index + 1}</TableCell>
+                            <TableCell className="p-1 relative">
+                              <Input
+                                value={line.ipn_search}
+                                onChange={(e) => handleIpnChange(index, e.target.value)}
+                                placeholder="Type IPN..."
+                                className="h-7 text-xs border-transparent bg-transparent hover:border-input focus:border-input"
+                              />
+                              {filtered.length > 0 && (
+                                <div className="absolute z-50 left-1 right-1 top-full mt-0.5 max-h-48 overflow-y-auto bg-popover border rounded-md shadow-lg">
+                                  {filtered.slice(0, 15).map((m) => (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      className="w-full text-left px-2 py-1 text-xs hover:bg-accent truncate"
+                                      onClick={() => handleIpnSelect(index, m.id)}
+                                    >
+                                      <span className="font-medium">{m.internal_part_number}</span>
+                                      {m.description && (
+                                        <span className="text-muted-foreground ml-1">— {m.description}</span>
+                                      )}
+                                    </button>
                                   ))}
-                                </SelectContent>
-                              </Select>
+                                </div>
+                              )}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">
+                              {line.customer_name || "—"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              {line.description || "—"}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {line.resource_type ? (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0">{line.resource_type}</Badge>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell className="p-1">
+                              <Input
+                                value={line.manufacturer}
+                                onChange={(e) => updateLine(index, { manufacturer: e.target.value })}
+                                placeholder="Manufacturer"
+                                className="h-7 text-xs border-transparent bg-transparent hover:border-input focus:border-input"
+                              />
+                            </TableCell>
+                            <TableCell className="p-1">
+                              <Input
+                                value={line.manufacturer_pn}
+                                onChange={(e) => updateLine(index, { manufacturer_pn: e.target.value })}
+                                placeholder="MPN"
+                                className="h-7 text-xs border-transparent bg-transparent hover:border-input focus:border-input"
+                              />
+                            </TableCell>
+                            <TableCell className="p-1">
                               <Input
                                 type="number"
                                 min="1"
                                 value={line.quantity_ordered}
-                                onChange={(e) =>
-                                  handleLineChange(index, "quantity_ordered", Number(e.target.value))
-                                }
-                                className="h-8"
+                                onChange={(e) => updateLine(index, { quantity_ordered: Number(e.target.value) || 1 })}
+                                className="h-7 text-xs text-right border-transparent bg-transparent hover:border-input focus:border-input"
                               />
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="p-1">
                               <Input
                                 type="number"
                                 min="0"
-                                step="0.01"
-                                value={line.unit_cost || ""}
-                                onChange={(e) =>
-                                  handleLineChange(
-                                    index,
-                                    "unit_cost",
-                                    e.target.value ? Number(e.target.value) : null
-                                  )
-                                }
+                                step="any"
+                                value={line.unit_cost ?? ""}
+                                onChange={(e) => updateLine(index, { unit_cost: e.target.value ? Number(e.target.value) : null })}
                                 placeholder="0.00"
-                                className="h-8"
+                                className="h-7 text-xs text-right border-transparent bg-transparent hover:border-input focus:border-input"
                               />
                             </TableCell>
-                            <TableCell>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => handleRemoveLine(index)}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
+                            <TableCell className="p-1">
+                              <div className="flex items-center gap-0.5">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                                  title="Add comment"
+                                  onClick={() => setActiveNoteIndex(activeNoteIndex === index ? null : index)}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100"
+                                  onClick={() => handleRemoveLine(index)}
+                                  disabled={lines.length <= 1}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    {totalAmount > 0 && (
-                      <div className="px-4 py-2 text-right text-sm border-t">
-                        <span className="text-muted-foreground">Total: </span>
-                        <span className="font-medium">
-                          {currency} {totalAmount.toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {lines.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4 border rounded-md">
-                    No line items added. Click &quot;Add Line&quot; to add materials.
-                  </p>
+                          {activeNoteIndex === index && (
+                            <TableRow key={`note-${index}`}>
+                              <TableCell></TableCell>
+                              <TableCell colSpan={10} className="py-1 px-1">
+                                <Input
+                                  value={line.notes}
+                                  onChange={(e) => updateLine(index, { notes: e.target.value })}
+                                  placeholder="Comment for this line..."
+                                  className="h-7 text-xs"
+                                  autoFocus
+                                />
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <Button type="button" variant="outline" size="sm" onClick={handleAddLine}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Line
+                </Button>
+                {totalAmount > 0 && (
+                  <span className="text-sm">
+                    <span className="text-muted-foreground">Total: </span>
+                    <span className="font-medium">{currency} {totalAmount.toFixed(2)}</span>
+                  </span>
                 )}
               </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isLoading || !supplierId}>
-              {isLoading ? "Saving..." : purchaseOrder ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
+            </div>
+          )}
         </form>
+
+        {/* Paste from DigiKey modal */}
+        {showPasteModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+            <div className="bg-background rounded-lg border shadow-lg w-[600px] max-h-[80vh] flex flex-col">
+              <div className="px-4 py-3 border-b flex items-center justify-between">
+                <h3 className="font-semibold">Paste from DigiKey</h3>
+                <Button variant="ghost" size="icon" className="h-7 w-7"
+                  onClick={() => { setShowPasteModal(false); setPasteText("") }}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="p-4 flex-1 overflow-auto space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Copy your DigiKey cart/order table and paste it below. The &quot;Customer Reference&quot; column will be matched to your IPNs.
+                </p>
+                <Textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder="Paste tab-separated data from DigiKey here..."
+                  rows={12}
+                  className="font-mono text-xs"
+                  autoFocus
+                />
+              </div>
+              <div className="px-4 py-3 border-t flex justify-end gap-2">
+                <Button variant="outline" onClick={() => { setShowPasteModal(false); setPasteText("") }}>
+                  Cancel
+                </Button>
+                <Button onClick={handlePasteImport} disabled={!pasteText.trim()}>
+                  Import Lines
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -429,7 +648,7 @@ function PurchaseOrderDetailDialog({
 
   // Line item mutations
   const addLineMutation = useMutation(
-    (data: { material_id: string; quantity_ordered: number; unit_cost?: number }) =>
+    (data: { material_id: string; quantity_ordered: number; unit_cost?: number; manufacturer: string; manufacturer_pn: string; packaging: string }) =>
       api.post(`/purchase-orders/${purchaseOrder.id}/lines`, data),
     {
       onSuccess: () => {
@@ -502,21 +721,47 @@ function PurchaseOrderDetailDialog({
     }
   )
 
+  const [newLineIpnSearch, setNewLineIpnSearch] = useState("")
   const [newLineMaterial, setNewLineMaterial] = useState("")
   const [newLineQty, setNewLineQty] = useState(1)
   const [newLineCost, setNewLineCost] = useState("")
+  const [newLineMfg, setNewLineMfg] = useState("")
+  const [newLineMpn, setNewLineMpn] = useState("")
 
   const handleAddLine = () => {
-    if (!newLineMaterial) return
+    if (!newLineMaterial || !newLineMfg || !newLineMpn) {
+      toast.error("Manufacturer and MPN are required")
+      return
+    }
     addLineMutation.mutate({
       material_id: newLineMaterial,
       quantity_ordered: newLineQty,
       unit_cost: newLineCost ? Number(newLineCost) : undefined,
+      manufacturer: newLineMfg,
+      manufacturer_pn: newLineMpn,
+      packaging: "",
     })
+    setNewLineIpnSearch("")
     setNewLineMaterial("")
     setNewLineQty(1)
     setNewLineCost("")
+    setNewLineMfg("")
+    setNewLineMpn("")
   }
+
+  const handleDetailIpnSelect = (materialId: string) => {
+    const material = materials?.find((m) => m.id === materialId)
+    if (!material) return
+    setNewLineMaterial(materialId)
+    setNewLineIpnSearch(material.internal_part_number)
+    setNewLineMfg(material.manufacturer || "")
+    setNewLineMpn(material.manufacturer_pn || "")
+  }
+
+  const filteredDetailMaterials = materials?.filter((m) =>
+    m.internal_part_number.toLowerCase().includes(newLineIpnSearch.toLowerCase())
+  ) || []
+  const showDetailDropdown = newLineIpnSearch.length > 0 && !newLineMaterial && filteredDetailMaterials.length > 0
 
   const po = poDetail || purchaseOrder
   const canEdit = po.status === "DRAFT"
@@ -642,6 +887,7 @@ function PurchaseOrderDetailDialog({
                   <TableRow>
                     <TableHead>#</TableHead>
                     <TableHead>Material</TableHead>
+                    <TableHead>Mfg / MPN</TableHead>
                     <TableHead className="text-right">Ordered</TableHead>
                     <TableHead className="text-right">Received</TableHead>
                     <TableHead className="text-right">Unit Cost</TableHead>
@@ -663,6 +909,15 @@ function PurchaseOrderDetailDialog({
                               {line.material.description}
                             </p>
                           )}
+                          <p className="text-xs text-muted-foreground">
+                            {line.material?.customer?.name || "-"} | {line.material?.resource_type || "-"}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <p>{line.manufacturer || "-"}</p>
+                          <p className="text-xs text-muted-foreground">{line.manufacturer_pn || "-"}</p>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">{line.quantity_ordered}</TableCell>
@@ -707,63 +962,93 @@ function PurchaseOrderDetailDialog({
                   ))}
                   {(!po.lines || po.lines.length === 0) && (
                     <TableRow>
-                      <TableCell colSpan={canEdit ? 7 : 6} className="text-center text-muted-foreground">
+                      <TableCell colSpan={canEdit ? 8 : 7} className="text-center text-muted-foreground">
                         No line items
                       </TableCell>
                     </TableRow>
                   )}
-                  {/* Add new line row - only in DRAFT */}
+                  {/* Add new line - only in DRAFT */}
                   {canEdit && (
-                    <TableRow className="bg-muted/30">
-                      <TableCell></TableCell>
-                      <TableCell>
-                        <Select value={newLineMaterial} onValueChange={setNewLineMaterial}>
-                          <SelectTrigger className="h-8">
-                            <SelectValue placeholder="Add material..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {materials?.map((m) => (
-                              <SelectItem key={m.id} value={m.id}>
-                                {m.internal_part_number}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={newLineQty}
-                          onChange={(e) => setNewLineQty(Number(e.target.value))}
-                          className="h-8 w-20 text-right"
-                        />
-                      </TableCell>
-                      <TableCell></TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={newLineCost}
-                          onChange={(e) => setNewLineCost(e.target.value)}
-                          placeholder="0.00"
-                          className="h-8 w-24 text-right"
-                        />
-                      </TableCell>
-                      <TableCell></TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8"
-                          onClick={handleAddLine}
-                          disabled={!newLineMaterial || addLineMutation.isLoading}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                    <>
+                      <TableRow>
+                        <TableCell colSpan={canEdit ? 8 : 7} className="p-0">
+                          <div className="bg-muted/30 p-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-muted-foreground">Add Line</span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
+                              <div className="relative">
+                                <Input
+                                  value={newLineIpnSearch}
+                                  onChange={(e) => {
+                                    setNewLineIpnSearch(e.target.value)
+                                    setNewLineMaterial("")
+                                  }}
+                                  placeholder="Type IPN..."
+                                  className="h-8"
+                                />
+                                {showDetailDropdown && (
+                                  <div className="absolute z-50 top-full left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-popover border rounded-md shadow-md">
+                                    {filteredDetailMaterials.slice(0, 10).map((m) => (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                                        onClick={() => handleDetailIpnSelect(m.id)}
+                                      >
+                                        {m.internal_part_number}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={newLineQty}
+                                onChange={(e) => setNewLineQty(Number(e.target.value))}
+                                placeholder="Qty"
+                                className="h-8"
+                              />
+                              <Input
+                                value={newLineMfg}
+                                onChange={(e) => setNewLineMfg(e.target.value)}
+                                placeholder="Manufacturer *"
+                                className="h-8"
+                              />
+                              <Input
+                                value={newLineMpn}
+                                onChange={(e) => setNewLineMpn(e.target.value)}
+                                placeholder="MPN *"
+                                className="h-8"
+                              />
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={newLineCost}
+                                onChange={(e) => setNewLineCost(e.target.value)}
+                                placeholder="Unit Cost"
+                                className="h-8"
+                              />
+                              <div className="col-span-2"></div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8"
+                                onClick={handleAddLine}
+                                disabled={!newLineMaterial || addLineMutation.isLoading}
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                Add
+                              </Button>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    </>
                   )}
                 </TableBody>
               </Table>

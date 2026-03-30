@@ -585,6 +585,7 @@ export class OrdersService {
     const bomItems = await this.bomRevisionRepository
       .createQueryBuilder('revision')
       .leftJoinAndSelect('revision.items', 'item')
+      .leftJoinAndSelect('item.material', 'material')
       .where('revision.id = :id', { id: bomRevisionId })
       .getOne();
 
@@ -592,8 +593,8 @@ export class OrdersService {
       return OrderProductionType.SMT_AND_TH; // Default to both
     }
 
-    const hasSMT = bomItems.items.some(item => item.resource_type === ResourceType.SMT);
-    const hasTH = bomItems.items.some(item => item.resource_type === ResourceType.TH);
+    const hasSMT = bomItems.items.some(item => item.material?.resource_type === ResourceType.SMT);
+    const hasTH = bomItems.items.some(item => item.material?.resource_type === ResourceType.TH);
 
     if (hasSMT && hasTH) {
       return OrderProductionType.SMT_AND_TH;

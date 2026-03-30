@@ -113,6 +113,7 @@ export interface PaginatedResponse<T> {
 }
 
 // Entity types
+
 export interface Material {
   id: string
   internal_part_number: string
@@ -121,6 +122,7 @@ export interface Material {
   description: string | null
   category: string | null
   uom: string
+  resource_type: ResourceType | null
   costing_method: string | null
   standard_cost: number | null
   customer_id: string | null
@@ -259,6 +261,9 @@ export interface PurchaseOrderLine {
   quantity_ordered: number
   quantity_received: number
   unit_cost: number | null
+  manufacturer: string | null
+  manufacturer_pn: string | null
+  packaging: string | null
   line_number: number
   notes: string | null
 }
@@ -286,6 +291,9 @@ export interface CreatePurchaseOrderLineDto {
   material_id: string
   quantity_ordered: number
   unit_cost?: number
+  manufacturer: string
+  manufacturer_pn: string
+  packaging: string
   notes?: string
 }
 
@@ -315,6 +323,7 @@ export interface InventoryStock {
   quantity_allocated: number
   quantity_available: number
   quantity_on_order: number
+  quantity_required: number
 }
 
 export type TransactionType =
@@ -449,6 +458,8 @@ export interface MrpRequirement {
   quantity_available: number
   quantity_on_order: number
   net_requirement: number
+  po_numbers: string[]
+  earliest_eta: string | null
 }
 
 export interface MrpRequirementsResponse {

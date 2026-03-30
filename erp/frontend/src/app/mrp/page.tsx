@@ -316,9 +316,28 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
     },
   },
   {
+    key: "earliest_eta",
+    header: "ETA",
+    defaultWidth: 100,
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.earliest_eta || "",
+    filterAccessor: (item) => item.earliest_eta ? new Date(item.earliest_eta).toLocaleDateString() : "-",
+    cell: (item) => {
+      if (!item.earliest_eta) return <span className="text-muted-foreground">-</span>
+      const date = new Date(item.earliest_eta)
+      const isOverdue = date < new Date()
+      return (
+        <span className={`text-xs ${isOverdue ? "text-red-600 font-medium" : ""}`}>
+          {date.toLocaleDateString()}
+        </span>
+      )
+    },
+  },
+  {
     key: "status",
     header: "Status",
-    defaultWidth: 100,
+    defaultWidth: 140,
     resizable: false,
     sortable: true,
     filterable: true,
@@ -327,17 +346,32 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
       return isCovered ? 1 : 0
     },
     filterAccessor: (item) => {
-      const isCovered = item.quantity_available + item.quantity_on_order >= item.total_required
-      return isCovered ? "Covered" : "Short"
+      if (item.po_numbers.length > 0) return item.po_numbers.join(", ")
+      const isCovered = item.quantity_available >= item.total_required
+      return isCovered ? "In Stock" : "Short"
     },
     cell: (item) => {
-      const isCovered = item.quantity_available + item.quantity_on_order >= item.total_required
-      return isCovered ? (
-        <Badge variant="outline" className="text-green-600 border-green-600">
-          <CheckCircle className="h-3 w-3 mr-1" />
-          Covered
-        </Badge>
-      ) : (
+      const isCoveredByStock = item.quantity_available >= item.total_required
+      const isCoveredWithPO = item.quantity_available + item.quantity_on_order >= item.total_required
+
+      if (item.po_numbers.length > 0) {
+        return (
+          <Badge variant="outline" className={isCoveredWithPO ? "text-green-600 border-green-600" : "text-blue-600 border-blue-600"}>
+            {item.po_numbers.join(", ")}
+          </Badge>
+        )
+      }
+
+      if (isCoveredByStock) {
+        return (
+          <Badge variant="outline" className="text-green-600 border-green-600">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            In Stock
+          </Badge>
+        )
+      }
+
+      return (
         <Badge variant="destructive">
           <AlertTriangle className="h-3 w-3 mr-1" />
           Short

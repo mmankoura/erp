@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID, IsEnum } from 'class-validator';
+import { ResourceType } from '../../../entities/bom-item.entity';
 
 export class CreateMaterialDto {
   @IsUUID()
@@ -36,4 +37,8 @@ export class CreateMaterialDto {
   @IsString()
   @IsOptional()
   uom?: string;
+
+  @IsEnum(ResourceType)
+  @IsOptional()
+  resource_type?: ResourceType;
 }

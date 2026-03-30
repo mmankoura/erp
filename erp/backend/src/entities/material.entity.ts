@@ -10,6 +10,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Customer } from './customer.entity';
+import { ResourceType } from './bom-item.entity';
 
 export enum CostingMethod {
   FIFO = 'FIFO',
@@ -47,6 +48,13 @@ export class Material {
 
   @Column({ default: 'EA' })
   uom: string;
+
+  @Column({
+    type: 'enum',
+    enum: ResourceType,
+    nullable: true,
+  })
+  resource_type: ResourceType | null;
 
   // ============ Customer Ownership ============
 

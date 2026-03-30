@@ -14,7 +14,7 @@ import { KittingListScan } from './kitting-list-scan.entity';
 import { ResourceType } from './bom-item.entity';
 
 @Entity('kitting_list_items')
-@Unique(['kitting_list_id', 'material_id', 'resource_type'])
+@Unique(['kitting_list_id', 'material_id'])
 export class KittingListItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;

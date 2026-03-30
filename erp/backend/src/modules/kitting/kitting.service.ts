@@ -125,7 +125,22 @@ export class KittingService {
         },
       });
 
-      return this.findOne(kittingList.id);
+      // Reload within the transaction so we can see the uncommitted row
+      const result = await manager
+        .createQueryBuilder(KittingList, 'kl')
+        .where('kl.id = :id', { id: kittingList.id })
+        .leftJoinAndSelect('kl.orders', 'orders')
+        .leftJoinAndSelect('orders.order', 'order')
+        .leftJoinAndSelect('order.customer', 'customer')
+        .leftJoinAndSelect('order.product', 'product')
+        .leftJoinAndSelect('kl.items', 'items')
+        .leftJoinAndSelect('items.material', 'material')
+        .leftJoinAndSelect('items.scans', 'scans')
+        .leftJoinAndSelect('scans.uid', 'uid')
+        .withDeleted()
+        .getOne();
+
+      return result!;
     });
   }
 
@@ -133,32 +148,42 @@ export class KittingService {
    * List all kitting lists
    */
   async findAll(): Promise<KittingList[]> {
-    return this.kittingListRepository.find({
-      relations: ['orders', 'orders.order', 'orders.order.customer', 'orders.order.product'],
-      order: { created_at: 'DESC' },
-    });
+    return this.kittingListRepository
+      .createQueryBuilder('kl')
+      .leftJoinAndSelect('kl.orders', 'orders')
+      .leftJoinAndSelect('orders.order', 'order')
+      .leftJoinAndSelect('order.customer', 'customer')
+      .leftJoinAndSelect('order.product', 'product')
+      .withDeleted()
+      .orderBy('kl.created_at', 'DESC')
+      .getMany();
   }
 
   /**
    * Get a single kitting list with full details
    */
   async findOne(id: string): Promise<KittingList> {
-    const kittingList = await this.kittingListRepository.findOne({
-      where: { id },
-      relations: [
-        'orders',
-        'orders.order',
-        'orders.order.customer',
-        'orders.order.product',
-        'items',
-        'items.material',
-        'items.scans',
-        'items.scans.uid',
-      ],
-    });
+    const kittingList = await this.kittingListRepository
+      .createQueryBuilder('kl')
+      .where('kl.id = :id', { id })
+      .leftJoinAndSelect('kl.orders', 'orders')
+      .leftJoinAndSelect('orders.order', 'order')
+      .leftJoinAndSelect('order.customer', 'customer')
+      .leftJoinAndSelect('order.product', 'product')
+      .leftJoinAndSelect('kl.items', 'items')
+      .leftJoinAndSelect('items.material', 'material')
+      .leftJoinAndSelect('items.scans', 'scans')
+      .leftJoinAndSelect('scans.uid', 'uid')
+      .withDeleted()
+      .getOne();
 
     if (!kittingList) {
       throw new NotFoundException(`Kitting list with ID "${id}" not found`);
+    }
+
+    // Always use the material's resource_type as the source of truth
+    for (const item of kittingList.items ?? []) {
+      item.resource_type = item.material?.resource_type ?? item.resource_type;
     }
 
     return kittingList;
@@ -444,7 +469,8 @@ export class KittingService {
 
   /**
    * Aggregate BOM requirements across multiple orders.
-   * Groups by (material_id, resource_type) and sums qty_per × order_qty × (1 + scrap_factor/100).
+   * Groups by material_id and sums qty_per × order_qty × (1 + scrap_factor/100).
+   * Resource type is read from the material, not the BOM item.
    */
   private async aggregateRequirements(
     orders: Order[],
@@ -466,8 +492,8 @@ export class KittingService {
       });
 
       for (const item of bomItems) {
-        // Skip DNP items
-        if (item.resource_type === 'DNP') continue;
+        // Skip DNP materials
+        if (item.material?.resource_type === 'DNP') continue;
 
         const bomQuantity = parseFloat(String(item.quantity_required));
         const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
@@ -475,14 +501,14 @@ export class KittingService {
           order.quantity * bomQuantity * (1 + scrapFactor / 100);
         const rounded = Math.ceil(requiredQuantity * 10000) / 10000;
 
-        const key = `${item.material_id}::${item.resource_type ?? 'NULL'}`;
+        const key = item.material_id;
 
         if (aggregation.has(key)) {
           aggregation.get(key)!.total_qty_required += rounded;
         } else {
           aggregation.set(key, {
             material_id: item.material_id,
-            resource_type: item.resource_type,
+            resource_type: item.material?.resource_type ?? null,
             total_qty_required: rounded,
           });
         }

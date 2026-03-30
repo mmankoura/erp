@@ -126,7 +126,7 @@ export class PurchaseOrdersService {
   async findOne(id: string): Promise<PurchaseOrder> {
     const po = await this.poRepository.findOne({
       where: { id },
-      relations: ['supplier', 'lines', 'lines.material'],
+      relations: ['supplier', 'lines', 'lines.material', 'lines.material.customer'],
     });
 
     if (!po) {
@@ -488,6 +488,46 @@ export class PurchaseOrdersService {
       material_id: r.material_id,
       quantity_on_order: parseFloat(r.quantity_on_order),
     }));
+  }
+
+  /**
+   * Get PO details (po_number, expected_date) per material for materials on order.
+   */
+  async getPurchaseOrderDetailsByMaterial(
+    materialIds: string[],
+  ): Promise<Map<string, Array<{ po_number: string; expected_date: Date | null }>>> {
+    if (materialIds.length === 0) return new Map();
+
+    const rows = await this.poLineRepository
+      .createQueryBuilder('line')
+      .innerJoin('line.purchase_order', 'po')
+      .select('line.material_id', 'material_id')
+      .addSelect('po.po_number', 'po_number')
+      .addSelect('po.expected_date', 'expected_date')
+      .where('line.material_id IN (:...materialIds)', { materialIds })
+      .andWhere('po.status IN (:...statuses)', { statuses: OPEN_PO_STATUSES })
+      .andWhere('po.deleted_at IS NULL')
+      .andWhere('line.quantity_ordered > line.quantity_received')
+      .getRawMany<{ material_id: string; po_number: string; expected_date: string | null }>();
+
+    const map = new Map<string, Array<{ po_number: string; expected_date: Date | null }>>();
+    for (const row of rows) {
+      const entry = {
+        po_number: row.po_number,
+        expected_date: row.expected_date ? new Date(row.expected_date) : null,
+      };
+      const existing = map.get(row.material_id);
+      if (existing) {
+        // Avoid duplicate PO numbers for same material
+        if (!existing.some((e) => e.po_number === entry.po_number)) {
+          existing.push(entry);
+        }
+      } else {
+        map.set(row.material_id, [entry]);
+      }
+    }
+
+    return map;
   }
 
   // ==================== RECEIVING WORKFLOW ====================

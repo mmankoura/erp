@@ -21,7 +21,7 @@ import {
   AllocationStatus,
 } from '../../entities/inventory-allocation.entity';
 import { Material } from '../../entities/material.entity';
-import { Order } from '../../entities/order.entity';
+import { Order, OrderStatus } from '../../entities/order.entity';
 import { BomItem } from '../../entities/bom-item.entity';
 import {
   CreateTransactionDto,
@@ -43,6 +43,7 @@ export interface MaterialStock {
   quantity_allocated: number;
   quantity_available: number;
   quantity_on_order: number;
+  quantity_required: number;
   owner_type?: OwnerType;
   owner_id?: string | null;
 }
@@ -179,6 +180,43 @@ export class InventoryService {
     const materialIds = materials.map((m) => m.id);
     const onOrderMap = await this.purchaseOrdersService.getQuantitiesOnOrder(materialIds);
 
+    // Calculate total quantity required across all active orders
+    const activeStatuses = [
+      OrderStatus.ENTERED,
+      OrderStatus.KITTING,
+      OrderStatus.SMT,
+      OrderStatus.TH,
+    ];
+    const activeOrders = await this.orderRepository.find({
+      where: { status: In(activeStatuses) },
+      select: ['id', 'quantity', 'bom_revision_id'],
+    });
+
+    const requiredMap = new Map<string, number>();
+    if (activeOrders.length > 0) {
+      const bomRevisionIds = [...new Set(activeOrders.map((o) => o.bom_revision_id))];
+      const bomItems = await this.bomItemRepository.find({
+        where: { bom_revision_id: In(bomRevisionIds) },
+      });
+
+      const bomItemsByRevision = new Map<string, BomItem[]>();
+      for (const item of bomItems) {
+        const items = bomItemsByRevision.get(item.bom_revision_id) ?? [];
+        items.push(item);
+        bomItemsByRevision.set(item.bom_revision_id, items);
+      }
+
+      for (const order of activeOrders) {
+        const items = bomItemsByRevision.get(order.bom_revision_id) ?? [];
+        for (const item of items) {
+          const bomQty = parseFloat(String(item.quantity_required));
+          const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
+          const required = order.quantity * bomQty * (1 + scrapFactor / 100);
+          requiredMap.set(item.material_id, (requiredMap.get(item.material_id) ?? 0) + required);
+        }
+      }
+    }
+
     // Create maps for quick lookup
     const stockMap = new Map<string, number>();
     for (const level of stockLevels) {
@@ -195,6 +233,7 @@ export class InventoryService {
       const quantityOnHand = stockMap.get(material.id) ?? 0;
       const quantityAllocated = allocationMap.get(material.id) ?? 0;
       const quantityOnOrder = onOrderMap.get(material.id) ?? 0;
+      const quantityRequired = Math.ceil((requiredMap.get(material.id) ?? 0) * 10000) / 10000;
       return {
         material_id: material.id,
         material,
@@ -202,6 +241,7 @@ export class InventoryService {
         quantity_allocated: quantityAllocated,
         quantity_available: quantityOnHand - quantityAllocated,
         quantity_on_order: quantityOnOrder,
+        quantity_required: quantityRequired,
       };
     });
   }
@@ -286,6 +326,42 @@ export class InventoryService {
     const quantityAllocated = await this.getAllocatedQuantity(materialId);
     const quantityOnOrder = await this.purchaseOrdersService.getQuantityOnOrder(materialId);
 
+    // Calculate total required across active orders
+    const activeStatuses = [
+      OrderStatus.ENTERED,
+      OrderStatus.KITTING,
+      OrderStatus.SMT,
+      OrderStatus.TH,
+    ];
+    const activeOrders = await this.orderRepository.find({
+      where: { status: In(activeStatuses) },
+      select: ['id', 'quantity', 'bom_revision_id'],
+    });
+
+    let quantityRequired = 0;
+    if (activeOrders.length > 0) {
+      const bomRevisionIds = [...new Set(activeOrders.map((o) => o.bom_revision_id))];
+      const bomItems = await this.bomItemRepository.find({
+        where: { bom_revision_id: In(bomRevisionIds), material_id: materialId },
+      });
+
+      const bomItemsByRevision = new Map<string, BomItem[]>();
+      for (const item of bomItems) {
+        const items = bomItemsByRevision.get(item.bom_revision_id) ?? [];
+        items.push(item);
+        bomItemsByRevision.set(item.bom_revision_id, items);
+      }
+
+      for (const order of activeOrders) {
+        const items = bomItemsByRevision.get(order.bom_revision_id) ?? [];
+        for (const item of items) {
+          const bomQty = parseFloat(String(item.quantity_required));
+          const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
+          quantityRequired += order.quantity * bomQty * (1 + scrapFactor / 100);
+        }
+      }
+    }
+
     return {
       material_id: materialId,
       material,
@@ -293,6 +369,7 @@ export class InventoryService {
       quantity_allocated: quantityAllocated,
       quantity_available: quantityOnHand - quantityAllocated,
       quantity_on_order: quantityOnOrder,
+      quantity_required: Math.ceil(quantityRequired * 10000) / 10000,
     };
   }
 
@@ -1368,7 +1445,7 @@ export class InventoryService {
         material: allocation.material,
         issued_quantity: issuedQty,
         expected_return_quantity: Math.round(expectedReturn * 10000) / 10000,
-        resource_type: bomItem?.resource_type ?? null,
+        resource_type: allocation.material?.resource_type ?? null,
       };
     });
   }
@@ -1719,14 +1796,15 @@ export class InventoryService {
       for (const allocation of issuedAllocations) {
         const bomItem = bomItemMap.get(allocation.material_id);
 
-        // Only auto-consume TH parts
-        if (bomItem?.resource_type !== 'TH') {
+        // Only auto-consume TH parts (resource_type from material)
+        if (allocation.material?.resource_type !== 'TH' || !bomItem) {
           continue;
         }
 
+        const matchedBomItem = bomItem;
         const issuedQty = parseFloat(String(allocation.quantity));
-        const bomQty = parseFloat(String(bomItem.quantity_required));
-        const scrapFactor = parseFloat(String(bomItem.scrap_factor)) || 0;
+        const bomQty = parseFloat(String(matchedBomItem.quantity_required));
+        const scrapFactor = parseFloat(String(matchedBomItem.scrap_factor)) || 0;
         const requiredQty = order.quantity * bomQty * (1 + scrapFactor / 100);
 
         // Only auto-consume if issued = required (exact match)

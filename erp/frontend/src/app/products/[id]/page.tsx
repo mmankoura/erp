@@ -287,11 +287,14 @@ export default function ProductDetailPage() {
         header: "Type",
         defaultWidth: 100,
         defaultVisible: false,
-        cell: (item) => (
-          <span className="text-sm">
-            {item.resource_type ? resourceTypeLabels[item.resource_type] || item.resource_type : "-"}
-          </span>
-        ),
+        cell: (item) => {
+          const rt = item.material?.resource_type;
+          return (
+            <span className="text-sm">
+              {rt ? resourceTypeLabels[rt] || rt : "-"}
+            </span>
+          );
+        },
       },
       {
         key: "reference_designators",
@@ -1012,7 +1015,6 @@ function AddItemDialog({
     alternate_ipn: "",
     quantity_required: 1,
     reference_designators: "",
-    resource_type: "" as ResourceType | "",
     notes: "",
   })
 
@@ -1028,7 +1030,6 @@ function AddItemDialog({
           alternate_ipn: "",
           quantity_required: 1,
           reference_designators: "",
-          resource_type: "",
           notes: "",
         })
         onSuccess()
@@ -1044,7 +1045,6 @@ function AddItemDialog({
       alternate_ipn: formData.alternate_ipn || undefined,
       quantity_required: Number(formData.quantity_required),
       reference_designators: formData.reference_designators || undefined,
-      resource_type: formData.resource_type || undefined,
       notes: formData.notes || undefined,
     })
   }
@@ -1093,37 +1093,17 @@ function AddItemDialog({
                 placeholder="Optional alternate part number"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="quantity_required">Qty Per *</Label>
-                <Input
-                  id="quantity_required"
-                  type="number"
-                  min={0.0001}
-                  step="any"
-                  value={formData.quantity_required}
-                  onChange={(e) => setFormData({ ...formData, quantity_required: parseFloat(e.target.value) || 0 })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="resource_type">Resource Type</Label>
-                <Select
-                  value={formData.resource_type}
-                  onValueChange={(value) => setFormData({ ...formData, resource_type: value as ResourceType })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SMT">SMT</SelectItem>
-                    <SelectItem value="TH">Through-Hole</SelectItem>
-                    <SelectItem value="MECH">Mechanical</SelectItem>
-                    <SelectItem value="PCB">PCB</SelectItem>
-                    <SelectItem value="DNP">Do Not Place</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="quantity_required">Qty Per *</Label>
+              <Input
+                id="quantity_required"
+                type="number"
+                min={0.0001}
+                step="any"
+                value={formData.quantity_required}
+                onChange={(e) => setFormData({ ...formData, quantity_required: parseFloat(e.target.value) || 0 })}
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="reference_designators">Reference Designators</Label>
@@ -1175,7 +1155,6 @@ function EditItemDialog({
     quantity_required: 1,
     alternate_ipn: "",
     reference_designators: "",
-    resource_type: "" as ResourceType | "",
     notes: "",
   })
 
@@ -1186,7 +1165,6 @@ function EditItemDialog({
         quantity_required: item.quantity_required,
         alternate_ipn: item.alternate_ipn || "",
         reference_designators: item.reference_designators || "",
-        resource_type: item.resource_type || "",
         notes: item.notes || "",
       })
     }
@@ -1209,7 +1187,6 @@ function EditItemDialog({
       quantity_required: Number(formData.quantity_required),
       alternate_ipn: formData.alternate_ipn || undefined,
       reference_designators: formData.reference_designators || undefined,
-      resource_type: formData.resource_type || undefined,
       notes: formData.notes || undefined,
     })
   }
@@ -1242,37 +1219,17 @@ function EditItemDialog({
                 placeholder="Optional alternate part number"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit_quantity_required">Qty Per *</Label>
-                <Input
-                  id="edit_quantity_required"
-                  type="number"
-                  min={0.0001}
-                  step="any"
-                  value={formData.quantity_required}
-                  onChange={(e) => setFormData({ ...formData, quantity_required: parseFloat(e.target.value) || 0 })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit_resource_type">Resource Type</Label>
-                <Select
-                  value={formData.resource_type}
-                  onValueChange={(value) => setFormData({ ...formData, resource_type: value as ResourceType })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SMT">SMT</SelectItem>
-                    <SelectItem value="TH">Through-Hole</SelectItem>
-                    <SelectItem value="MECH">Mechanical</SelectItem>
-                    <SelectItem value="PCB">PCB</SelectItem>
-                    <SelectItem value="DNP">Do Not Place</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit_quantity_required">Qty Per *</Label>
+              <Input
+                id="edit_quantity_required"
+                type="number"
+                min={0.0001}
+                step="any"
+                value={formData.quantity_required}
+                onChange={(e) => setFormData({ ...formData, quantity_required: parseFloat(e.target.value) || 0 })}
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit_reference_designators">Reference Designators</Label>

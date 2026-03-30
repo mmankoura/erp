@@ -531,7 +531,6 @@ export class BomService {
     const fieldsToCompare = [
       'quantity_required',
       'reference_designators',
-      'resource_type',
       'polarized',
       'scrap_factor',
       'notes',
@@ -569,7 +568,6 @@ export class BomService {
         line_number: item.line_number ?? undefined,
         reference_designators: item.reference_designators ?? undefined,
         quantity_required: Number(item.quantity_required),
-        resource_type: item.resource_type ?? undefined,
         polarized: item.polarized,
         scrap_factor: Number(item.scrap_factor),
         notes: item.notes ?? undefined,

@@ -29,6 +29,18 @@ export class CreatePurchaseOrderLineDto {
   unit_cost?: number;
 
   @IsString()
+  @IsNotEmpty()
+  manufacturer: string;
+
+  @IsString()
+  @IsNotEmpty()
+  manufacturer_pn: string;
+
+  @IsString()
+  @IsOptional()
+  packaging?: string;
+
+  @IsString()
   @IsOptional()
   notes?: string;
 }

@@ -235,7 +235,7 @@ export class MrpService {
         scrap_factor: scrapFactor,
         required_quantity: Math.ceil(requiredQuantity * 10000) / 10000, // Round to 4 decimals
         reference_designators: item.reference_designators,
-        resource_type: item.resource_type,
+        resource_type: item.material?.resource_type ?? null,
       };
     });
 
@@ -514,11 +514,14 @@ export class MrpService {
       quantity_available: number;
       quantity_on_order: number;
       net_requirement: number;
+      po_numbers: string[];
+      earliest_eta: string | null;
     }> = [];
 
     // Get all material IDs for batch on-order lookup
     const materialIds = [...materialRequirements.keys()];
     const onOrderQuantities = await this.purchaseOrdersService.getQuantitiesOnOrder(materialIds);
+    const poDetailsByMaterial = await this.purchaseOrdersService.getPurchaseOrderDetailsByMaterial(materialIds);
 
     // Batch fetch stock levels for all materials
     const batchStock = await this.inventoryService.getStockByMaterialIds(materialIds);
@@ -532,6 +535,15 @@ export class MrpService {
       const effectiveSupply = stock.quantity_on_hand + quantityOnOrder;
       const netRequirement = Math.max(0, req.total_required - effectiveSupply);
 
+      // PO details
+      const poDetails = poDetailsByMaterial.get(materialId) ?? [];
+      const poNumbers = poDetails.map((p) => p.po_number);
+      const etas = poDetails
+        .map((p) => p.expected_date)
+        .filter((d): d is Date => d !== null)
+        .sort((a, b) => a.getTime() - b.getTime());
+      const earliestEta = etas.length > 0 ? etas[0].toISOString() : null;
+
       materials.push({
         material_id: materialId,
         material: req.material,
@@ -541,6 +553,8 @@ export class MrpService {
         quantity_available: stock.quantity_available,
         quantity_on_order: quantityOnOrder,
         net_requirement: Math.ceil(netRequirement * 10000) / 10000,
+        po_numbers: poNumbers,
+        earliest_eta: earliestEta,
       });
     }
 
@@ -746,7 +760,7 @@ export class MrpService {
         const requiredQuantity =
           order.quantity * bomQuantity * (1 + scrapFactor / 100);
         const allocatedQuantity = orderAllocations.get(item.material_id) ?? 0;
-        const resourceType = item.resource_type ?? 'UNKNOWN';
+        const resourceType = item.material?.resource_type ?? 'UNKNOWN';
 
         const existing = materialRequirements.get(item.material_id);
         if (existing) {
