@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: March 27, 2026
+> **Last Updated**: March 30, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -13,7 +13,7 @@
 - [x] Environment validation (fail-fast on missing DATABASE_URL)
 
 #### Entities (22 complete)
-- [x] **Materials** entity with soft delete + partial unique index + costing fields
+- [x] **Materials** entity with soft delete + partial unique index + costing fields + resource_type (SMT/TH/MECH/PCB/DNP)
 - [x] **Products** entity with soft delete + partial unique index + customer association (required)
 - [x] **Customers** entity with soft delete
 - [x] **BomRevision** entity (BomSource enum: MANUAL, IMPORT_CLIENT, IMPORT_INTERNAL)
@@ -24,7 +24,7 @@
 - [x] **AuditEvent** entity (append-only audit log for compliance and accountability)
 - [x] **Supplier** entity with soft delete + partial unique index
 - [x] **PurchaseOrder** entity (PurchaseOrderStatus: 7 states) + soft delete
-- [x] **PurchaseOrderLine** entity (quantity_ordered, quantity_received tracking)
+- [x] **PurchaseOrderLine** entity (quantity_ordered, quantity_received tracking, manufacturer, manufacturer_pn, packaging)
 - [x] **ApprovedManufacturer** entity (AML - tracks approved MPN/manufacturer combinations per material) + provenance (source, customer scope)
 - [x] **ReceivingInspection** entity (staging area for received items pending validation)
 - [x] **Attachment** entity (entity-agnostic file attachments with SHA256 tamper evidence, soft-delete)
@@ -36,7 +36,7 @@
 - [x] **KittingListScan** entity (individual UID scan records with uid_code, quantity, scanned_by)
 - [x] **PoHistory** entity (flat historical PO archive: po_number, supplier, ipn, mpn, qty, unit_price, currency, etc.)
 
-#### Migrations (28 applied)
+#### Migrations (32 applied)
 - [x] Initial schema (materials, products)
 - [x] AddSoftDeleteToMaterials
 - [x] AddSoftDeleteToProducts
@@ -65,6 +65,10 @@
 - [x] LinkLotsToReceivingLines (receiving_session_line_id FK on inventory_lots)
 - [x] CreateKittingTables (kitting_lists, kitting_list_orders, kitting_list_items, kitting_list_scans with indexes and FK constraints)
 - [x] CreatePoHistory (po_history table with indexes on po_number, supplier, ipn, mpn)
+- [x] AddResourceTypeToMaterial (resource_type enum column on materials, reusing existing resource_type_enum)
+- [x] BackfillMaterialResourceType (backfill resource_type from bom_items, update kitting unique constraint)
+- [x] AddFieldsToPurchaseOrderLines (manufacturer, manufacturer_pn, packaging columns)
+- [x] IncreasePOLineUnitCostPrecision (unit_cost decimal(12,4) → decimal(12,6) for DigiKey pricing)
 
 #### Backend Modules (17 complete) - ~165 API Endpoints Total
 - [x] **Materials Module** (7 endpoints) - CRUD + bulk create + restore
@@ -225,6 +229,16 @@
 - [x] **Allocation Owner Filter Fix (Mar 27)** - Fixed TURNKEY order allocation returning 0 available stock. Root cause: `getAvailableQuantitiesByOwner` filtered by `owner_type`/`owner_id` but general stock queries (MRP, inventory page) did not. Fix: TURNKEY orders now use the same unfiltered stock query as MRP; CONSIGNMENT orders still use owner-filtered query
 
 - [x] **PO Decimal String Fix (Mar 27)** - Fixed `toFixed is not a function` errors on Purchase Orders page. PostgreSQL decimal columns serialize as strings; wrapped `total_amount`, `unit_cost`, `quantity_ordered` with `parseFloat(String(...))`
+
+- [x] **Resource Type on Materials (Mar 30)** - Added `resource_type` (SMT/TH/MECH/PCB/DNP) as a material-level field, making it the single source of truth. All code (kitting, MRP, orders, inventory) now reads resource_type from the material, not BOM items. BOM import backfills resource_type onto materials. Removed resource_type from BOM item add/edit forms. Existing data backfilled from BOM items via migration.
+
+- [x] **Qty Required in Inventory (Mar 30)** - Added "Required" column to inventory stock table showing total quantity needed across all active orders (ENTERED, KITTING, SMT, TH), using the same BOM × order qty × scrap factor calculation as MRP.
+
+- [x] **Kitting List Fixes (Mar 30)** - Fixed 404 on kitting list creation (transaction-scoped reload instead of cross-connection findOne). Fixed findAll/findOne to use withDeleted() for soft-deleted related entities. Kitting items now reflect material's current resource_type.
+
+- [x] **Purchase Orders Overhaul (Mar 30)** - Full-window create dialog with excel-style inline table. Searchable IPN input with autocomplete (replaces dropdown). Default expected date to +2 business days. Manufacturer and MPN fields on PO lines (required, pre-filled from material). DigiKey clipboard paste import with automatic IPN matching via Customer Reference column. Unit cost precision increased to 6 decimal places for DigiKey pricing.
+
+- [x] **MRP ETA & PO Tracking (Mar 30)** - Added "ETA" column to MRP requirements table (earliest expected_date from open POs for each material, overdue dates shown in red). Status column now shows PO number(s) when a PO has been placed (green if fully covered, blue if still short), "In Stock" when available stock covers requirement, or "Short" when neither.
 
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests
