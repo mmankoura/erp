@@ -1,7 +1,5 @@
 "use client"
 
-import { SidebarTrigger } from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -18,16 +16,16 @@ const pathLabels: Record<string, string> = {
   "products": "Products",
   "customers": "Customers",
   "suppliers": "Suppliers",
-  "orders": "Orders",
-  "purchase-orders": "Purchase Orders",
+  "orders": "Customer Orders",
+  "purchase-orders": "Supplier Purchase Orders",
   "inventory": "Inventory",
   "mrp": "MRP / Shortages",
-  "receiving": "Receiving Inspection",
+  "receiving": "Receiving",
   "aml": "Approved Manufacturers",
   "audit": "Audit Log",
-  "production": "Production",
+  "production": "WIP Tracking",
   "kitting": "Kitting",
-  "cycle-counts": "Cycle Counts",
+  "cycle-counts": "Return to Stock",
   "bom": "Bill of Materials",
   "validate": "Validate",
   "users": "Users",
@@ -40,10 +38,11 @@ export function AppHeader() {
   const pathname = usePathname()
   const segments = pathname.split("/").filter(Boolean)
 
+  // Don't show breadcrumb on dashboard
+  if (segments.length === 0) return null
+
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 h-4" />
+    <header className="flex h-10 shrink-0 items-center border-b px-4">
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>

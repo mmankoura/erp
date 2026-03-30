@@ -94,7 +94,7 @@
 - [ ] **Frontend (Next.js)** (~99% complete)
   - [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
   - [x] shadcn/ui component library integrated
-  - [x] Layout: Collapsible sidebar navigation, header with breadcrumbs
+  - [x] Layout: Top navbar with dropdown menus (Catalog, Warehouse, Purchasing, Production, Settings), header with breadcrumbs
   - [x] Dashboard: Stats cards, recent orders, shortages display (fixed Feb 13)
   - [x] Full CRUD pages: Materials, Products, Customers, Suppliers
   - [x] Orders page with computed Material Status (Option A implementation)
@@ -239,6 +239,8 @@
 - [x] **Purchase Orders Overhaul (Mar 30)** - Full-window create dialog with excel-style inline table. Searchable IPN input with autocomplete (replaces dropdown). Default expected date to +2 business days. Manufacturer and MPN fields on PO lines (required, pre-filled from material). DigiKey clipboard paste import with automatic IPN matching via Customer Reference column. Unit cost precision increased to 6 decimal places for DigiKey pricing.
 
 - [x] **MRP ETA & PO Tracking (Mar 30)** - Added "ETA" column to MRP requirements table (earliest expected_date from open POs for each material, overdue dates shown in red). Status column now shows PO number(s) when a PO has been placed (green if fully covered, blue if still short), "In Stock" when available stock covers requirement, or "Short" when neither.
+
+- [x] **Top Navbar Navigation (Mar 30)** - Replaced left sidebar with a top navigation bar. Dropdown menus organized into 5 groups: Catalog (Materials, Products, AML), Warehouse (Inventory, Receiving, Kitting, Return to Stock), Purchasing (Supplier Purchase Orders, MRP/Shortages, Suppliers), Production (Customer Orders, Customers, WIP Tracking), Settings (Users, Audit Log, Settings). Active route highlighting, role-gated Settings menu, user info with logout on the right. Full page width now available for content.
 
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests
