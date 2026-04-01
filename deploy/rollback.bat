@@ -52,11 +52,12 @@ echo   Previous release restored as current\
 
 :: Restart PM2
 echo   Restarting PM2...
-pm2 restart all
+net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 
 :: Wait and show status
 timeout /t 5 /nobreak >nul
-pm2 status
+sc query erp-backend | findstr STATE
+sc query erp-frontend | findstr STATE
 
 echo.
 echo ============================================================
@@ -72,8 +73,8 @@ echo   3. When done: rmdir /s /q broken-release
 echo.
 echo If the failed release included a non-backward-compatible
 echo migration, you must also restore the database:
-echo   pm2 stop all
+echo   net stop erp-backend ^&^& net stop erp-frontend
 echo   "C:\Program Files\PostgreSQL\16\bin\pg_restore" -U postgres -d erp_production --clean --if-exists "C:\erp-backups\pre-migration-backup.dump"
-echo   pm2 restart all
+echo   net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 echo.
 endlocal

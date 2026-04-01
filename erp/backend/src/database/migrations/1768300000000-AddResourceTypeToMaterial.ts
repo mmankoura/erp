@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddResourceTypeToMaterial1706600000000
+export class AddResourceTypeToMaterial1768300000000
   implements MigrationInterface
 {
   public async up(queryRunner: QueryRunner): Promise<void> {

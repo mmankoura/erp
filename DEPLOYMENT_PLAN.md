@@ -1,11 +1,12 @@
 # ERP Production Deployment Plan
 
 > **Created**: March 13, 2026
-> **Last Reviewed**: March 17, 2026
-> **Review Status**: Approved for implementation preparation / pilot deployment
+> **Last Reviewed**: April 1, 2026
+> **Review Status**: Deployment in progress — Phases 1-6 complete
 > **Target Server**: SRV-AT&A (10.12.1.47)
-> **ERP URL**: `http://erp.company.local`
-> **Status**: Environment questions resolved — ready for implementation
+> **ERP URL**: `http://erp.atacanada.ca`
+> **DNS Zone**: `atacanada.ca` (A record: `erp` → `10.12.1.47`)
+> **Status**: ERP running and accessible from LAN. Backup configuration (Phase 7) remaining.
 
 ### Sign-Off Conditions (Before Final Go-Live)
 
@@ -13,18 +14,20 @@
 - [x] Release-based deployment model defined
 - [x] Localhost binding and IIS hardening specified
 - [x] Backup validation mandatory
-- [x] PM2 persistence treated as go/no-go gate
+- [x] Boot persistence defined — NSSM direct services (revised from PM2, see Section 6)
 - [x] Credential handling improved (pgpass.conf)
 - [x] Migration rollback policy defined (Section 7.5)
 - [x] Snapshot language corrected — snapshots are pre-change protection, not backup (Section 9)
 - [x] Monitoring checks written as operational procedure (Section 14)
 
-#### Execution / Validation (outstanding — required before go-live)
-- [x] Deploy script dry-run tested on dev machine (Section 7.4) — build steps pass; server copy pending first deploy
-- [ ] Migration rollback policy validated during first live migration (Section 7.5)
+#### Execution / Validation
+- [x] Deploy script dry-run tested on dev machine (Section 7.4) — build steps pass
+- [x] First release deployed and migrations run successfully (46 migrations) — April 1, 2026
 - [x] Outstanding environment questions answered (Section 10) — resolved March 17, 2026
+- [x] NSSM GO/NO-GO gate passed (Section 6) — crash recovery, full reboot, headless boot all passed
+- [x] IIS reverse proxy configured and tested — `http://erp.atacanada.ca` accessible from LAN
 - [ ] Backup path confirmed and Tier 2 cross-VM copy tested (`\\FactoryLogix\erp-backups\`)
-- [ ] PM2 GO/NO-GO gate passed (Section 6)
+- [ ] Backup restore test passed
 
 ---
 
@@ -223,7 +226,7 @@ Factory LAN (10.12.1.0/24)
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │  IIS (Reverse Proxy — only externally exposed service)     │  │
-│  │    http://erp.company.local  (or http://10.12.1.47)         │  │
+│  │    http://erp.atacanada.ca  (or http://10.12.1.47)         │  │
 │  │      /        → localhost:3000  (Next.js frontend)         │  │
 │  │      /api/*   → localhost:3002  (NestJS backend)           │  │
 │  │                                                            │  │
@@ -296,7 +299,7 @@ SRV-AT&A is now a **multi-role business-critical server** hosting shared drives,
 1. **No ad-hoc changes on the server.** All ERP updates go through the release-based deployment process (Section 7). No `npm install`, `git pull`, or `npm run build` directly on this machine.
 2. **No builds on production.** Build artifacts are created on the dev machine and copied to the server as complete, tested releases.
 3. **Test before deploy.** Every release must pass `npm run build` and `npx tsc --noEmit` on the dev machine before being packaged.
-4. **Keep a rollback.** The previous release is always preserved on disk. Rollback = rename two folders + `pm2 restart all` (< 30 seconds).
+4. **Keep a rollback.** The previous release is always preserved on disk. Rollback = rename two folders + `net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend` (< 30 seconds).
 5. **Scheduled maintenance window.** ERP updates happen during off-hours or a communicated window — never during active production shifts.
 6. **No unrelated software installs.** Do not install dev tools, experiment with other services, or make Windows configuration changes on this server without planning and a VMware snapshot first.
 7. **Snapshot before risky changes.** Take a VMware snapshot before any server-level change (Windows updates, IIS changes, PostgreSQL upgrades). Delete the snapshot after confirming stability (see Section 9).
@@ -361,22 +364,60 @@ IIS is the **only service exposed to the LAN**. Node.js processes and PostgreSQL
 
 ---
 
-## 6. Process Management — PM2 on Windows
+## 6. Process Management — NSSM Direct Services
 
-### Honest Assessment
+### Architecture Decision (Revised March 31, 2026)
 
-PM2 is a **pragmatic compromise** for Windows, not best practice. On Linux, systemd would be the standard. On Windows, the native service manager is preferred, but Node.js apps don't natively register as Windows services.
+The original plan used PM2 with `pm2-windows-service` for boot persistence. During deployment, three approaches were tested and failed:
 
-**Why PM2 is acceptable here:**
-- 5-10 users, low traffic, single admin
-- Auto-restart on crash
-- Built-in log rotation
-- `pm2-windows-service` wraps PM2 as a Windows service for boot persistence
+1. **`pm2-windows-service`** — deprecated, service did not register properly on Windows Server 2019 / Node 22
+2. **NSSM + PM2** — NSSM successfully launched Node processes at boot, but PM2's daemon architecture created identity mismatches between the SYSTEM service context and the Administrator user context. Processes ran but `pm2 status` could not see them.
+3. **Task Scheduler `AtStartup`** — task registered and worked when manually triggered, but the `AtStartup` trigger never fired on boot (root cause undetermined)
 
-**Known risks:**
-- PM2 Windows service wrapper has occasional edge cases on startup
-- Less battle-tested than Linux systemd
-- If `pm2-windows-service` breaks on a Windows update, ERP won't auto-start until manually fixed
+**Revised approach: NSSM runs Node.js directly as Windows services, bypassing PM2 entirely for boot persistence.**
+
+| Concern | How It's Handled |
+|---------|-----------------|
+| **Boot persistence** | NSSM registers native Windows services — starts automatically, no login required |
+| **Crash restart** | NSSM + Windows service recovery options (Restart the Service on all failures) |
+| **Log management** | NSSM redirects stdout/stderr to log files in `C:\apps\erp\logs\` |
+| **Identity** | Services run as `LocalSystem` — no PM2 daemon, no profile mismatch |
+
+**PM2 remains installed** for optional manual use (ad-hoc process management, live log tailing with `pm2 logs`) but is **not in the startup path**.
+
+### NSSM Service Configuration
+
+**Download:** NSSM 2.24-101 pre-release from nssm.cc (required for Windows Server 2016+). Place `nssm.exe` at `C:\erp-deploy\nssm.exe`.
+
+**Backend service (`erp-backend`):**
+```
+nssm install erp-backend "C:\Program Files\nodejs\node.exe"
+nssm set erp-backend AppParameters "--max-old-space-size=512 C:\apps\erp\current\backend\dist\main.js"
+nssm set erp-backend AppDirectory "C:\apps\erp\current\backend"
+nssm set erp-backend AppEnvironmentExtra NODE_ENV=production PORT=3002 HOST=127.0.0.1
+nssm set erp-backend AppStdout "C:\apps\erp\logs\backend-out.log"
+nssm set erp-backend AppStderr "C:\apps\erp\logs\backend-error.log"
+nssm set erp-backend AppStdoutCreationDisposition 4
+nssm set erp-backend AppStderrCreationDisposition 4
+nssm set erp-backend AppRotateFiles 1
+nssm set erp-backend AppRotateBytes 10485760
+nssm set erp-backend Start SERVICE_AUTO_START
+```
+
+**Frontend service (`erp-frontend`):**
+```
+nssm install erp-frontend "C:\Program Files\nodejs\node.exe"
+nssm set erp-frontend AppParameters "C:\apps\erp\current\frontend\node_modules\next\dist\bin\next start -p 3000 -H 127.0.0.1"
+nssm set erp-frontend AppDirectory "C:\apps\erp\current\frontend"
+nssm set erp-frontend AppEnvironmentExtra NODE_ENV=production PORT=3000
+nssm set erp-frontend AppStdout "C:\apps\erp\logs\frontend-out.log"
+nssm set erp-frontend AppStderr "C:\apps\erp\logs\frontend-error.log"
+nssm set erp-frontend AppStdoutCreationDisposition 4
+nssm set erp-frontend AppStderrCreationDisposition 4
+nssm set erp-frontend AppRotateFiles 1
+nssm set erp-frontend AppRotateBytes 10485760
+nssm set erp-frontend Start SERVICE_AUTO_START
+```
 
 ### GO/NO-GO Checkpoint (Mandatory Before Go-Live)
 
@@ -384,30 +425,22 @@ This is **not a checklist item** — it is a **gate**. Do not proceed to go-live
 
 | Test | How | Pass Criteria |
 |------|-----|---------------|
-| **Crash recovery** | `pm2 stop erp-backend`, wait 10s, check `pm2 status` | PM2 auto-restarts the process within `restart_delay` (5s) |
-| **Full server reboot** | Reboot SRV-AT&A from Windows | After login screen appears (or after 3 minutes if auto-login), `pm2 status` shows both processes "online" without manual intervention |
-| **Service recovery** | Kill the PM2 Windows service via `services.msc`, wait 30s | Windows service restarts (verify recovery options are set to "Restart the Service") |
-| **Headless boot** | Reboot server, do NOT log in via RDP, wait 5 minutes, try accessing ERP from a workstation | ERP loads in browser — PM2 service must run without an interactive desktop session |
+| **Crash recovery** | `taskkill /F /PID <backend_pid>`, wait 10s | Service restarts automatically, `curl http://127.0.0.1:3002/api/health` returns OK |
+| **Full server reboot** | Reboot SRV-AT&A from Windows | After 3 minutes, `sc query erp-backend` and `sc query erp-frontend` both show RUNNING |
+| **Service recovery** | Stop `erp-backend` in `services.msc`, wait 30s | Windows service restarts (verify recovery options are set to "Restart the Service") |
+| **Headless boot** | Reboot server, do NOT log in via RDP, wait 5 minutes, try accessing ERP from a workstation | `curl http://10.12.1.47:3002/api/health` returns OK from dev machine |
 
-**If headless boot fails:** PM2 Windows service may require a logged-in session. In that case, configure auto-login on the server or switch to NSSM (Non-Sucking Service Manager) as an alternative.
+**All 4 must pass.**
 
 ### Log Retention Policy
 
 | Log | Location | Rotation | Retention |
 |-----|----------|----------|-----------|
-| Backend stdout | `C:\apps\erp\logs\backend-out.log` | PM2 log-rotate module, 10 MB max per file | 30 days |
-| Backend errors | `C:\apps\erp\logs\backend-error.log` | PM2 log-rotate module, 10 MB max per file | 90 days |
-| Frontend stdout | `C:\apps\erp\logs\frontend-out.log` | PM2 log-rotate module, 10 MB max per file | 30 days |
-| Frontend errors | `C:\apps\erp\logs\frontend-error.log` | PM2 log-rotate module, 10 MB max per file | 90 days |
+| Backend stdout | `C:\apps\erp\logs\backend-out.log` | NSSM file rotation, 10 MB max | 30 days |
+| Backend errors | `C:\apps\erp\logs\backend-error.log` | NSSM file rotation, 10 MB max | 90 days |
+| Frontend stdout | `C:\apps\erp\logs\frontend-out.log` | NSSM file rotation, 10 MB max | 30 days |
+| Frontend errors | `C:\apps\erp\logs\frontend-error.log` | NSSM file rotation, 10 MB max | 90 days |
 | IIS access logs | `C:\inetpub\logs\LogFiles\` | Daily rotation (IIS default) | 90 days |
-
-Install PM2 log-rotate after PM2 setup:
-```
-pm2 install pm2-logrotate
-pm2 set pm2-logrotate:max_size 10M
-pm2 set pm2-logrotate:retain 30
-pm2 set pm2-logrotate:compress true
-```
 
 ---
 
@@ -497,7 +530,7 @@ C:\apps\erp\
 > - The `%date%` parsing (`%date:~-4%` etc.) is **locale-sensitive on Windows**. If your regional date format is not `MM/DD/YYYY`, the date extraction will produce wrong values. Test by running `echo %date%` on both machines and adjusting the offsets if needed.
 > - Next.js may need additional runtime files beyond `.next/`, `node_modules/`, `public/`, and `package.json` depending on project config. Verify by testing the release on the server before go-live.
 > - The script assumes it is launched from the **project root** (the directory containing `erp/backend/` and `erp/frontend/`). It uses `%~dp0` to resolve this automatically.
-> - Robocopy to the server share has not been tested yet (requires `\\erp.company.local\erp-deploy` to exist on SRV-AT&A).
+> - Robocopy to the server share has not been tested yet (requires `\\erp.atacanada.ca\erp-deploy` to exist on SRV-AT&A).
 
 ```batch
 @echo off
@@ -509,7 +542,7 @@ setlocal
 :: ============================================================
 
 :: Configuration — adjust these for your environment
-set SERVER_SHARE=\\erp.company.local\erp-deploy
+set SERVER_SHARE=\\erp.atacanada.ca\erp-deploy
 set PROJECT_ROOT=%~dp0
 set BACKEND_DIR=%PROJECT_ROOT%erp\backend
 set FRONTEND_DIR=%PROJECT_ROOT%erp\frontend
@@ -611,10 +644,10 @@ This means:
    a. If the migration was backward-compatible → code rollback is safe
       > Follow normal rollback procedure (Section 7.7)
    b. If the migration was NOT backward-compatible → full database restore required
-      > pm2 stop all
+      > net stop erp-backend && net stop erp-frontend
       > pg_restore -U postgres -d erp_production --clean --if-exists <pre-migration-backup.dump>
       > Follow normal rollback procedure (Section 7.7)
-      > pm2 restart all
+      > net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 ```
 
 #### Granting Permissions After Migration
@@ -674,7 +707,7 @@ copy shared\.env.backend current\backend\.env.production
 copy shared\.env.frontend current\frontend\.env.production
 
 :: Step 5: Restart
-pm2 restart all
+net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 
 :: Step 6: Clean up old backup
 if exist previous-backup (
@@ -684,13 +717,13 @@ if exist previous-backup (
 
 #### Post-Switch Verification
 
-Run these checks **immediately** after `pm2 restart all`:
+Run these checks **immediately** after `net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend`:
 
 | Check | How | Expected Result |
 |-------|-----|-----------------|
 | **PM2 status** | `pm2 status` | Both processes show "online", uptime incrementing |
 | **Backend health** | `curl http://127.0.0.1:3002/api/health` (or open in browser on server) | Returns `{"status":"ok"}` |
-| **Frontend loads** | Open `http://erp.company.local` from a workstation browser | Login page renders |
+| **Frontend loads** | Open `http://erp.atacanada.ca` from a workstation browser | Login page renders |
 | **Login works** | Log in with a test account | Dashboard loads with data |
 | **Env files present** | `dir C:\apps\erp\current\backend\.env.production` | File exists, non-empty |
 
@@ -704,7 +737,7 @@ If a new release has problems:
 cd /d C:\apps\erp
 rename current broken-release
 rename previous current
-pm2 restart all
+net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 :: ERP is back on the last known good version
 
 :: After investigation, clean up:
@@ -976,13 +1009,13 @@ endlocal
 **Scenario A: Database corruption or bad data**
 ```batch
 :: 1. Stop ERP
-pm2 stop all
+net stop erp-backend && net stop erp-frontend
 
 :: 2. Restore from most recent backup
 "C:\Program Files\PostgreSQL\16\bin\pg_restore" -U postgres -d erp_production --clean --if-exists "C:\erp-backups\erp_production_YYYYMMDD.dump"
 
 :: 3. Restart ERP
-pm2 restart all
+net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 
 :: Estimated recovery time: 2-5 minutes
 ```
@@ -993,7 +1026,7 @@ pm2 restart all
 cd /d C:\apps\erp
 rename current broken-release
 rename previous current
-pm2 restart all
+net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 
 :: Estimated recovery time: < 30 seconds
 ```
@@ -1001,7 +1034,7 @@ pm2 restart all
 **Scenario C: Bad release with non-backward-compatible migration**
 ```batch
 :: Must restore both code AND database
-pm2 stop all
+net stop erp-backend && net stop erp-frontend
 
 :: Restore database from pre-migration backup
 "C:\Program Files\PostgreSQL\16\bin\pg_restore" -U postgres -d erp_production --clean --if-exists "C:\erp-backups\pre-migration-backup.dump"
@@ -1010,7 +1043,7 @@ pm2 stop all
 cd /d C:\apps\erp
 rename current broken-release
 rename previous current
-pm2 restart all
+net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 
 :: Estimated recovery time: 2-5 minutes
 ```
@@ -1053,9 +1086,9 @@ Create a shared folder `\\10.12.1.47\erp-deploy` on SRV-AT&A. Build script on de
 IIS is active with Web Server (18 of 34 sub-features) and Management Tools (3 of 7). FTP Server is not installed (not needed). Still need to install **URL Rewrite** and **Application Request Routing (ARR)** modules (separate downloads from iis.net).
 
 ### Q-C. DNS entry
-> **Answer: `erp.company.local`**
+> **Answer: `erp.atacanada.ca`**
 
-Add an A record on the DNS server (SRV-AT&A itself): `erp.company.local` → `10.12.1.47`. Professional naming that leaves room for future services (e.g., `mes.company.local`).
+Add an A record on the DNS server (SRV-AT&A itself): `erp.atacanada.ca` → `10.12.1.47`. Professional naming that leaves room for future services (e.g., `mes.atacanada.ca`).
 
 ### Q-D. HTTPS at launch?
 > **Answer: No — launch with HTTP, HTTPS is post-launch hardening (Section 15)**
@@ -1100,7 +1133,7 @@ Before touching the server, build and stage the release:
 - [ ] Open DNS Manager (`dnsmgmt.msc`)
 - [ ] Navigate to Forward Lookup Zones → your zone
 - [ ] Add New Host (A record): Name = `erp`, IP = `10.12.1.47`
-- [ ] Verify from a workstation: `ping erp.company.local` should resolve to `10.12.1.47`
+- [ ] Verify from a workstation: `ping erp.atacanada.ca` should resolve to `10.12.1.47`
 
 **1.2 — Node.js**
 - [ ] Download and install Node.js LTS (v22.x) from nodejs.org — Windows installer
@@ -1113,16 +1146,9 @@ Before touching the server, build and stage the release:
 - [ ] Do NOT install Stack Builder
 - [ ] Verify: `services.msc` → "postgresql-x64-16" shows "Running"
 
-**1.4 — PM2**
-- [ ] `npm install -g pm2`
-- [ ] `npm install -g pm2-windows-service`
-- [ ] `pm2 install pm2-logrotate`
-- [ ] Configure log rotation:
-  ```
-  pm2 set pm2-logrotate:max_size 10M
-  pm2 set pm2-logrotate:retain 30
-  pm2 set pm2-logrotate:compress true
-  ```
+**1.4 — NSSM and PM2**
+- [ ] Download NSSM 2.24-101 pre-release from nssm.cc — extract `win64\nssm.exe` to `C:\erp-deploy\nssm.exe`
+- [ ] `npm install -g pm2` (optional — for manual admin use, not in startup path)
 
 **1.5 — IIS Modules** (IIS itself is already enabled)
 - [ ] Download and install URL Rewrite module from iis.net
@@ -1132,7 +1158,7 @@ Before touching the server, build and stage the release:
 - [ ] Create folder `C:\erp-deploy` on SRV-AT&A
 - [ ] Right-click → Properties → Sharing → Advanced Sharing → share as `erp-deploy`
 - [ ] Grant your dev machine user read/write access
-- [ ] Verify from dev machine: `dir \\erp.company.local\erp-deploy` shows the folder
+- [ ] Verify from dev machine: `dir \\erp.atacanada.ca\erp-deploy` shows the folder
 
 ---
 
@@ -1190,16 +1216,16 @@ Before touching the server, build and stage the release:
 **4.1 — Copy Release to Server** (from dev machine)
 - [ ] Copy backend artifacts to server:
   ```
-  robocopy erp\backend\dist \\erp.company.local\erp-deploy\current\backend\dist /E /NP
-  robocopy erp\backend\node_modules \\erp.company.local\erp-deploy\current\backend\node_modules /E /NP
-  copy erp\backend\package.json \\erp.company.local\erp-deploy\current\backend\
+  robocopy erp\backend\dist \\erp.atacanada.ca\erp-deploy\current\backend\dist /E /NP
+  robocopy erp\backend\node_modules \\erp.atacanada.ca\erp-deploy\current\backend\node_modules /E /NP
+  copy erp\backend\package.json \\erp.atacanada.ca\erp-deploy\current\backend\
   ```
 - [ ] Copy frontend artifacts to server:
   ```
-  robocopy erp\frontend\.next \\erp.company.local\erp-deploy\current\frontend\.next /E /NP
-  robocopy erp\frontend\node_modules \\erp.company.local\erp-deploy\current\frontend\node_modules /E /NP
-  robocopy erp\frontend\public \\erp.company.local\erp-deploy\current\frontend\public /E /NP
-  copy erp\frontend\package.json \\erp.company.local\erp-deploy\current\frontend\
+  robocopy erp\frontend\.next \\erp.atacanada.ca\erp-deploy\current\frontend\.next /E /NP
+  robocopy erp\frontend\node_modules \\erp.atacanada.ca\erp-deploy\current\frontend\node_modules /E /NP
+  robocopy erp\frontend\public \\erp.atacanada.ca\erp-deploy\current\frontend\public /E /NP
+  copy erp\frontend\package.json \\erp.atacanada.ca\erp-deploy\current\frontend\
   ```
 
 **4.2 — Move to App Directory** (on server)
@@ -1240,36 +1266,66 @@ Before touching the server, build and stage the release:
 
 ---
 
-### Phase 5: Process Management (~15 min)
+### Phase 5: Process Management — NSSM Direct Services (~15 min)
 
-**5.1 — Create PM2 Config**
-- [ ] Create `C:\apps\erp\ecosystem.config.js` with contents from Section 12
+**5.0 — Clean Up Previous Attempts** (if applicable)
+- [ ] Remove any existing scheduled tasks: `schtasks /delete /TN "PM2 ERP Startup" /F`
+- [ ] Kill orphaned Node processes: `taskkill /F /IM node.exe`
+- [ ] Kill PM2 daemon: `pm2 kill`
 
-**5.2 — Start and Register**
-- [ ] Start processes:
+**5.1 — Install Backend Service**
+- [ ] Run from Command Prompt (as Administrator):
   ```batch
-  cd /d C:\apps\erp
-  pm2 start ecosystem.config.js
+  C:\erp-deploy\nssm.exe install erp-backend "C:\Program Files\nodejs\node.exe"
+  C:\erp-deploy\nssm.exe set erp-backend AppParameters "--max-old-space-size=512 C:\apps\erp\current\backend\dist\main.js"
+  C:\erp-deploy\nssm.exe set erp-backend AppDirectory "C:\apps\erp\current\backend"
+  C:\erp-deploy\nssm.exe set erp-backend AppEnvironmentExtra NODE_ENV=production PORT=3002 HOST=127.0.0.1
+  C:\erp-deploy\nssm.exe set erp-backend AppStdout "C:\apps\erp\logs\backend-out.log"
+  C:\erp-deploy\nssm.exe set erp-backend AppStderr "C:\apps\erp\logs\backend-error.log"
+  C:\erp-deploy\nssm.exe set erp-backend AppStdoutCreationDisposition 4
+  C:\erp-deploy\nssm.exe set erp-backend AppStderrCreationDisposition 4
+  C:\erp-deploy\nssm.exe set erp-backend AppRotateFiles 1
+  C:\erp-deploy\nssm.exe set erp-backend AppRotateBytes 10485760
+  C:\erp-deploy\nssm.exe set erp-backend Start SERVICE_AUTO_START
   ```
-- [ ] Verify both show "online": `pm2 status`
-- [ ] Save process list: `pm2 save`
-- [ ] Register as Windows service: `pm2-service-install`
-- [ ] Open `services.msc` → find the PM2 service → Properties → Recovery tab:
-  - First failure: Restart the Service
-  - Second failure: Restart the Service
-  - Third failure: Restart the Service
+- [ ] Set recovery options: `services.msc` → `erp-backend` → Properties → Recovery tab:
+  - First / Second / Subsequent failures: Restart the Service
   - Reset fail count after: 1 day
 
-**5.3 — GO/NO-GO GATE (mandatory)**
+**5.2 — Install Frontend Service**
+- [ ] Run from Command Prompt (as Administrator):
+  ```batch
+  C:\erp-deploy\nssm.exe install erp-frontend "C:\Program Files\nodejs\node.exe"
+  C:\erp-deploy\nssm.exe set erp-frontend AppParameters "C:\apps\erp\current\frontend\node_modules\next\dist\bin\next start -p 3000 -H 127.0.0.1"
+  C:\erp-deploy\nssm.exe set erp-frontend AppDirectory "C:\apps\erp\current\frontend"
+  C:\erp-deploy\nssm.exe set erp-frontend AppEnvironmentExtra NODE_ENV=production PORT=3000
+  C:\erp-deploy\nssm.exe set erp-frontend AppStdout "C:\apps\erp\logs\frontend-out.log"
+  C:\erp-deploy\nssm.exe set erp-frontend AppStderr "C:\apps\erp\logs\frontend-error.log"
+  C:\erp-deploy\nssm.exe set erp-frontend AppStdoutCreationDisposition 4
+  C:\erp-deploy\nssm.exe set erp-frontend AppStderrCreationDisposition 4
+  C:\erp-deploy\nssm.exe set erp-frontend AppRotateFiles 1
+  C:\erp-deploy\nssm.exe set erp-frontend AppRotateBytes 10485760
+  C:\erp-deploy\nssm.exe set erp-frontend Start SERVICE_AUTO_START
+  ```
+- [ ] Set recovery options: same as backend
+
+**5.3 — Start Services**
+- [ ] `net start erp-backend`
+- [ ] `net start erp-frontend`
+- [ ] Verify backend: `curl http://127.0.0.1:3002/api/health`
+- [ ] Verify frontend: `curl http://127.0.0.1:3000`
+- [ ] Verify in `services.msc`: both show "Running", startup type "Automatic"
+
+**5.4 — GO/NO-GO GATE (mandatory)**
 
 | # | Test | Action | Pass Criteria |
 |---|------|--------|---------------|
-| 1 | **Crash recovery** | `pm2 stop erp-backend`, wait 10s, `pm2 status` | Process auto-restarts |
-| 2 | **Full reboot** | Reboot server from Windows | After 3 min, `pm2 status` shows both "online" |
-| 3 | **Service kill** | Kill PM2 service in `services.msc`, wait 30s | Service restarts automatically |
-| 4 | **Headless boot** | Reboot, do NOT log in via RDP, wait 5 min, access ERP from workstation | ERP loads in browser |
+| 1 | **Crash recovery** | Kill backend Node PID with `taskkill /F /PID <pid>`, wait 10s | `sc query erp-backend` shows RUNNING, health check returns OK |
+| 2 | **Full reboot** | `shutdown /r /t 10` | After 3 min, `sc query erp-backend` and `sc query erp-frontend` both show RUNNING |
+| 3 | **Service stop recovery** | Stop `erp-backend` in `services.msc`, wait 30s | N/A — manual stops do not trigger recovery (expected Windows behavior; recovery only fires on unexpected exits) |
+| 4 | **Headless boot** | Reboot, do NOT log in via RDP, wait 5 min, access from workstation | Open `http://erp.atacanada.ca` from a workstation browser — ERP loads (requires IIS Phase 6 to be completed first) |
 
-**All 4 must pass. If test 4 fails:** configure auto-login or switch to NSSM.
+**Tests 1, 2, and 4 must pass.**
 
 ---
 
@@ -1288,19 +1344,23 @@ Before touching the server, build and stage the release:
 - [ ] Stop or remove "Default Web Site" if it's bound to port 80
 
 **6.3 — Configure Rewrite Rules**
-- [ ] Create `C:\apps\erp\current\frontend\web.config` with contents from Section 5
-- [ ] In IIS Manager → ERP site → URL Rewrite → verify rules appear
+- [ ] Copy `deploy\web.config` to `C:\apps\erp\current\frontend\web.config`
+- [ ] In IIS Manager → ERP site → URL Rewrite → verify two rules appear (API Proxy, Frontend Proxy)
+- [ ] **Required:** In URL Rewrite → View Server Variables → Add these three:
+  - `HTTP_X_FORWARDED_FOR`
+  - `HTTP_X_FORWARDED_PROTO`
+  - `HTTP_X_FORWARDED_HOST`
+  - (Without these, IIS returns 500 URL Rewrite Module Error)
 
 **6.4 — Firewall**
-- [ ] Open Windows Firewall with Advanced Security
-- [ ] Inbound Rules → New Rule:
-  - Allow inbound TCP port 80
+- [ ] Verify inbound TCP port 80 is allowed (check existing rules first — may already exist)
 - [ ] Verify there are NO inbound allow rules for ports 3000, 3002, or 5432
 
 **6.5 — Test**
-- [ ] From a workstation browser: open `http://erp.company.local`
+- [ ] From a workstation browser: open `http://erp.atacanada.ca`
 - [ ] Fallback test: open `http://10.12.1.47`
 - [ ] Both should show the ERP login page
+- [ ] Log in and verify dashboard loads with data
 
 ---
 
@@ -1337,7 +1397,7 @@ Before touching the server, build and stage the release:
 
 ### Phase 8: Smoke Testing (~30 min)
 
-- [ ] From a workstation browser: open `http://erp.company.local`
+- [ ] From a workstation browser: open `http://erp.atacanada.ca`
 - [ ] Create admin user account (first user via seed or API)
 - [ ] Test login / logout
 - [ ] Create a test customer
@@ -1361,10 +1421,10 @@ Before touching the server, build and stage the release:
   npx typeorm migration:run -d dist/data-source.js
   :: Then re-run GRANT statements from Phase 4.5
   ```
-- [ ] Restart ERP: `pm2 restart all`
+- [ ] Restart ERP: `net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend`
 - [ ] Create real admin account with a strong password
 - [ ] Create user accounts for all operators / managers
-- [ ] Bookmark `http://erp.company.local` on all shared workstations
+- [ ] Bookmark `http://erp.atacanada.ca` on all shared workstations
 - [ ] Train users on basic workflows
 - [ ] Set calendar reminder: monthly off-host backup (Tier 3) — 1st of each month
 - [ ] Set calendar reminder: first monthly operations review (Section 14) — 1 month from go-live
@@ -1388,63 +1448,21 @@ NODE_ENV=production
 SESSION_SECRET=GENERATE_A_64_CHAR_RANDOM_STRING_HERE
 
 # CORS — the URL users access the ERP from
-CORS_ORIGIN=http://erp.company.local
+CORS_ORIGIN=http://erp.atacanada.ca
 ```
 
 ### Frontend: `C:\apps\erp\shared\.env.frontend`
 
 ```env
 # API URL — goes through IIS reverse proxy (same origin, no CORS issues)
-NEXT_PUBLIC_API_URL=http://erp.company.local/api
+NEXT_PUBLIC_API_URL=http://erp.atacanada.ca/api
 ```
 
-### PM2 Ecosystem: `C:\apps\erp\ecosystem.config.js`
+### NSSM Service Configuration
 
-```javascript
-module.exports = {
-  apps: [
-    {
-      name: 'erp-backend',
-      cwd: 'C:\\apps\\erp\\current\\backend',
-      script: 'dist/main.js',
-      node_args: '--max-old-space-size=512',
-      env: {
-        NODE_ENV: 'production',
-        PORT: 3002,
-        HOST: '127.0.0.1',
-      },
-      instances: 1,
-      autorestart: true,
-      max_restarts: 10,
-      restart_delay: 5000,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss',
-      error_file: 'C:\\apps\\erp\\logs\\backend-error.log',
-      out_file: 'C:\\apps\\erp\\logs\\backend-out.log',
-      merge_logs: true,
-      max_memory_restart: '1G',
-    },
-    {
-      name: 'erp-frontend',
-      cwd: 'C:\\apps\\erp\\current\\frontend',
-      script: 'node_modules/.bin/next',
-      args: 'start -p 3000 -H 127.0.0.1',
-      env: {
-        NODE_ENV: 'production',
-        PORT: 3000,
-      },
-      instances: 1,
-      autorestart: true,
-      max_restarts: 10,
-      restart_delay: 5000,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss',
-      error_file: 'C:\\apps\\erp\\logs\\frontend-error.log',
-      out_file: 'C:\\apps\\erp\\logs\\frontend-out.log',
-      merge_logs: true,
-      max_memory_restart: '1G',
-    },
-  ],
-};
-```
+Boot persistence is handled by two NSSM-managed Windows services (`erp-backend`, `erp-frontend`) that run `node.exe` directly. See Section 6 for the full NSSM configuration commands.
+
+PM2 is **not** in the startup path. It remains available for optional manual use (`pm2 start`, `pm2 logs`, etc.) but services are managed via `services.msc`, `net start/stop`, and `sc query`.
 
 ---
 
@@ -1454,11 +1472,11 @@ module.exports = {
 
 | Task | Command |
 |------|---------|
-| **Check ERP status** | `pm2 status` |
-| **View backend logs** | `pm2 logs erp-backend` |
-| **View frontend logs** | `pm2 logs erp-frontend` |
-| **Restart ERP** | `pm2 restart all` |
-| **Stop ERP** | `pm2 stop all` |
+| **Check ERP status** | `sc query erp-backend` and `sc query erp-frontend` (or `services.msc`) |
+| **View backend logs** | `type C:\apps\erp\logs\backend-out.log` (or `pm2 logs erp-backend` if PM2 is running) |
+| **View frontend logs** | `type C:\apps\erp\logs\frontend-out.log` |
+| **Restart ERP** | `net stop erp-backend && net start erp-backend` (same for frontend) |
+| **Stop ERP** | `net stop erp-backend && net stop erp-frontend` |
 | **Manual backup** | `C:\erp-backups\backup.bat` |
 | **Check backup log** | `type C:\erp-backups\backup.log` |
 | **Check restore test log** | `type C:\erp-backups\restore-test.log` |
@@ -1471,9 +1489,9 @@ module.exports = {
 |------|-------|
 | **Deploy new release** | Build on dev machine → copy to server → run pre-flight (7.6) → switch release (7.6) → post-switch verify (7.6) |
 | **Deploy with migration** | Take backup → run migration (7.5) → grant perms → switch release (7.6) → verify |
-| **Rollback (no migration)** | `rename current broken` → `rename previous current` → `pm2 restart all` |
-| **Rollback (with migration)** | Restore pre-migration backup → code rollback → `pm2 restart all` |
-| **Restore from backup** | `pm2 stop all` → `pg_restore -U postgres -d erp_production --clean --if-exists <backup.dump>` → `pm2 restart all` |
+| **Rollback (no migration)** | `rename current broken` → `rename previous current` → `net stop erp-backend && net start erp-backend` (same for frontend) |
+| **Rollback (with migration)** | Restore pre-migration backup → code rollback → restart services |
+| **Restore from backup** | `net stop erp-backend && net stop erp-frontend` → `pg_restore -U postgres -d erp_production --clean --if-exists <backup.dump>` → `net start erp-backend && net start erp-frontend` |
 
 ### Key Paths
 
@@ -1482,8 +1500,8 @@ module.exports = {
 | `C:\apps\erp\current\` | Active ERP release |
 | `C:\apps\erp\previous\` | Rollback target |
 | `C:\apps\erp\shared\` | Environment files, persistent uploads (NEVER deleted) |
-| `C:\apps\erp\logs\` | PM2 application logs |
-| `C:\apps\erp\ecosystem.config.js` | PM2 process configuration |
+| `C:\apps\erp\logs\` | Application logs (NSSM stdout/stderr) |
+| `C:\erp-deploy\nssm.exe` | NSSM service manager binary |
 | `C:\erp-backups\` | Database backups and logs |
 | `C:\inetpub\logs\LogFiles\` | IIS access logs |
 | `C:\Program Files\PostgreSQL\16\data\log\` | PostgreSQL logs |
@@ -1493,7 +1511,7 @@ module.exports = {
 | Item | Value |
 |------|-------|
 | **Server IP** | `10.12.1.47` |
-| **ERP URL** | `http://erp.company.local` (fallback: `http://10.12.1.47`) |
+| **ERP URL** | `http://erp.atacanada.ca` (fallback: `http://10.12.1.47`) |
 | **IIS** | Port 80 (only externally exposed port) |
 | **Backend** | `127.0.0.1:3002` (localhost only) |
 | **Frontend** | `127.0.0.1:3000` (localhost only) |
@@ -1517,17 +1535,17 @@ This section defines the minimum operational checks needed to keep the ERP healt
 
 | Check | How | What to Look For |
 |-------|-----|-----------------|
-| **ERP is running** | `pm2 status` (RDP into server) | Both processes show "online" with uptime > 0. If either shows "errored" or "stopped", investigate `pm2 logs`. |
+| **ERP is running** | `sc query erp-backend` and `sc query erp-frontend` (RDP into server, or check `services.msc`) | Both services show "RUNNING". If either is "STOPPED", check logs in `C:\apps\erp\logs\` and restart with `net start erp-backend`. |
 | **Backup succeeded** | `type C:\erp-backups\backup.log` | Last entry should show today's date and "SUCCESS". If "ERROR", check disk space and PostgreSQL service status. |
 
-> **Shortcut:** If users are actively using the ERP without complaints, the daily `pm2 status` check can be skipped. But **always check the backup log** — backup failures are silent.
+> **Shortcut:** If users are actively using the ERP without complaints, the daily service check can be skipped. But **always check the backup log** — backup failures are silent.
 
 ### Weekly Checks (~5 minutes, every Monday)
 
 | Check | How | What to Look For |
 |-------|-----|-----------------|
 | **Restore test passed** | `type C:\erp-backups\restore-test.log` | Last Sunday's entry should show "SUCCESS". If "FAILED", fix immediately — your backups may be unusable. |
-| **PM2 restart count** | `pm2 status` — check the "restart" column | If restart count is high (>5 in a week), the app is crashing repeatedly. Check `pm2 logs erp-backend --lines 100` for errors. |
+| **Service stability** | `services.msc` → check both ERP services are "Running" | If a service has stopped, check `C:\apps\erp\logs\backend-error.log` or `frontend-error.log` for crash details. |
 | **IIS access logs exist** | Check `C:\inetpub\logs\LogFiles\` | New daily log files should be appearing. If not, IIS logging may be misconfigured. |
 
 ### Monthly Checks (~15 minutes, 1st of each month)
@@ -1539,7 +1557,7 @@ This section defines the minimum operational checks needed to keep the ERP healt
 | **WAL file size** | Check folder size of `C:\Program Files\PostgreSQL\16\data\pg_wal\` | Should be < 1 GB. If larger, check `max_wal_size` setting. |
 | **PostgreSQL logs** | Check `C:\Program Files\PostgreSQL\16\data\log\` | Delete logs older than 90 days. Check recent logs for repeated ERROR entries. |
 | **IIS log cleanup** | Check `C:\inetpub\logs\LogFiles\` | Delete logs older than 90 days. |
-| **PM2 log size** | Check `C:\apps\erp\logs\` | Should be managed by pm2-logrotate. If individual files > 100 MB, logrotate may not be working. |
+| **Application log size** | Check `C:\apps\erp\logs\` | Should be managed by NSSM log rotation (10 MB max). If individual files > 100 MB, check NSSM rotation config. |
 | **Off-host backup (Tier 3)** | Copy most recent `.dump` file to USB drive or cloud storage | This is your disaster recovery. Do not skip. |
 | **Release cleanup** | Check `C:\apps\erp\releases\` | Keep last 3-5 releases. Delete older ones to free disk space. |
 
@@ -1549,7 +1567,7 @@ Windows Server may install updates that require a reboot. After any reboot:
 
 | Check | How | What to Look For |
 |-------|-----|-----------------|
-| **ERP auto-started** | Open `http://erp.company.local` from a workstation, or `pm2 status` on server | Both processes should be "online". If not, the PM2 Windows service may have broken. Run `pm2 resurrect` or restart manually. |
+| **ERP auto-started** | Open `http://erp.atacanada.ca` from a workstation, or `sc query erp-backend` on server | Both services should show "RUNNING". If not, check NSSM service status and restart with `net start erp-backend` / `net start erp-frontend`. |
 | **PostgreSQL running** | `services.msc` → look for "postgresql-x64-16" | Should show "Running" with startup type "Automatic". |
 | **IIS running** | `services.msc` → look for "World Wide Web Publishing Service" | Should show "Running". |
 
@@ -1559,8 +1577,8 @@ Windows Server may install updates that require a reboot. After any reboot:
 |---------|-------------|--------|
 | Backup log shows ERROR for 2+ consecutive days | PostgreSQL service down, disk full, or pgpass.conf permissions changed | Check PostgreSQL service, check disk space, verify pgpass.conf |
 | Restore test log shows FAILED | Backup file is corrupt, or test database creation failed | Run backup.bat manually, then restore-test.bat. If still failing, check PostgreSQL logs. |
-| PM2 shows high restart count (>10) | Application crash loop | Check `pm2 logs erp-backend --lines 200`. Likely a code bug or database connection issue. Rollback if needed. |
-| Users cannot access ERP | IIS down, PM2 down, or network issue | Check IIS service, pm2 status, and that port 80 is not blocked by firewall. |
+| ERP service keeps stopping | Application crash loop | Check `C:\apps\erp\logs\backend-error.log`. Likely a code bug or database connection issue. Rollback if needed. |
+| Users cannot access ERP | IIS down, ERP services down, or network issue | Check IIS service, `sc query erp-backend`, `sc query erp-frontend`, and that port 80 is not blocked by firewall. |
 | Disk space below 20 GB | Old releases, backup accumulation, or PostgreSQL log growth | Clean old releases, verify backup retention cleanup is working, clean old PostgreSQL/IIS logs. |
 
 ---

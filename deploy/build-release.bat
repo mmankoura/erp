@@ -15,7 +15,7 @@ setlocal
 :: ============================================================
 
 :: Configuration — adjust these for your environment
-set SERVER_SHARE=\\erp.company.local\erp-deploy
+set SERVER_SHARE=\\10.12.1.47\erp-deploy
 set PROJECT_ROOT=%~dp0..
 set BACKEND_DIR=%PROJECT_ROOT%\erp\backend
 set FRONTEND_DIR=%PROJECT_ROOT%\erp\frontend

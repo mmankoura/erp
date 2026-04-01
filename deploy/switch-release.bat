@@ -59,12 +59,12 @@ if not exist "%APP_DIR%\shared\.env.frontend" (
 )
 echo   Environment files: OK
 
-echo [Pre-flight] Checking PM2 status...
-pm2 status >nul 2>&1
+echo [Pre-flight] Checking ERP services...
+sc query erp-backend >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo WARNING: PM2 may not be running. Continuing anyway...
+    echo WARNING: erp-backend service may not be installed. Continuing anyway...
 ) else (
-    echo   PM2: OK
+    echo   ERP services: OK
 )
 
 echo.
@@ -109,7 +109,7 @@ echo   Environment files copied
 
 :: Step 5: Restart PM2
 echo   Restarting PM2...
-pm2 restart all
+net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
 echo   PM2 restarted
 
 :: Step 6: Clean up old backup
@@ -121,9 +121,10 @@ echo.
 
 :: ---- POST-SWITCH VERIFICATION ----
 
-echo [Verify] Checking PM2 status...
+echo [Verify] Checking service status...
 timeout /t 5 /nobreak >nul
-pm2 status
+sc query erp-backend | findstr STATE
+sc query erp-frontend | findstr STATE
 
 echo.
 echo [Verify] Checking backend health...
@@ -136,8 +137,8 @@ echo   Release switch complete: %RELEASE_NAME%
 echo ============================================================
 echo.
 echo Post-switch checklist:
-echo   1. Check PM2 status above — both processes should be "online"
-echo   2. Open http://erp.company.local from a workstation browser
+echo   1. Check service status above — both should show RUNNING
+echo   2. Open http://erp.atacanada.ca from a workstation browser
 echo   3. Test login
 echo.
 echo If anything is wrong, run: deploy\rollback.bat

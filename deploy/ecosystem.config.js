@@ -33,7 +33,7 @@ module.exports = {
     {
       name: 'erp-frontend',
       cwd: 'C:\\apps\\erp\\current\\frontend',
-      script: 'node_modules/.bin/next',
+      script: 'node_modules/next/dist/bin/next',
       args: 'start -p 3000 -H 127.0.0.1',
       env: {
         NODE_ENV: 'production',
