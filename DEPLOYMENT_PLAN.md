@@ -504,8 +504,9 @@ C:\apps\erp\
 │   └── ...
 │
 ├── shared\                    ← persistent across ALL releases — never deleted
-│   ├── .env.backend           ← production env (one copy, not per-release)
-│   ├── .env.frontend          ← production env (one copy, not per-release)
+│   ├── .env.backend           ← backend env (copied to current\backend\.env on deploy)
+│   ├── .env.frontend          ← frontend env (copied to current\frontend\.env on deploy)
+│   ├── web.config             ← IIS rewrite rules (copied to current\frontend\ on deploy)
 │   └── uploads\               ← file attachments (if stored on disk)
 │
 ├── logs\                      ← PM2 log files (persistent, not per-release)
@@ -1095,6 +1096,8 @@ Add an A record on the DNS server (SRV-AT&A itself): `erp.atacanada.ca` → `10.
 
 VPN users land on the 10.12.1.x network, so HTTP works for everyone. HTTPS is planned as Phase 2 hardening within 1 month of go-live.
 
+> **Important:** Because we are running HTTP (not HTTPS), the session cookie `secure` flag in `main.ts` must be set to `false`. The default code sets `secure: config.NODE_ENV === 'production'` which enables `secure: true` in production — this causes the browser to refuse to send session cookies over HTTP, resulting in 401 errors on all authenticated requests. When HTTPS is enabled, change the flag back to `secure: true`.
+
 ### Q-E. Backup destination
 > **Answer: Yes to both**
 
@@ -1589,7 +1592,7 @@ These items are **not required for initial internal go-live** but should be impl
 
 | Priority | Item | Why | Target |
 |----------|------|-----|--------|
-| **1** | **HTTPS everywhere** | HTTP transmits session cookies and passwords in cleartext over the network. Even on LAN, this is a security weakness. HTTPS should be the default, not an option for VPN users only. Use a self-signed certificate or Windows internal CA. | Within 1 month of go-live |
+| **1** | **HTTPS everywhere** | HTTP transmits session cookies and passwords in cleartext over the network. Even on LAN, this is a security weakness. HTTPS should be the default, not an option for VPN users only. Use a self-signed certificate or Windows internal CA. **When enabling HTTPS:** change `secure: false` back to `secure: true` in `erp/backend/src/main.ts` (session cookie config) and redeploy. | Within 1 month of go-live |
 | **2** | **Automated off-host backup** | Monthly manual USB copy is better than nothing, but easy to forget. Investigate cloud backup (e.g., BackBlaze B2, AWS S3 with lifecycle) or scheduled robocopy to a NAS. | Within 2 months |
 | **3** | **Active Directory integration** | Replace built-in user accounts with AD authentication. Single sign-on for factory users. Already noted as future goal. | Within 6 months |
 | **4** | **Monitoring alerts** | Currently relying on manual log checks. Add a simple health check script that emails you if backup fails or ERP is unreachable. Could be as simple as a Task Scheduler script that hits `http://127.0.0.1:3002/api/health` and sends an email on failure. | Within 3 months |

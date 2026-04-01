@@ -102,15 +102,16 @@ if %ERRORLEVEL% NEQ 0 (
 )
 echo   Activated release: %RELEASE_NAME%
 
-:: Step 4: Copy env files
-copy shared\.env.backend current\backend\.env.production >nul
-copy shared\.env.frontend current\frontend\.env.production >nul
-echo   Environment files copied
+:: Step 4: Copy env and config files
+copy shared\.env.backend current\backend\.env >nul
+copy shared\.env.frontend current\frontend\.env >nul
+copy shared\web.config current\frontend\web.config >nul
+echo   Environment and config files copied
 
-:: Step 5: Restart PM2
-echo   Restarting PM2...
+:: Step 5: Restart services
+echo   Restarting services...
 net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
-echo   PM2 restarted
+echo   Services restarted
 
 :: Step 6: Clean up old backup
 if exist previous-backup (
