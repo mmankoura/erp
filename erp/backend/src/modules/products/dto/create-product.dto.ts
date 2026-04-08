@@ -2,8 +2,8 @@ import { IsString, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateProductDto {
   @IsUUID()
-  @IsNotEmpty()
-  customer_id: string;
+  @IsOptional()
+  customer_id?: string;
 
   @IsString()
   @IsNotEmpty()

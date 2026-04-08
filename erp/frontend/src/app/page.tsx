@@ -234,7 +234,7 @@ export default function DashboardPage() {
       <div className="flex items-center gap-2">
         {healthLoading ? (
           <Skeleton className="h-5 w-32" />
-        ) : health?.status === "ok" ? (
+        ) : health?.status === "healthy" ? (
           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
             <Activity className="h-3 w-3 mr-1" />
             System Online

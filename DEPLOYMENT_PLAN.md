@@ -686,6 +686,8 @@ pm2 status
 
 #### Release Switch Procedure
 
+> **For the revised, battle-tested upgrade procedure (including lessons learned from REV-002), see `UPGRADE_PROCEDURE.md`.** The steps below are the original reference; the upgrade procedure supersedes them for day-to-day deployments.
+
 ```batch
 cd /d C:\apps\erp
 

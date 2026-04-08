@@ -50,7 +50,8 @@ export function exportShortagesByMaterial(
     Customer: string
     Product: string
     "Due Date": string
-    "Qty Required": number
+    "Qty (Order)": number
+    "Qty (All Orders)": number
     "Qty Allocated": number
   }> = []
 
@@ -62,7 +63,8 @@ export function exportShortagesByMaterial(
         Customer: order.customer_name,
         Product: order.product_name,
         "Due Date": new Date(order.due_date).toLocaleDateString(),
-        "Qty Required": order.required_quantity,
+        "Qty (Order)": order.required_quantity,
+        "Qty (All Orders)": shortage.total_required,
         "Qty Allocated": order.allocated_quantity,
       })
     }
@@ -101,7 +103,8 @@ export function exportShortagesByCustomer(
     "Due Date": string
     IPN: string
     Description: string
-    Shortage: number
+    "Qty (Order)": number
+    "Qty (All Orders)": number
   }> = []
 
   for (const customer of customers) {
@@ -115,7 +118,8 @@ export function exportShortagesByCustomer(
           "Due Date": new Date(order.due_date).toLocaleDateString(),
           IPN: shortage.ipn,
           Description: shortage.description ?? "",
-          Shortage: shortage.shortage,
+          "Qty (Order)": shortage.required_quantity,
+          "Qty (All Orders)": shortage.total_required,
         })
       }
     }
@@ -243,7 +247,7 @@ export function exportAffectedAssemblies(
       product_name: string
       shortage_count: number
       total_shortage_qty: number
-      shortages: Array<{ ipn: string; description: string | null; shortage: number }>
+      shortages: Array<{ ipn: string; description: string | null; quantity_required: number; total_required: number }>
     }
   >()
 
@@ -261,11 +265,12 @@ export function exportAffectedAssemblies(
         productMap.set(product.product_id, existing)
       }
       existing.shortage_count++
-      existing.total_shortage_qty += shortage.shortage
+      existing.total_shortage_qty += product.quantity_required
       existing.shortages.push({
         ipn: shortage.material.internal_part_number,
         description: shortage.material.description,
-        shortage: shortage.shortage,
+        quantity_required: product.quantity_required,
+        total_required: shortage.total_required,
       })
     }
   }
@@ -288,7 +293,8 @@ export function exportAffectedAssemblies(
     Product: string
     IPN: string
     Description: string
-    Shortage: number
+    "Qty (Product)": number
+    "Qty (All Orders)": number
   }> = []
 
   for (const product of products) {
@@ -297,7 +303,8 @@ export function exportAffectedAssemblies(
         Product: product.product_name,
         IPN: shortage.ipn,
         Description: shortage.description ?? "",
-        Shortage: shortage.shortage,
+        "Qty (Product)": shortage.quantity_required,
+        "Qty (All Orders)": shortage.total_required,
       })
     }
   }

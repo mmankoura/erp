@@ -116,6 +116,8 @@ export interface CustomerShortage {
       ipn: string;
       description: string | null;
       shortage: number;
+      required_quantity: number;
+      total_required: number;
     }>;
   }>;
 }
@@ -950,6 +952,8 @@ export class MrpService {
           ipn: shortage.material.internal_part_number,
           description: shortage.material.description,
           shortage: shortage.shortage,
+          required_quantity: order.required_quantity,
+          total_required: shortage.total_required,
         });
       }
     }

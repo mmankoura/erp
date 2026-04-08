@@ -523,6 +523,8 @@ export interface CustomerShortageOrder {
     ipn: string
     description: string | null
     shortage: number
+    required_quantity: number
+    total_required: number
   }>
 }
 

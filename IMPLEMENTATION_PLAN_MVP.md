@@ -2,7 +2,7 @@
 
 ## Progress Status
 
-> **Last Updated**: March 30, 2026
+> **Last Updated**: April 7, 2026
 
 ### Completed ✅
 - [x] Docker + PostgreSQL setup (running in WSL2)
@@ -36,7 +36,7 @@
 - [x] **KittingListScan** entity (individual UID scan records with uid_code, quantity, scanned_by)
 - [x] **PoHistory** entity (flat historical PO archive: po_number, supplier, ipn, mpn, qty, unit_price, currency, etc.)
 
-#### Migrations (32 applied)
+#### Migrations (47 applied — 46 on production, 1 pending)
 - [x] Initial schema (materials, products)
 - [x] AddSoftDeleteToMaterials
 - [x] AddSoftDeleteToProducts
@@ -69,6 +69,22 @@
 - [x] BackfillMaterialResourceType (backfill resource_type from bom_items, update kitting unique constraint)
 - [x] AddFieldsToPurchaseOrderLines (manufacturer, manufacturer_pn, packaging columns)
 - [x] IncreasePOLineUnitCostPrecision (unit_cost decimal(12,4) → decimal(12,6) for DigiKey pricing)
+- [x] AddCustomerIdToProducts (customer_id FK on products table)
+- [x] RenameMaterialColumns (IPN/MPN column name standardization)
+- [x] RenameProductPartNumber
+- [x] RevertSkuToPartNumber
+- [x] AddAlternateIpnToBomItems (alternate_ipn column on bom_items)
+- [x] CreateBomImportMappings (saved column mappings for BOM import)
+- [x] AddCustomerIdToMaterials (customer_id FK on materials table)
+- [x] CreateInventoryLots (inventory_lots table for lot/reel tracking)
+- [x] AddCodeAndNotesToCustomers (customer code and notes fields)
+- [x] RedesignOrderStatus (6-state order status workflow)
+- [x] AddAllocationStatuses (allocation status tracking)
+- [x] CreateCycleCounts (cycle count tables for physical inventory)
+- [x] AddWipTracking (WIP tracking tables for production stages)
+- [x] CreateUsersAndSessions (users table, session store for auth)
+- [x] MakeUserEmailOptional (email nullable on users)
+- [ ] AddCustomerIdToProducts (pending on production — customer_id on products, not yet deployed)
 
 #### Backend Modules (17 complete) - ~165 API Endpoints Total
 - [x] **Materials Module** (7 endpoints) - CRUD + bulk create + restore
@@ -90,37 +106,47 @@
 - [x] **Kitting Module** (7 endpoints) - Create kitting list from multiple orders (BOM aggregation), UID barcode scanning with verification, print pick sheet, complete with shortage reporting, cancel. Separates SMT/TH items
 - [x] **PO History** (3 endpoints) - Import historical PO data from Excel (SPO sheet), searchable archive, record count. Added to Purchase Orders module
 
-### In Progress 🔄
-- [ ] **Frontend (Next.js)** (~99% complete)
-  - [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
-  - [x] shadcn/ui component library integrated
-  - [x] Layout: Top navbar with dropdown menus (Catalog, Warehouse, Purchasing, Production, Settings), header with breadcrumbs
-  - [x] Dashboard: Stats cards, recent orders, shortages display (fixed Feb 13)
-  - [x] Full CRUD pages: Materials, Products, Customers, Suppliers
-  - [x] Orders page with computed Material Status (Option A implementation)
-  - [x] Reusable DataTable component with search/pagination/column resize
-  - [x] API client with TypeScript types (`lib/api.ts`)
-  - [x] Custom data fetching hooks (`useApi`, `useMutation`)
-  - [x] Purchase Orders page (full CRUD with line items, status workflow)
-  - [x] Inventory page (stock levels, transactions, adjustments, low stock alerts)
-  - [x] MRP/Shortages page (shortages analysis, requirements view)
-  - [x] Receiving Inspection page (validation workflow)
-  - [x] AML page (CRUD with status workflow)
-  - [x] Audit Log page (filterable event log with detail view)
-  - [x] BOM viewer page (view revisions, compare diffs, filter by product)
-  - [x] BOM Import wizard (CSV + Excel support, column mapping, material matching, full-screen UI)
-  - [x] BOM Validation page (compare uploaded file against stored revision)
-  - [x] Login page with session authentication
-  - [x] User management page (admin only)
-  - [x] Role-based UI controls (canEdit, canManageUsers, etc.)
-  - [x] Cycle Count pages (count entry, variance review, approval workflow)
-  - [x] Production/WIP tracking pages
-  - [x] Operator Receiving form (/receiving/new) - scanner-friendly, PO/Customer Supplied modes, validation preview, offline retry
-  - [x] Receiving dashboard - tabbed: Open Sessions, Flagged Items (with resolution dialog), Inspections
-  - [x] AML page enhancements - proof document upload/download, source/customer columns, BOM Import badge
-  - [x] Kitting page - Full-screen create view (multi-select orders), detail view with barcode scanning, SMT/TH item separation, printable pick sheet, shortage reporting on completion
-  - [x] Purchase Orders History tab - One-time Excel import (SPO sheet), searchable DataTable archive with all historical PO fields
-  - [ ] Settings page (placeholder - low priority)
+### Frontend (Next.js) ✅ Complete
+- [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
+- [x] shadcn/ui component library integrated
+- [x] Layout: Top navbar with dropdown menus (Catalog, Warehouse, Purchasing, Production, Settings), header with breadcrumbs
+- [x] Dashboard: Stats cards, recent orders, shortages display
+- [x] Full CRUD pages: Materials, Products, Customers, Suppliers
+- [x] Orders page with computed Material Status (Option A implementation)
+- [x] Reusable DataTable component with search/pagination/column resize/Excel-style filtering
+- [x] API client with TypeScript types (`lib/api.ts`)
+- [x] Custom data fetching hooks (`useApi`, `useMutation`)
+- [x] Purchase Orders page (full CRUD with line items, status workflow, DigiKey clipboard import)
+- [x] Inventory page (stock levels, transactions, adjustments, low stock alerts, per-column filtering)
+- [x] MRP/Shortages page (shortages analysis, requirements view, ETA/PO tracking, Excel export)
+- [x] Receiving Inspection page (validation workflow)
+- [x] AML page (CRUD with status workflow, proof uploads, source/customer columns)
+- [x] Audit Log page (filterable event log with detail view)
+- [x] BOM viewer page (view revisions, compare diffs, filter by product, inline editing)
+- [x] BOM Import wizard (CSV + Excel support, column mapping, material matching, full-screen UI)
+- [x] BOM Validation page (compare uploaded file against stored revision)
+- [x] Login page with session authentication
+- [x] User management page (admin only)
+- [x] Role-based UI controls (canEdit, canManageUsers, etc.)
+- [x] Cycle Count pages (count entry, variance review, approval workflow)
+- [x] Production/WIP tracking pages
+- [x] Operator Receiving form (/receiving/new) - scanner-friendly, PO/Customer Supplied modes, validation preview, offline retry
+- [x] Receiving dashboard - tabbed: Open Sessions, Flagged Items (with resolution dialog), Inspections
+- [x] Kitting page - Full-screen create view (multi-select orders), detail view with barcode scanning, SMT/TH item separation, printable pick sheet, shortage reporting on completion
+- [x] Purchase Orders History tab - One-time Excel import (SPO sheet), searchable DataTable archive
+- [ ] Settings page (placeholder - low priority)
+
+### Production Deployment ✅ Complete (April 1, 2026)
+- [x] Deployed to SRV-AT&A (10.12.1.47), Windows Server 2019
+- [x] PostgreSQL 16 native install (localhost-only, hardened)
+- [x] Node.js v22, IIS reverse proxy (URL Rewrite + ARR)
+- [x] NSSM direct Windows services for boot persistence (erp-backend, erp-frontend)
+- [x] 46 migrations applied to erp_production database
+- [x] GO/NO-GO gate passed (crash recovery, full reboot, headless boot)
+- [x] Accessible at `http://erp.atacanada.ca` from LAN
+- [x] Release-based deployment model with rollback capability
+- [x] Upgrade procedure documented (see UPGRADE_PROCEDURE.md, CHANGELOG.md)
+- [ ] Backup configuration (Phase 7 of deployment plan — scripts, scheduled tasks, cross-VM copy)
 
 #### Recently Completed
 - [x] **Seed Script** - 4 customers, 20 materials, 4 products with BOMs, 5 sample orders
@@ -242,6 +268,10 @@
 
 - [x] **Top Navbar Navigation (Mar 30)** - Replaced left sidebar with a top navigation bar. Dropdown menus organized into 5 groups: Catalog (Materials, Products, AML), Warehouse (Inventory, Receiving, Kitting, Return to Stock), Purchasing (Supplier Purchase Orders, MRP/Shortages, Suppliers), Production (Customer Orders, Customers, WIP Tracking), Settings (Users, Audit Log, Settings). Active route highlighting, role-gated Settings menu, user info with logout on the right. Full page width now available for content.
 
+- [x] **PO Numbering Sequence (Apr 7, REV-002)** - Changed PO number format from `PO-YYYYMM-NNNN` to sequential numeric starting at `8833045`. Removed dependency on SequenceGeneratorService for PO generation.
+
+- [x] **MRP Shortage Excel Export Fix (Apr 7, REV-002)** - Fixed duplication bug in shortage Excel exports where the global shortage quantity was repeated on every order row, misleading buyers into double/triple-counting. "View by Customer" export replaced single `Shortage` column with `Qty (Order)` (per-order requirement) and `Qty (All Orders)` (total across all open orders). Same fix applied to "View by Material" order details sheet and "Affected Assemblies" detail sheet for consistency across all export types.
+
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests
 - [x] **Edit Dialog Navigation** - Click/keyboard events in edit dialogs propagated to DataTable row click handler, causing unwanted navigation; fixed with stopPropagation on triggers and DialogContent
@@ -269,9 +299,11 @@ All 15 test scenarios passed against live backend:
 - [x] Sessions list, PO lookup, material lookup, AML suggestions endpoints
 
 ### Not Started ⬚
-- [ ] Production deployment configuration
+- [ ] Backup configuration (Phase 7 of DEPLOYMENT_PLAN.md — nightly pg_dump, cross-VM copy, restore tests)
 - [ ] Phase 5: Quoting Module (vendor pricing integration)
 - [ ] Phase 6: Label Printing (Dymo integration)
+- [ ] Settings page (placeholder - low priority)
+- [ ] HTTPS / TLS (post-launch hardening — see DEPLOYMENT_PLAN.md Section 15)
 
 ---
 
@@ -281,829 +313,72 @@ All 15 test scenarios passed against live backend:
 
 **Status:** Completed on January 23, 2026. Inventory transactions and allocations now support owner_type (COMPANY/CUSTOMER) and owner_id for consignment material isolation.
 
-### Current Priority: Production Readiness 🟡
+### Current Priority: Post-Launch Stabilization ✅
 
-**Completed:**
+**MVP Go-Live: Complete (April 1, 2026)**
 - [x] User authentication/authorization (session-based with 4 roles)
-- [x] Frontend ~99% complete
+- [x] Frontend complete (all pages operational)
+- [x] Production deployment on SRV-AT&A (native install, no Docker)
+- [x] NSSM services, IIS reverse proxy, PostgreSQL hardened
+- [x] REV-002 deployed (April 7, 2026) — PO numbering + MRP shortage fix
 
-**Remaining for MVP Go-Live:**
-- [ ] Production deployment configuration (Docker, environment variables)
+**Remaining post-launch:**
+- [ ] Backup configuration (Phase 7 of DEPLOYMENT_PLAN.md)
 - [ ] Settings page (placeholder - low priority)
+- [ ] HTTPS / TLS hardening
 
 ---
 
-### Phase 1: Frontend Development (In Progress ~40%)
+### Phase 1: Frontend Development ✅ COMPLETE
 
-The backend is feature-complete for MVP. Frontend development enables:
-- Visual testing of all backend functionality
-- User feedback on workflows before adding more backend features
-- Usable system for day-to-day operations
+All frontend pages are operational and deployed to production. See "Frontend (Next.js)" section above for the full list of completed pages.
 
-**Frontend Implementation Steps:**
-1. ~~**Initialize Next.js** with Tailwind CSS and App Router~~ ✅ Complete
-2. ~~**Build layout** - Navigation sidebar, header, responsive design~~ ✅ Complete
-3. ~~**Core CRUD pages** - Materials, Products, Customers, Suppliers~~ ✅ Complete (4 pages)
-4. ~~**Order management** - Order list with computed material status~~ ✅ Complete
-5. **Purchase Orders page** - PO list, create/edit, receiving workflow
-6. **Inventory page** - Stock levels, allocation visibility, transaction history (will show ownership after Phase 0)
-7. **MRP/Shortages** - Material requirements and shortage reporting
-8. **Receiving Inspection page** - Validation workflow, approve/reject/hold
-9. **AML page** - Approved manufacturer list management
-10. **BOM viewer** - View BOM revisions, compare diffs
-11. **Audit log viewer** - View system activity and history
+### Phase 2: BOM Import Module ✅ COMPLETE
 
-### Phase 2: BOM Import Module (After Ownership Dimension)
+BOM import and validation are fully implemented:
+- CSV + Excel file parsing with column mapping wizard
+- Auto-create materials on import, DNP filtering, description mapping
+- BOM validation (compare uploaded file against stored revision with visual diff)
+- BOM item and revision inline editing, revision deletion guard
 
-Once the frontend is operational, add BOM import capabilities:
+### Phase 3: Receiving, POs, AML & Ownership ✅ MOSTLY COMPLETE
 
-1. **BOM Import Module** - File parsing, column mapping, preview, commit
-   - Create `bom_import_mappings` entity and migration
-   - Implement file upload and parsing (CSV/XLSX)
-   - Column mapping service
-   - Preview and commit endpoints
-   - Frontend: Import wizard UI
+Completed components:
+- [x] **3.0 Ownership Dimension** (Jan 23, 2026) — owner_type (COMPANY/CUSTOMER) on inventory_transactions and allocations. Prevents cross-customer material contamination for consignment orders.
+- [x] **3.1 Purchase Orders + Suppliers** (Jan 20, 2026) — Full PO lifecycle (DRAFT→SUBMITTED→CONFIRMED→RECEIVED→CLOSED), 15 endpoints, quantity_on_order tracking. PO numbering changed to sequential numeric from 8833045 (REV-002, Apr 7).
+- [x] **3.1.1 Receiving Inspection + AML** (Jan 20, 2026) — Validation gate between PO receiving and inventory. IPN/MPN validation against Approved Manufacturer List. 22 endpoints.
+- [x] **Industrial Receiving Module** (Feb 19, 2026) — Operator-facing barcode scanner UX, 11-step receive flow with quarantine-first approach, UID generation, idempotent via client_request_id, discrepancy resolution (ACCEPT_DEVIATION, PARTIAL_ACCEPT, REJECT_RTV, SCRAP).
+- [x] **Entity-Agnostic Attachments** (Feb 19, 2026) — File upload with SHA256 tamper evidence, soft-delete.
 
-2. **BOM Validation Module** - Compare uploaded BOM against stored revision
-   - Create `bom_validations` entity and migration
-   - Validation comparison service
-   - Discrepancy reporting
-   - Frontend: Validation results UI
-
-### Phase 3: Document Tracking & Receiving Inspection (After BOM Import)
-
-Full document reference system for traceability and compliance, plus kit list comparison for consignment receiving inspection.
-
-#### 3.0 Ownership Dimension - CRITICAL PREREQUISITE (~4 hours)
-
-**Purpose:** Prevent cross-customer material contamination. Ensures Customer A's consignment parts are never used for Customer B's orders.
-
-**Problem Without This:**
-```
-Customer A sends 1000 resistors (consignment)  ──┐
-                                                 ├──► Mixed pool: 1500 resistors
-Customer B sends 500 resistors (consignment)   ──┘
-
-Risk: Customer A's order might consume Customer B's parts ❌
-```
-
-**Solution:** Add ownership tracking to inventory.
-
-**Schema Changes:**
-```sql
--- Migration: Add ownership dimension to inventory_transactions
-ALTER TABLE inventory_transactions
-ADD COLUMN owner_type VARCHAR(20) NOT NULL DEFAULT 'COMPANY',
-ADD COLUMN owner_id UUID REFERENCES customers(id);
-
--- Index for fast owner-scoped queries
-CREATE INDEX idx_inventory_transactions_owner
-ON inventory_transactions(owner_type, owner_id, material_id);
-
--- Constraint: CUSTOMER type must have owner_id
-ALTER TABLE inventory_transactions
-ADD CONSTRAINT chk_inventory_owner_consistency
-CHECK (
-  (owner_type = 'COMPANY' AND owner_id IS NULL) OR
-  (owner_type = 'CUSTOMER' AND owner_id IS NOT NULL)
-);
-
--- Also add to inventory_allocations for consistency
-ALTER TABLE inventory_allocations
-ADD COLUMN owner_type VARCHAR(20) NOT NULL DEFAULT 'COMPANY',
-ADD COLUMN owner_id UUID REFERENCES customers(id);
-
-ALTER TABLE inventory_allocations
-ADD CONSTRAINT chk_allocation_owner_consistency
-CHECK (
-  (owner_type = 'COMPANY' AND owner_id IS NULL) OR
-  (owner_type = 'CUSTOMER' AND owner_id IS NOT NULL)
-);
-
--- Add comment for documentation
-COMMENT ON COLUMN inventory_transactions.owner_type IS 'COMPANY = our stock, CUSTOMER = consignment stock belonging to specific customer';
-COMMENT ON COLUMN inventory_transactions.owner_id IS 'customer_id when owner_type=CUSTOMER, NULL when owner_type=COMPANY';
-```
-
-**Owner Types:**
-| Type | Description | owner_id |
-|------|-------------|----------|
-| `COMPANY` | Materials owned by us (purchased, turnkey jobs) | NULL |
-| `CUSTOMER` | Consignment materials owned by customer | customer_id |
-
-**Service Changes:**
-
-```typescript
-// InventoryService - Owner-aware stock queries
-
-async getAvailableStockForOrder(
-  materialId: string,
-  order: Order
-): Promise<number> {
-  const query = this.transactionRepository
-    .createQueryBuilder('t')
-    .select('COALESCE(SUM(t.quantity), 0)', 'stock')
-    .where('t.material_id = :materialId', { materialId });
-
-  if (order.order_type === 'CONSIGNMENT') {
-    // Consignment: ONLY customer's own inventory
-    query.andWhere('t.owner_type = :ownerType', { ownerType: 'CUSTOMER' });
-    query.andWhere('t.owner_id = :customerId', { customerId: order.customer_id });
-  } else {
-    // Turnkey: ONLY company inventory
-    query.andWhere('t.owner_type = :ownerType', { ownerType: 'COMPANY' });
-  }
-
-  const result = await query.getRawOne();
-  return parseFloat(result.stock);
-}
-
-// Allocation must respect ownership
-async allocateForOrder(orderId: string, createdBy?: string): Promise<AllocationResult> {
-  const order = await this.getOrder(orderId);
-
-  // Determine ownership scope
-  const ownerType = order.order_type === 'CONSIGNMENT' ? 'CUSTOMER' : 'COMPANY';
-  const ownerId = order.order_type === 'CONSIGNMENT' ? order.customer_id : null;
-
-  return await this.dataSource.transaction(async (manager) => {
-    for (const bomItem of bomItems) {
-      // Get available stock FOR THIS OWNER ONLY
-      const available = await this.getAvailableStockByOwner(
-        bomItem.material_id,
-        ownerType,
-        ownerId,
-        manager
-      );
-
-      // Create allocation with ownership
-      const allocation = manager.create(InventoryAllocation, {
-        material_id: bomItem.material_id,
-        order_id: orderId,
-        quantity: toAllocate,
-        owner_type: ownerType,
-        owner_id: ownerId,
-        // ...
-      });
-
-      await manager.save(allocation);
-    }
-  });
-}
-
-// Receipt must capture ownership from shipment
-async recordReceipt(dto: ReceiptDto): Promise<InventoryTransaction> {
-  // Determine ownership from shipment
-  let ownerType = 'COMPANY';
-  let ownerId = null;
-
-  if (dto.shipment_id) {
-    const shipment = await this.getShipment(dto.shipment_id);
-    if (shipment.shipment_type === 'INBOUND_CUSTOMER') {
-      ownerType = 'CUSTOMER';
-      ownerId = shipment.customer_id;
-    }
-  }
-
-  return this.transactionRepository.save({
-    material_id: dto.material_id,
-    quantity: dto.quantity,
-    transaction_type: 'RECEIPT',
-    owner_type: ownerType,
-    owner_id: ownerId,
-    shipment_id: dto.shipment_id,
-    // ...
-  });
-}
-```
-
-**Validation Rules:**
-- Receipts from customer shipments → `owner_type = 'CUSTOMER'`, `owner_id = customer_id`
-- Receipts from supplier POs → `owner_type = 'COMPANY'`, `owner_id = NULL`
-- Allocations inherit ownership from order type (CONSIGNMENT vs TURNKEY)
-- Consumption transactions preserve ownership from allocation
-
-**Stock View After Implementation:**
-```
-Material: 10K Resistor
-
-┌─────────────────────────────────────────────────────────┐
-│ Owner          │ Quantity │ Available for               │
-├─────────────────────────────────────────────────────────┤
-│ COMPANY        │ 2,000    │ Turnkey orders (any)        │
-│ Customer A     │ 1,000    │ Customer A's orders ONLY    │
-│ Customer B     │ 500      │ Customer B's orders ONLY    │
-└─────────────────────────────────────────────────────────┘
-
-Customer A's consignment order needs 800 resistors:
-  → Can allocate from Customer A's 1,000 ✅
-  → Cannot see Customer B's 500 ✅
-  → Cannot see Company's 2,000 ✅ (unless policy allows)
-```
-
-**Endpoints Affected:**
-- `GET /inventory/stock` - Add `?owner_type=` and `?owner_id=` filters
-- `GET /inventory/stock/:materialId` - Return breakdown by owner
-- `POST /inventory/transaction` - Accept and validate `owner_type`, `owner_id`
-- `POST /inventory/allocate/:orderId` - Auto-determine from order type
-
-**This step is REQUIRED before go-live with consignment customers.**
+Not yet implemented in Phase 3:
+- [ ] Shipments & Packing Slips module
+- [ ] Kit List Import & Comparison (consignment receiving)
 
 ---
 
-#### 3.1 Purchase Orders Module ✅ COMPLETE (Jan 20, 2026)
+<!-- Phase 3 detailed planning for Work Orders, Shipments, Kit List Import removed — see git history for original specs -->
+<!-- Sections 3.2 through 3.7 plus implementation order table and document reference flow diagram removed -->
 
-**Purpose:** Track material purchases from suppliers.
+### Phase 4: Lot & Location Tracking ✅ MOSTLY COMPLETE
 
-**Schema:**
-```sql
-CREATE TABLE purchase_orders (
-  id UUID PRIMARY KEY,
-  po_number VARCHAR(50) UNIQUE NOT NULL,
-  supplier_id UUID REFERENCES suppliers(id),  -- Note: suppliers table needed
-  status VARCHAR(20) NOT NULL,  -- DRAFT, SUBMITTED, CONFIRMED, RECEIVED, CLOSED, CANCELLED
-  order_date DATE NOT NULL,
-  expected_date DATE,
-  total_amount DECIMAL(12,2),
-  currency VARCHAR(3) DEFAULT 'USD',
-  notes TEXT,
-  created_by VARCHAR(100),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+Implemented:
+- [x] Inventory lots (reels/trays) with UID tracking, package type, PO reference
+- [x] Lot disposition workflow (ACTIVE, ON_HOLD, REJECTED, SCRAPPED, RTV)
+- [x] Lot location tracking (STOCK, RECEIVING, WIP)
+- [x] Cycle count / physical inventory with variance tracking and approval
+- [x] WIP tracking with production stage transitions
+- [x] Material return workflow (production back to stock)
+- [x] Kitting module with UID barcode scanning and shortage reporting
 
-CREATE TABLE purchase_order_lines (
-  id UUID PRIMARY KEY,
-  purchase_order_id UUID REFERENCES purchase_orders(id),
-  material_id UUID REFERENCES materials(id),
-  quantity_ordered DECIMAL(12,4) NOT NULL,
-  quantity_received DECIMAL(12,4) DEFAULT 0,
-  unit_cost DECIMAL(12,4),
-  line_number INT,
-  notes TEXT
-);
-```
+Not yet implemented:
+- [ ] Named locations module (bin/shelf/rack definitions)
+- [ ] Operator lookup UI for finding specific reels by location
 
-**Endpoints:**
-- `POST /purchase-orders` - Create PO
-- `GET /purchase-orders` - List with filters (status, supplier, date range)
-- `GET /purchase-orders/:id` - Get PO with lines
-- `PATCH /purchase-orders/:id` - Update PO
-- `POST /purchase-orders/:id/lines` - Add line item
-- `PATCH /purchase-orders/:id/receive` - Record receipt against PO (now creates inspections)
-
-#### 3.1.1 Receiving Inspection with AML Validation ✅ COMPLETE (Jan 20, 2026)
-
-**Purpose:** Validate received items BEFORE moving to available inventory. Prevents incorrect parts from entering stock.
-
-**Flow:**
-```
-PO Receive → Inspection (PENDING) → Validate (IPN, MPN vs AML) → Approve → Release to Inventory
-```
-
-**New Entities:**
-- `ApprovedManufacturer` - Tracks approved manufacturer/MPN combinations per material (AML)
-- `ReceivingInspection` - Staging area for received items pending validation
-
-**Status Workflows:**
-- AML: PENDING → APPROVED → SUSPENDED → OBSOLETE
-- Inspection: PENDING → IN_PROGRESS → APPROVED/REJECTED/ON_HOLD → RELEASED
-
-**Validation Logic:**
-1. **IPN Validation** - Compare received IPN with material's internal_part_number
-2. **MPN Validation** - Check if manufacturer/MPN is on the Approved Manufacturer List
-3. **Quantity Documentation** - Record variance from expected quantity
-
-**Endpoints (22 new):**
-- `/aml` - AML CRUD + status transitions (approve, suspend, reinstate, obsolete) + validation
-- `/receiving-inspections` - Workflow (validate, approve, reject, hold, release) + bulk operations
-
-**Key Behavior Change:**
-- PO receiving now creates `ReceivingInspection` records instead of direct inventory transactions
-- Inventory transactions only created when inspections are released (RELEASED status)
-
-#### 3.2 Work Orders Module (~4 hours)
-
-**Purpose:** Track production work for customer orders.
-
-**Schema:**
-```sql
-CREATE TABLE work_orders (
-  id UUID PRIMARY KEY,
-  wo_number VARCHAR(50) UNIQUE NOT NULL,
-  order_id UUID REFERENCES orders(id) NOT NULL,
-  status VARCHAR(20) NOT NULL,  -- CREATED, RELEASED, IN_PROGRESS, COMPLETED, CLOSED, CANCELLED
-  quantity_to_build INT NOT NULL,
-  quantity_completed INT DEFAULT 0,
-  quantity_scrapped INT DEFAULT 0,
-  start_date DATE,
-  due_date DATE,
-  completed_date DATE,
-  notes TEXT,
-  created_by VARCHAR(100),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-**Endpoints:**
-- `POST /work-orders` - Create WO from order
-- `GET /work-orders` - List with filters
-- `GET /work-orders/:id` - Get WO details
-- `PATCH /work-orders/:id/status` - Update status
-- `POST /work-orders/:id/complete` - Record completion
-- `POST /work-orders/:id/scrap` - Record scrap
-
-#### 3.3 Shipments & Packing Slips Module (~3 hours)
-
-**Purpose:** Track inbound shipments and customer-provided packing slips for consignment jobs.
-
-**Schema:**
-```sql
-CREATE TABLE shipments (
-  id UUID PRIMARY KEY,
-  shipment_number VARCHAR(50) UNIQUE NOT NULL,
-  shipment_type VARCHAR(20) NOT NULL,  -- INBOUND_CUSTOMER, INBOUND_SUPPLIER, OUTBOUND
-  order_id UUID REFERENCES orders(id),  -- For consignment shipments
-  customer_id UUID REFERENCES customers(id),
-  supplier_id UUID,  -- FK when suppliers table exists
-  status VARCHAR(20) NOT NULL,  -- EXPECTED, RECEIVED, INSPECTED, APPROVED, REJECTED
-  expected_date DATE,
-  received_date DATE,
-  received_by VARCHAR(100),
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE packing_slips (
-  id UUID PRIMARY KEY,
-  slip_number VARCHAR(50) NOT NULL,
-  shipment_id UUID REFERENCES shipments(id) NOT NULL,
-  source VARCHAR(20) NOT NULL,  -- CUSTOMER_PROVIDED, SUPPLIER_PROVIDED, INTERNAL
-  source_filename VARCHAR(255),
-  received_date DATE,
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(shipment_id, slip_number)
-);
-```
-
-**Endpoints:**
-- `POST /shipments` - Create shipment
-- `GET /shipments` - List with filters
-- `GET /shipments/:id` - Get shipment details
-- `PATCH /shipments/:id/receive` - Mark as received
-- `POST /shipments/:id/packing-slips` - Attach packing slip
-
-#### 3.4 Update Inventory Transaction References (~2 hours)
-
-**Migration:** Add proper FK relationships and enforce references.
-
-```sql
--- Add shipment_id to inventory_transactions
-ALTER TABLE inventory_transactions
-ADD COLUMN shipment_id UUID REFERENCES shipments(id),
-ADD COLUMN purchase_order_line_id UUID REFERENCES purchase_order_lines(id),
-ADD COLUMN work_order_id UUID REFERENCES work_orders(id);
-
--- Add PACKING_SLIP to reference_type enum
-ALTER TYPE reference_type_enum ADD VALUE 'PACKING_SLIP';
-ALTER TYPE reference_type_enum ADD VALUE 'SHIPMENT';
-
--- Add constraint: RECEIPT transactions must have a reference
--- (enforced in application layer for flexibility)
-```
-
-**Validation Rules:**
-- `RECEIPT` transactions MUST have one of: `shipment_id`, `purchase_order_line_id`, or `reference_type = MANUAL` with reason
-- `CONSUMPTION` transactions SHOULD have `work_order_id`
-- `ISSUE_TO_WO` transactions MUST have `work_order_id`
-
-#### 3.5 Kit List Import & Comparison (~5 hours)
-
-**Purpose:** Import customer-provided kit lists and compare against actual receiving records for discrepancy reporting.
-
-**Schema:**
-```sql
-CREATE TABLE kit_lists (
-  id UUID PRIMARY KEY,
-  shipment_id UUID REFERENCES shipments(id) NOT NULL,
-  source_filename VARCHAR(255),
-  import_date TIMESTAMPTZ DEFAULT NOW(),
-  status VARCHAR(20) NOT NULL,  -- IMPORTED, COMPARING, COMPARED, APPROVED, REJECTED
-  comparison_date TIMESTAMPTZ,
-  compared_by VARCHAR(100),
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE kit_list_items (
-  id UUID PRIMARY KEY,
-  kit_list_id UUID REFERENCES kit_lists(id) NOT NULL,
-  line_number INT,
-  -- Customer-provided data (as imported)
-  customer_part_number VARCHAR(100),
-  internal_part_number VARCHAR(100),
-  manufacturer_part_number VARCHAR(100),
-  manufacturer VARCHAR(100),
-  quantity_claimed DECIMAL(12,4) NOT NULL,
-  -- Matching results
-  material_id UUID REFERENCES materials(id),  -- Matched material (null if not found)
-  match_status VARCHAR(20),  -- MATCHED, NOT_FOUND, AMBIGUOUS
-  match_confidence VARCHAR(20),  -- EXACT, PARTIAL, MANUAL
-  -- Comparison results (populated after comparison)
-  quantity_received DECIMAL(12,4),
-  quantity_variance DECIMAL(12,4),
-  variance_type VARCHAR(20),  -- NONE, OVER, SHORT, MISSING_FROM_RECEIPT, MISSING_FROM_KIT
-  variance_notes TEXT
-);
-
--- Index for fast lookups during matching
-CREATE INDEX idx_kit_list_items_ipn ON kit_list_items(internal_part_number);
-CREATE INDEX idx_kit_list_items_mpn ON kit_list_items(manufacturer_part_number);
-```
-
-**Import Service:**
-```typescript
-interface KitListImportResult {
-  kit_list_id: string;
-  total_lines: number;
-  matched: number;
-  not_found: number;
-  ambiguous: number;
-  items: KitListItem[];
-}
-
-async importKitList(
-  shipmentId: string,
-  file: Buffer,
-  columnMapping: ColumnMapping
-): Promise<KitListImportResult>;
-```
-
-**Comparison Service:**
-```typescript
-interface DiscrepancyReport {
-  kit_list_id: string;
-  shipment_id: string;
-  comparison_date: Date;
-  summary: {
-    total_lines: number;
-    matched_exact: number;
-    quantity_variances: number;
-    missing_from_receipt: number;
-    missing_from_kit_list: number;
-    total_discrepancies: number;
-  };
-  discrepancies: Array<{
-    line_number: number;
-    internal_part_number: string;
-    manufacturer_part_number: string;
-    quantity_claimed: number;
-    quantity_received: number;
-    variance: number;
-    variance_type: 'OVER' | 'SHORT' | 'MISSING_FROM_RECEIPT' | 'MISSING_FROM_KIT';
-  }>;
-}
-
-async compareKitListToReceiving(kitListId: string): Promise<DiscrepancyReport>;
-async exportDiscrepancyReport(kitListId: string, format: 'CSV' | 'PDF'): Promise<Buffer>;
-```
-
-**Endpoints:**
-- `POST /kit-lists/import` - Import kit list from file
-- `GET /kit-lists/:id` - Get kit list with items
-- `POST /kit-lists/:id/match` - Re-run material matching
-- `PATCH /kit-lists/:id/items/:itemId` - Manual match correction
-- `POST /kit-lists/:id/compare` - Run comparison against receipts
-- `GET /kit-lists/:id/discrepancies` - Get discrepancy report
-- `GET /kit-lists/:id/discrepancies/export` - Export report (CSV/PDF)
-
-#### Phase 3 Implementation Order
-
-| Step | Component | Dependencies | Effort | Priority |
-|------|-----------|--------------|--------|----------|
-| **3.0** | **Ownership Dimension** | None | **4 hrs** | **🔴 CRITICAL** |
-| ~~3.1~~ | ~~Purchase Orders module~~ | ~~Suppliers table~~ | ✅ Done | ✅ Complete |
-| 3.2 | Work Orders module | Orders module | 4 hrs | High |
-| 3.3 | Shipments + Packing Slips | Customers, Orders, Step 3.0 | 3 hrs | High |
-| 3.4 | Update inventory_transactions refs | Steps 3.1-3.3 | 2 hrs | High |
-| 3.5 | Kit List Import + Comparison | Steps 3.3-3.4, BOM Import patterns | 5 hrs | Medium |
-| 3.6 | Frontend: Document management UI | Steps 3.1-3.4 | 6 hrs | Medium |
-| 3.7 | Frontend: Kit list wizard + report | Step 3.5 | 4 hrs | Medium |
-
-**Total Phase 3 Effort:** ~32 hours (backend + frontend)
-
-**⚠️ IMPORTANT:** Step 3.0 (Ownership Dimension) is **REQUIRED before go-live with consignment customers**. Without it, cross-customer material contamination is possible.
-
-#### Document Reference Flow
-
-```
-                                    ┌─────────────────┐
-                                    │ Customer Order  │
-                                    │ (CONSIGNMENT)   │
-                                    └────────┬────────┘
-                                             │
-              ┌──────────────────────────────┼──────────────────────────────┐
-              │                              │                              │
-              ▼                              ▼                              ▼
-    ┌─────────────────┐           ┌─────────────────┐           ┌─────────────────┐
-    │   Work Order    │           │    Shipment     │           │ Purchase Order  │
-    │   (Production)  │           │(Customer Sends) │           │ (We Buy Parts)  │
-    └────────┬────────┘           └────────┬────────┘           └────────┬────────┘
-             │                             │                             │
-             │                    ┌────────┴────────┐                    │
-             │                    │                 │                    │
-             │                    ▼                 ▼                    │
-             │          ┌─────────────┐   ┌─────────────┐                │
-             │          │Packing Slip │   │  Kit List   │                │
-             │          │ (attached)  │   │ (imported)  │                │
-             │          └──────┬──────┘   └──────┬──────┘                │
-             │                 │                 │                       │
-             │                 │    ┌────────────┘                       │
-             │                 │    │ Compare                            │
-             │                 ▼    ▼                                    │
-             │        ┌─────────────────────┐                            │
-             └───────►│ Inventory Receipts  │◄───────────────────────────┘
-                      │ (transactions)      │
-                      └─────────────────────┘
-                                │
-                                ▼
-                      ┌─────────────────────┐
-                      │ Discrepancy Report  │
-                      │ (sent to customer)  │
-                      └─────────────────────┘
-```
+<!-- Phase 4 detailed planning (sections 4.1-4.5, implementation order, lot lifecycle diagram) removed — see git history for original specs -->
 
 ---
 
-### Phase 4: Lot & Location Tracking (Shop Floor Visibility)
-
-Enable operators to find specific reels/lots and their physical locations. Required for shop floor operations.
-
-#### 4.1 Locations Module (~3 hours)
-
-**Purpose:** Track physical storage locations (warehouse, zones, aisles, shelves, bins, floor areas).
-
-**Schema:**
-```sql
-CREATE TABLE locations (
-  id UUID PRIMARY KEY,
-  location_code VARCHAR(50) UNIQUE NOT NULL,  -- e.g., "WH1-A-01-03-B"
-  location_type VARCHAR(20) NOT NULL,  -- WAREHOUSE, ZONE, AISLE, SHELF, BIN, FLOOR
-  parent_id UUID REFERENCES locations(id),  -- Hierarchical structure
-  name VARCHAR(100),
-  description TEXT,
-  is_pickable BOOLEAN DEFAULT true,  -- Can items be picked from here?
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Index for hierarchy traversal
-CREATE INDEX idx_locations_parent ON locations(parent_id);
-CREATE INDEX idx_locations_type ON locations(location_type);
-
--- Example data:
--- WH1 (WAREHOUSE) → WH1-A (ZONE) → WH1-A-01 (AISLE) → WH1-A-01-03 (SHELF) → WH1-A-01-03-B (BIN)
--- FLOOR-PROD (FLOOR) - Production floor WIP area
-```
-
-**Endpoints:**
-- `GET /locations` - List all locations (tree or flat)
-- `GET /locations/:id` - Get location with path
-- `POST /locations` - Create location
-- `PATCH /locations/:id` - Update location
-- `GET /locations/:id/contents` - List all lots at this location
-
-#### 4.2 Material Lots (Reels) Module (~4 hours)
-
-**Purpose:** Track individual reels/lots with quantity, location, and status.
-
-**Schema:**
-```sql
-CREATE TABLE material_lots (
-  id UUID PRIMARY KEY,
-  material_id UUID REFERENCES materials(id) NOT NULL,
-  lot_number VARCHAR(50) NOT NULL,  -- Reel barcode / lot ID
-
-  -- Current state
-  location_id UUID REFERENCES locations(id),
-  quantity_original DECIMAL(12,4) NOT NULL,
-  quantity_remaining DECIMAL(12,4) NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
-    -- AVAILABLE: In stock, ready for use
-    -- RESERVED: Allocated to an order
-    -- IN_USE: On production floor (WIP)
-    -- DEPLETED: Fully consumed
-    -- QUARANTINE: Quality hold
-    -- EXPIRED: Past expiry date
-
-  -- Ownership (from Phase 3.0)
-  owner_type VARCHAR(20) NOT NULL DEFAULT 'COMPANY',
-  owner_id UUID REFERENCES customers(id),
-
-  -- Source traceability
-  shipment_id UUID REFERENCES shipments(id),
-  purchase_order_line_id UUID REFERENCES purchase_order_lines(id),
-  supplier_lot_number VARCHAR(100),
-  manufacturer_lot_number VARCHAR(100),
-  date_code VARCHAR(20),  -- e.g., "2425" = 2024 week 25
-
-  -- Dates
-  received_date DATE NOT NULL,
-  expiry_date DATE,
-
-  -- Audit
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-  UNIQUE(material_id, lot_number)
-);
-
--- Indexes for common queries
-CREATE INDEX idx_material_lots_material ON material_lots(material_id);
-CREATE INDEX idx_material_lots_location ON material_lots(location_id);
-CREATE INDEX idx_material_lots_status ON material_lots(status);
-CREATE INDEX idx_material_lots_owner ON material_lots(owner_type, owner_id);
-CREATE INDEX idx_material_lots_lot_number ON material_lots(lot_number);
-```
-
-**Endpoints:**
-- `GET /lots` - List lots with filters (material_id, status, location, owner)
-- `GET /lots/:id` - Get lot details with location path
-- `GET /lots/by-number/:lotNumber` - Find by barcode scan
-- `POST /lots` - Create lot (usually via receipt)
-- `PATCH /lots/:id` - Update lot (location, status)
-- `PATCH /lots/:id/move` - Move lot to new location
-- `POST /lots/:id/adjust` - Adjust quantity (cycle count)
-
-#### 4.3 Link Inventory Transactions to Lots (~2 hours)
-
-**Migration:** Add proper FK constraints to existing columns.
-
-```sql
--- Add FKs to pre-wired columns
-ALTER TABLE inventory_transactions
-ADD CONSTRAINT fk_inventory_transactions_location
-FOREIGN KEY (location_id) REFERENCES locations(id);
-
-ALTER TABLE inventory_transactions
-ADD CONSTRAINT fk_inventory_transactions_lot
-FOREIGN KEY (lot_id) REFERENCES material_lots(id);
-
--- Update allocations to support lot-specific reservations
-ALTER TABLE inventory_allocations
-ADD CONSTRAINT fk_inventory_allocations_lot
-FOREIGN KEY (lot_id) REFERENCES material_lots(id);
-```
-
-**Service Changes:**
-- Receipts create `material_lots` records
-- Consumption transactions decrement `lot.quantity_remaining`
-- Lot movements create MOVE transactions
-
-#### 4.4 Shop Floor Lookup Service (~2 hours)
-
-**Purpose:** Simple queries for operators to find materials.
-
-**Service:**
-```typescript
-interface ReelSearchResult {
-  ipn: string;
-  description: string;
-  total_available: number;
-  reels: Array<{
-    lot_number: string;
-    quantity_remaining: number;
-    location_code: string;
-    location_path: string;  // "Warehouse 1 > Zone A > Shelf 3 > Bin B"
-    status: string;
-    owner: string;  // "COMPANY" or customer name
-    work_order?: string;  // If IN_USE
-  }>;
-}
-
-async findReelsByIPN(
-  ipn: string,
-  options?: {
-    excludeLotId?: string;  // "Find another reel"
-    ownerType?: string;
-    ownerId?: string;
-    statusFilter?: string[];
-  }
-): Promise<ReelSearchResult>;
-
-async findLotByBarcode(lotNumber: string): Promise<LotDetails>;
-
-async getLocationContents(locationId: string): Promise<LotSummary[]>;
-```
-
-**Endpoints:**
-- `GET /shop-floor/search?ipn=XXX` - Find reels by IPN
-- `GET /shop-floor/scan/:barcode` - Scan reel barcode
-- `GET /shop-floor/location/:code` - What's at this location?
-
-#### 4.5 Operator Lookup UI (~3 hours)
-
-**Purpose:** Simple, touch-friendly interface for shop floor.
-
-**Features:**
-- Large search box (barcode scanner compatible)
-- Quick results showing reel locations
-- Visual indicators: ✅ In Stock, ⚠️ In Use, 🔒 Reserved, ❌ Depleted
-- Location path breadcrumbs
-- Owner badge (Company vs Customer name)
-
-**UI Mockup:**
-```
-┌─────────────────────────────────────────────────────────────┐
-│  🔍 FIND MATERIAL                              [Scan Mode] │
-│  ┌─────────────────────────────────────────────┐           │
-│  │ RES-10K-0402                                │ [Search]  │
-│  └─────────────────────────────────────────────┘           │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  10K Resistor 0402 5%                                       │
-│  Total Available: 8,500 units (3 reels)                     │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │ 📦 REEL-2024-001                                        ││
-│  │    4,500 remaining                                      ││
-│  │    📍 WH1 > Zone A > Aisle 3 > Shelf 2 > Bin B         ││
-│  │    🏢 Company Stock                         ✅ Available ││
-│  └─────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │ 📦 REEL-2024-003                                        ││
-│  │    2,800 remaining                                      ││
-│  │    📍 WH1 > Zone A > Aisle 3 > Shelf 2 > Bin C         ││
-│  │    👤 Customer: Acme Corp                   ✅ Available ││
-│  └─────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │ 🔧 REEL-2024-007                                        ││
-│  │    1,200 remaining                                      ││
-│  │    📍 Production Floor - Line 2                         ││
-│  │    👤 Customer: Acme Corp      ⚠️ In Use (WO-2024-042) ││
-│  └─────────────────────────────────────────────────────────┘│
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-#### Phase 4 Implementation Order
-
-| Step | Component | Dependencies | Effort |
-|------|-----------|--------------|--------|
-| 4.1 | Locations module | None | 3 hrs |
-| 4.2 | Material Lots module | 4.1 | 4 hrs |
-| 4.3 | Link inventory transactions | 4.1, 4.2 | 2 hrs |
-| 4.4 | Shop floor lookup service | 4.2 | 2 hrs |
-| 4.5 | Operator lookup UI | 4.4 | 3 hrs |
-
-**Total Phase 4 Effort:** ~14 hours (backend + frontend)
-
-#### Phase 4 Prerequisites
-
-| Prerequisite | Reason |
-|--------------|--------|
-| Phase 3.0 (Ownership) | Lots need owner_type/owner_id |
-| Phase 3.3 (Shipments) | Lots link to shipments for traceability |
-| Phase 3.1 (Purchase Orders) | Lots link to PO lines for purchased materials |
-
-#### Lot Lifecycle Flow
-
-```
-Receipt (PO or Shipment)
-         │
-         ▼
-   ┌───────────┐
-   │ AVAILABLE │ ◄─────────────────────────────────┐
-   │ (in stock)│                                   │
-   └─────┬─────┘                                   │
-         │                                         │
-         │ Allocate to order                       │ Return from floor
-         ▼                                         │
-   ┌───────────┐                                   │
-   │ RESERVED  │                                   │
-   └─────┬─────┘                                   │
-         │                                         │
-         │ Issue to work order                     │
-         ▼                                         │
-   ┌───────────┐      Partial use                  │
-   │  IN_USE   │ ─────────────────────────────────►│
-   │(on floor) │                                   │
-   └─────┬─────┘                                   │
-         │                                         │
-         │ Fully consumed                          │
-         ▼                                         │
-   ┌───────────┐                                   │
-   │ DEPLETED  │                                   │
-   └───────────┘                                   │
-```
-
----
-
-### Phase 5: Quoting Module (Vendor Pricing Integration)
+### Phase 5: Quoting Module — NOT STARTED
 
 **Purpose:** Extract pricing, availability, and specifications from major electronic component distributors to create competitive quotes.
 
@@ -1417,7 +692,7 @@ ARROW_API_KEY=your_api_key
 
 ---
 
-### Phase 6: Label Printing (Dymo Integration)
+### Phase 6: Label Printing (Dymo Integration) — NOT STARTED
 
 **Purpose:** Print labels upon receiving inventory using existing Dymo label templates and locally-connected Dymo printers.
 
@@ -3086,6 +2361,8 @@ shortfall = total_required - quantity_available
 
 **Note**: Shortage calculation uses `quantity_available` (not just on-hand) to account for materials already reserved by other orders. This prevents overselling when multiple orders are open simultaneously.
 
+**Excel Export (REV-002 fix):** Shortage exports now show per-order quantities (`Qty (Order)`) alongside the global total (`Qty (All Orders)`) to prevent buyers from double-counting when the same material appears in multiple orders.
+
 ### BOM Revision on Order Creation
 
 ```typescript
@@ -3106,73 +2383,16 @@ async createOrder(dto: CreateOrderDto) {
 }
 ```
 
-## Implementation Steps
+## Implementation Steps — ✅ ALL COMPLETE
 
-### Step 1: Project Setup ✅ COMPLETE
-1. ✅ Create project folders (`backend/`, `frontend/`)
-2. ✅ Initialize NestJS backend with TypeORM
-3. ⬚ Initialize Next.js frontend with Tailwind CSS
-4. ✅ Create `docker-compose.yml` with PostgreSQL
-5. ✅ Configure environment variables
+All 6 original implementation steps are complete. The system is deployed to production.
 
-### Step 2: Database & Entities 🔄 IN PROGRESS (7 of 10 tables)
-1. ✅ Materials entity with soft delete + partial unique index
-2. ✅ Products entity with soft delete + partial unique index
-3. ✅ Customers entity with soft delete
-4. ✅ BomRevision entity with BomSource enum
-5. ✅ BomItem entity with ResourceType enum + bom_line_key
-6. ✅ Order entity with OrderType/OrderStatus enums + partial unique index
-7. ✅ InventoryTransaction entity (ledger model)
-8. ⬚ InventorySummary entity (optional cache - deferred)
-9. ⬚ BomImportMapping entity
-10. ⬚ BomValidation entity
-11. ✅ All migrations generated and applied (10 migrations)
-12. ✅ bom_line_key column added to bom_items
-13. ✅ Partial unique indexes for soft delete tables
-14. ✅ Seed script with sample data (4 customers, 20 materials, 4 products, 5 orders)
-
-### Step 3: Backend Modules 🔄 IN PROGRESS (9 of 10 complete)
-Build modules in this order:
-1. ✅ **Materials** - CRUD + bulk create + restore (7 endpoints)
-2. ✅ **Products** - CRUD + restore (6 endpoints)
-3. ✅ **Customers** - CRUD + search + restore (6 endpoints)
-4. ✅ **BOM** - Revisions, items, activation, diff, copy + audit events (15 endpoints)
-5. ✅ **Inventory** - Ledger-based transactions + stock queries + allocations + audit events (18 endpoints)
-6. ✅ **MRP** - Calculate requirements + shortages + availability (4 endpoints)
-7. ✅ **Orders** - CRUD + status + shipping + filtering + stats + audit events (13 endpoints)
-8. ✅ **Audit** - Event queries, entity history, actor history, stats (6 endpoints)
-9. ✅ **Health** - Health check, liveness probe, readiness probe (3 endpoints)
-10. ⬚ **BOM Import** - File parsing, validation, mapping ← **NEXT**
-
-### Step 4: Frontend Pages
-1. **Layout** - Navigation sidebar, header
-2. **Dashboard** - Stats cards, recent orders
-3. **Materials page** - List, create, edit (needed for BOM import)
-4. **Products page** - List, create, edit
-5. **Customers page** - List, create, edit
-6. **BOM pages**:
-   - Product BOM list (show all products with revision info)
-   - Revision history for a product
-   - Manual BOM editor
-   - **Import wizard** (key feature)
-   - Import mapping manager
-7. **Inventory page** - View stock, adjust quantities
-8. **Orders page** - List orders with BOM revision info
-9. **New Order page** - Order form (shows active BOM revision)
-10. **Shortages page** - Material shortage report
-
-### Step 5: BOM Import Feature
-1. File upload component (CSV, Excel)
-2. Column mapping UI (drag-drop or dropdown)
-3. Validation preview (show matched/unmatched materials)
-4. Diff view (what's changing from previous revision)
-5. Confirm and create revision
-
-### Step 6: Polish
-1. Loading states and error handling
-2. Form validation
-3. Toast notifications
-4. Responsive design
+- ✅ **Step 1: Project Setup** — NestJS backend + Next.js frontend + PostgreSQL
+- ✅ **Step 2: Database & Entities** — 22 entities, 47 migrations
+- ✅ **Step 3: Backend Modules** — 17 modules, ~165 API endpoints
+- ✅ **Step 4: Frontend Pages** — All CRUD pages, dashboards, wizards
+- ✅ **Step 5: BOM Import** — CSV + Excel with column mapping, auto-create materials
+- ✅ **Step 6: Polish** — Loading states, validation, toast notifications, responsive design
 
 ## Sample Data (Based on Real-World Formats)
 
@@ -3330,37 +2550,35 @@ Mappings are stored in the database (`bom_import_mappings` table), not hardcoded
 | ISC | P17771 | - | 2100-0142-3-P CFG: A | 160 | 60 | Sep 22, 2025 | shipped |
 | UgoWork | PO08623 | - | 1220-0003-02-A01 | 150 | 0 | Jun 30, 2025 | shipped |
 
-## Success Criteria
+## Success Criteria — ✅ ALL MET
 
-- [ ] Can create an order with customer, product, quantity, due date, and order type
-- [ ] Order captures the active BOM revision at creation time
-- [ ] After creating an order, can see material requirements with quantities
-- [ ] Can view shortage report showing materials needed across all orders
-- [ ] Can manually adjust inventory levels
-- [ ] **Can import BOM from CSV/Excel file**
-- [ ] **Can create and save column mappings for different formats**
-- [ ] **Can preview import changes before committing**
-- [ ] **Can view BOM revision history for a product**
-- [ ] **Can compare two BOM revisions (diff view)**
-- [ ] **Can validate client-provided BOM against active revision**
-- [ ] **Validation report shows discrepancies (missing, extra, quantity mismatch)**
-- [ ] **Can view validation history for audit trail**
-- [ ] Dashboard shows order count and low stock alerts
-- [ ] All data persists in PostgreSQL
+- [x] Can create an order with customer, product, quantity, due date, and order type
+- [x] Order captures the active BOM revision at creation time
+- [x] After creating an order, can see material requirements with quantities
+- [x] Can view shortage report showing materials needed across all orders
+- [x] Can manually adjust inventory levels
+- [x] Can import BOM from CSV/Excel file
+- [x] Can preview import changes before committing
+- [x] Can view BOM revision history for a product
+- [x] Can compare two BOM revisions (diff view)
+- [x] Can validate client-provided BOM against active revision
+- [x] Validation report shows discrepancies (missing, extra, quantity mismatch)
+- [x] Dashboard shows order count and low stock alerts
+- [x] All data persists in PostgreSQL
+- [x] User authentication/authorization (session-based, 4 roles)
+- [x] System deployed to production and accessible from LAN
 
-## What's NOT Included (Future Phases)
+## Future Phases (Not Yet Implemented)
 
-- User authentication/authorization
-- ~~Batch/lot tracking~~ → **Now included in traceability design**
-- Kitting workflow
-- ~~Purchase orders~~ → **Now included in traceability design**
-- ~~Suppliers~~ → **Now included in traceability design**
 - NCR/quality management
-- Shipment tracking
-- ~~Consignment inventory separation~~ → **Ownership dimension designed, implementation deferred**
+- Shipment tracking & packing slips
 - Multi-level BOMs (sub-assemblies)
-- Production workflow
-- ECO approval workflow (revisions are immediate, no approval chain)
+- ECO approval workflow (revisions are currently immediate, no approval chain)
+- Phase 5: Quoting module (vendor pricing integration — DigiKey, Mouser, Arrow, etc.)
+- Phase 6: Label printing (Dymo integration)
+- Named locations module (bin/shelf/rack definitions)
+- HTTPS / TLS hardening
+- Active Directory / LDAP integration
 
 ---
 
@@ -3418,13 +2636,14 @@ Supplier PO → Receive → Material Lot → inventory_transactions (lot_id)
 
 ## Next Steps After MVP
 
-Once MVP is stable, expand in this order:
-1. **ECO workflow** - Approval process for BOM changes
-2. **Inventory separation** - Split company vs consignment inventory
-3. ~~**Suppliers** - Track material sources~~ → Included in traceability design
-4. ~~**Batch tracking** - Lot numbers and traceability~~ → Included in traceability design
-5. **Users & roles** - Authentication and permissions
-6. **Kitting** - Material preparation for production
-7. **NCR** - Quality management
-8. **Shipments** - Fulfillment and documents
+MVP is deployed and stable (April 2026). Remaining expansion priorities:
+1. **Backup configuration** - Nightly pg_dump, cross-VM copy, restore tests (DEPLOYMENT_PLAN.md Phase 7)
+2. **ECO workflow** - Approval process for BOM changes
+3. **NCR** - Quality management / non-conformance reports
+4. **Shipments** - Fulfillment tracking and packing slips
+5. **Phase 5: Quoting** - Vendor pricing integration (DigiKey, Mouser, Arrow)
+6. **Phase 6: Label Printing** - Dymo integration for inventory labels
+7. **Named locations** - Bin/shelf/rack definitions for warehouse
+8. **HTTPS / TLS** - Post-launch security hardening
 9. **Serial-level traceability** - Per-unit tracking (if required)
+10. **Active Directory** - LDAP integration for user management

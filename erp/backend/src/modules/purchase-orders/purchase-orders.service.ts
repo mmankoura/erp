@@ -31,7 +31,6 @@ import {
 } from './dto';
 import { AuditService } from '../audit/audit.service';
 import { ReceivingInspectionService } from '../receiving-inspection/receiving-inspection.service';
-import { SequenceGeneratorService } from '../shared/sequence-generator.service';
 
 // Open statuses for quantity_on_order calculation
 const OPEN_PO_STATUSES = [
@@ -79,7 +78,6 @@ export class PurchaseOrdersService {
     private readonly auditService: AuditService,
     @Inject(forwardRef(() => ReceivingInspectionService))
     private readonly receivingInspectionService: ReceivingInspectionService,
-    private readonly sequenceGenerator: SequenceGeneratorService,
   ) {}
 
   // ==================== CRUD OPERATIONS ====================
@@ -781,12 +779,28 @@ export class PurchaseOrdersService {
   // ==================== HELPERS ====================
 
   private async generatePoNumber(): Promise<string> {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = `PO-${year}${month}-`;
+    const START_NUMBER = 8833045;
 
-    return this.sequenceGenerator.next(prefix, 'purchase_orders', 'po_number');
+    // Use advisory lock to prevent race conditions
+    const lockKey = 883304500; // fixed lock key for PO numbering
+    await this.dataSource.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
+
+    const rows = await this.dataSource.query(
+      `SELECT po_number FROM purchase_orders
+       WHERE po_number ~ '^[0-9]+$'
+       ORDER BY CAST(po_number AS BIGINT) DESC
+       LIMIT 1`,
+    );
+
+    let next = START_NUMBER;
+    if (rows.length > 0) {
+      const last = parseInt(rows[0].po_number, 10);
+      if (!isNaN(last) && last >= START_NUMBER) {
+        next = last + 1;
+      }
+    }
+
+    return String(next);
   }
 
   async getOpenPOsForMaterial(materialId: string): Promise<PurchaseOrder[]> {

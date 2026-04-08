@@ -311,5 +311,15 @@ PM2 boot persistence was attempted via three approaches, all failed:
 - [ ] Delete VMware snapshot (do NOT leave running long-term)
 
 **Phases 1-6 completed**: April 1, 2026
+
+---
+
+## Production Issues Found During Testing
+
+### Issue 1: 401 Unauthorized on all authenticated requests (April 1, 2026)
+- **Symptom**: After logging in, all API calls (create customer, create user, etc.) returned `{"message":"Authentication required","error":"Unauthorized","statusCode":401}`
+- **Root cause**: Session cookie had `secure: true` in production (`secure: config.NODE_ENV === 'production'` in `main.ts`). The `secure` flag tells the browser to only send the cookie over HTTPS. Since the deployment uses HTTP, the browser received the cookie on login but refused to send it back on subsequent requests.
+- **Fix**: Changed to `secure: false` in `main.ts`, rebuilt, and copied updated `dist/main.js` to server. Restarted `erp-backend` service.
+- **Follow-up**: When HTTPS is enabled (Post-Launch Hardening item #1), change `secure` back to `true`.
 **Phase 7 (Backup Configuration)**: Deferred — to be completed before go-live
 **VMware snapshot**: Remember to delete `Pre-ERP-Deploy-2026-03-30` within 72 hours of confirming stability

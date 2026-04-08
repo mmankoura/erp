@@ -16,8 +16,8 @@ export class Product {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  customer_id: string;
+  @Column({ type: 'uuid', nullable: true })
+  customer_id: string | null;
 
   @ManyToOne(() => Customer)
   @JoinColumn({ name: 'customer_id' })
