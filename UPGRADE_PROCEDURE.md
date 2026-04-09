@@ -52,26 +52,27 @@ Before starting, confirm on your dev machine:
 
 ## Step 1: Copy Release to Server (Dev Machine)
 
-### 1a. Create a deploy script for this revision
-
-Copy `deploy-rev002.bat` as a template. For each new release, update:
-- `set REV=YYYY-MM-DD_NNN` (the release folder name)
-- The header comment with the REV number and description
-
-### 1b. Run the deploy script
+### 1a. Run the deploy script
 
 Open **Windows Command Prompt** (not WSL, not PowerShell) on your dev machine:
 
 ```batch
 cd C:\Users\mark.mankoura\Documents\projects\erp
-deploy-revXXX.bat
+deploy.bat REV-XXX YYYY-MM-DD_NNN
 ```
 
-The script copies build artifacts to `\\10.12.1.47\erp-deploy\releases\YYYY-MM-DD_NNN\`.
+The script automatically:
+- Compares `package-lock.json` against the last deploy
+- If **unchanged**: skips `node_modules` copy (saves ~2 hours). You'll create junction links on the server instead.
+- If **changed**: does full `node_modules` robocopy (slow but necessary).
+- Copies `dist/`, `.next/`, `public/`, `package.json`, `package-lock.json`
+- Saves lock file snapshots for next deploy comparison
 
-**Expected time:** ~5-10 minutes depending on network speed.
+To force full copy regardless: `deploy.bat REV-XXX YYYY-MM-DD_NNN --full`
 
-### 1c. Verify the copy landed
+**Expected time:** ~5-10 minutes if node_modules skipped, ~2-3 hours if full copy needed.
+
+### 1b. Verify the copy landed
 
 ```batch
 dir \\10.12.1.47\erp-deploy\releases\YYYY-MM-DD_NNN\backend\dist\main.js
@@ -79,6 +80,8 @@ dir \\10.12.1.47\erp-deploy\releases\YYYY-MM-DD_NNN\frontend\.next\BUILD_ID
 ```
 
 Both files must exist. If the `releases\` folder is empty, the script did not run or the network share is inaccessible — troubleshoot before proceeding.
+
+> **Note on interrupted copies:** If the robocopy is interrupted (network drop), re-run the same `deploy.bat` command. Robocopy resumes and skips already-copied files.
 
 ---
 
@@ -114,97 +117,67 @@ dir C:\erp-backups\pre-revXXX.dump
 
 ---
 
-## Step 4: Copy Release from Staging to App Directory (On Server)
+## Step 4: Switch Release (On Server)
 
-The deploy script copies files to `C:\erp-deploy\releases\` (the network share). You must now copy them into `C:\apps\erp\releases\`:
+Use the `switch-release.bat` script on the server. It handles everything: stops services, rotates releases, creates junction links, copies env files, starts services, and verifies.
 
-```batch
-robocopy C:\erp-deploy\releases\YYYY-MM-DD_NNN C:\apps\erp\releases\YYYY-MM-DD_NNN /E /NP /NFL /NDL
-```
-
-Verify the copy:
-```batch
-dir C:\apps\erp\releases\YYYY-MM-DD_NNN\backend\dist\main.js
-dir C:\apps\erp\releases\YYYY-MM-DD_NNN\frontend\.next\BUILD_ID
-```
-- [ ] Both files exist
-
-> **Why two copies?** The `erp-deploy` share is a staging area accessible over the network. The `C:\apps\erp\` directory is the application directory where services run from. Keeping them separate means a network copy in progress won't interfere with a running release, and the staging area can be cleaned up independently.
-
----
-
-## Step 5: Stop Services (On Server)
-
-**You MUST stop services before renaming folders.** NSSM holds file locks on the `current\` directory. Attempting to rename while services are running will fail with "Access is denied."
+### If node_modules were SKIPPED by the deploy script (fast path):
 
 ```batch
-net stop erp-frontend
-net stop erp-backend
+C:\erp-deploy\switch-release.bat YYYY-MM-DD_NNN --link-nm
 ```
 
-Verify both stopped:
+This creates junction links pointing `current\backend\node_modules` and `current\frontend\node_modules` to the previous release's copies. Takes seconds.
+
+### If node_modules were COPIED by the deploy script (full path):
+
 ```batch
-sc query erp-backend | find "STOPPED"
-sc query erp-frontend | find "STOPPED"
+C:\erp-deploy\switch-release.bat YYYY-MM-DD_NNN
 ```
 
----
+No junction links needed — node_modules are already in the release.
 
-## Step 6: Switch Release (On Server)
+### What the script does:
+
+1. Verifies `main.js` and `BUILD_ID` exist in the staging release
+2. Stops `erp-frontend` and `erp-backend` services
+3. Rotates: `current` → `previous` (for rollback)
+4. Moves release from `C:\erp-deploy\releases\` directly to `C:\apps\erp\current` (instant — same drive)
+5. Creates node_modules junction links if `--link-nm` flag was used
+6. Copies `.env.backend`, `.env.frontend`, `web.config` from `shared\`
+7. Starts services
+8. Waits 5 seconds and verifies both services are RUNNING
+9. Runs health check
+
+**Total downtime:** typically under 30 seconds.
+
+### Manual switch (if script is not available):
 
 ```batch
 cd /d C:\apps\erp
-
-:: 6a. Clean up stale backup from a prior deploy
+net stop erp-frontend
+net stop erp-backend
 if exist previous-backup (rmdir /s /q previous-backup)
-
-:: 6b. Rotate: current → previous (for rollback)
 if exist previous (rename previous previous-backup)
 rename current previous
-
-:: 6c. Move new release into place
-:: IMPORTANT: "rename" within the same parent dir only.
-:: The release is at C:\apps\erp\releases\YYYY-MM-DD_NNN — use "move", not "rename"
-move releases\YYYY-MM-DD_NNN current
-
-:: 6d. Copy persistent files (these are NOT in the release)
+move C:\erp-deploy\releases\YYYY-MM-DD_NNN current
+:: If node_modules were skipped:
+mklink /J current\backend\node_modules previous\backend\node_modules
+mklink /J current\frontend\node_modules previous\frontend\node_modules
+:: Copy env files:
 copy shared\.env.backend current\backend\.env
 copy shared\.env.frontend current\frontend\.env
 copy shared\web.config current\frontend\web.config
-```
-
-**Verify env files copied:**
-```batch
-dir current\backend\.env
-dir current\frontend\.env
-dir current\frontend\web.config
-```
-- [ ] All three files exist and are non-empty
-
-> **Troubleshooting "The system cannot find the file specified" on move/rename:**
-> - Verify the release folder exists: `dir releases`
-> - Verify the exact folder name matches (date, sequence number)
-> - If `releases\` is empty, you skipped Step 4 (copy from staging)
-
----
-
-## Step 7: Start Services (On Server)
-
-```batch
 net start erp-backend
 net start erp-frontend
-```
-
-Wait 5 seconds, then clean up:
-```batch
 if exist previous-backup (rmdir /s /q previous-backup)
 ```
 
-**Total downtime:** from Step 5 `net stop` to Step 7 `net start` — typically under 30 seconds.
-
 ---
 
-## Step 8: Verify (On Server + Workstation)
+## Step 5: Verify (On Server + Workstation)
+
+> If you used `switch-release.bat`, it already verified services and ran the health check. Confirm from a workstation browser below.
 
 ### On the server:
 
@@ -228,18 +201,19 @@ curl http://127.0.0.1:3002/api/health
 | 5 | Log in with your account | Dashboard loads with data |
 | 6 | Rev-specific checks from CHANGELOG.md | All pass |
 
-**If ANY check fails → immediately rollback (Step 9).**
+**If ANY check fails → immediately rollback (Step 6).**
 
 > **If services show RUNNING but health check fails:**
-> Check the error log: `type C:\apps\erp\logs\backend-error.log`
+> Check the error log: `type C:\apps\erp\logs\backend-error.log` or `type C:\apps\erp\logs\frontend-error.log`
 > Common causes:
-> - Missing `.env` file (Step 6d was skipped)
+> - Missing `.env` file (env copy was skipped)
 > - Database connection error (DATABASE_URL wrong in `.env`)
 > - Migration not run (new tables/columns missing)
+> - Incomplete `.next` folder (interrupted robocopy — see Common Issues)
 
 ---
 
-## Step 9: Rollback (If Needed)
+## Step 6: Rollback (If Needed)
 
 ### Code-only rollback (no migration involved):
 
@@ -305,24 +279,19 @@ DEV MACHINE:
 [ ] Backend npm run build PASS (dist\main.js exists)
 [ ] Frontend npm run build PASS (.next\BUILD_ID exists)
 [ ] CHANGELOG.md updated with REV entry
-[ ] Deploy script created and run
+[ ] deploy.bat REV-XXX YYYY-MM-DD_NNN run (or --full if package-lock changed)
 [ ] Verified files on server share (main.js + BUILD_ID exist)
 
 SERVER (RDP as Administrator):
 [ ] Database backup taken (C:\erp-backups\pre-revXXX.dump, size > 0)
 [ ] Migration run (if applicable)
 [ ] Permissions granted (if migration created new tables)
-[ ] Release copied from C:\erp-deploy\releases\ to C:\apps\erp\releases\
-[ ] Services stopped (erp-frontend, erp-backend)
-[ ] current → previous, release → current (via move)
-[ ] Env files copied (.env.backend → .env, .env.frontend → .env, web.config)
-[ ] Services started (erp-backend, erp-frontend)
+[ ] switch-release.bat YYYY-MM-DD_NNN [--link-nm] run
 [ ] sc query — both RUNNING
 [ ] curl health check — healthy
 [ ] Frontend loads from workstation browser
 [ ] Login works, dashboard shows data
 [ ] Rev-specific verification checks passed (see CHANGELOG.md)
-[ ] Cleanup: previous-backup removed
 ```
 
 ---
