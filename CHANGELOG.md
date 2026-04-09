@@ -6,6 +6,40 @@
 
 ---
 
+## REV-003 — 2026-04-08
+
+**Released by**: Mark Mankoura
+**Migration required**: No
+**Backup taken**: [ ] (check before deploying)
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Enhancement | Receiving | Replaced complex 11-step receiving form with simplified quick-receive. Three modes: PO (updates qty on order → on hand), Customer Supplied (customer-owned inventory), Stock (free-form with MFG PN, manufacturer, PO reference). No sessions, no AML validation, no inspections — items go straight to ACTIVE @ STOCK. |
+| 2 | Enhancement | Receiving | Added "Complete Receiving" button to navigate back to receiving dashboard |
+| 3 | Preservation | Receiving | Original sophisticated receiving code saved as `page.v2.tsx` for future re-integration |
+
+### Files Changed
+
+- `erp/backend/src/modules/receiving/dto/quick-receive.dto.ts` — New DTO for quick receive (3 receipt types)
+- `erp/backend/src/modules/receiving/receiving.service.ts` — Added `quickReceive()` method
+- `erp/backend/src/modules/receiving/receiving.controller.ts` — Added `POST /receiving/quick-receive` endpoint
+- `erp/frontend/src/app/receiving/new/page.tsx` — New simplified receiving form
+- `erp/frontend/src/app/receiving/new/page.v2.tsx` — Original complex form (preserved)
+
+### Verification Steps
+
+- [ ] Navigate to Warehouse > Receiving > Receive Materials
+- [ ] PO mode: select an open PO, enter UID/IPN/Qty/Package, click Receive — verify item appears in receipt log and MRP shows updated on-hand
+- [ ] Customer Supplied mode: select a customer, receive an item — verify lot created with customer ownership
+- [ ] Stock mode: enter UID/IPN/MFG PN/MFG/Qty/Package/PO Reference, receive — verify lot created
+- [ ] Click "Complete Receiving" — verify navigates to /receiving dashboard
+- [ ] Attempt duplicate UID — verify error "UID already in use"
+- [ ] Attempt invalid IPN — verify error "Material with IPN not found"
+
+---
+
 ## REV-002 — 2026-04-07
 
 **Released by**: Mark Mankoura
