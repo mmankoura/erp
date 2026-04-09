@@ -322,4 +322,36 @@ PM2 boot persistence was attempted via three approaches, all failed:
 - **Fix**: Changed to `secure: false` in `main.ts`, rebuilt, and copied updated `dist/main.js` to server. Restarted `erp-backend` service.
 - **Follow-up**: When HTTPS is enabled (Post-Launch Hardening item #1), change `secure` back to `true`.
 **Phase 7 (Backup Configuration)**: Deferred — to be completed before go-live
+
+---
+
+## REV-002 Deployment — April 7, 2026
+
+- **Changes**: PO numbering sequence (8833045+), MRP shortage Excel export fix
+- **Migration**: None
+- **Backup**: `C:\erp-backups\pre-rev002.dump` (329 KB)
+- **Issues during deploy**:
+  - "Access is denied" on `rename current previous` — services were still running. Fix: stop services before renaming.
+  - `releases\` folder was empty — deploy script copies to `C:\erp-deploy\`, not `C:\apps\erp\releases\`. Fix: robocopy from staging to app directory.
+  - `rename` placed folder inside `releases\` — Fix: use `move` instead of `rename`.
+- **Result**: Deployed successfully. PO numbering and shortage exports verified.
+- **Lessons**: All incorporated into UPGRADE_PROCEDURE.md.
+
+---
+
+## REV-003 Deployment — April 9, 2026
+
+- **Changes**: Simplified receiving module (quick-receive with 3 modes: PO, Customer Supplied, Stock)
+- **Migration**: None
+- **Backup**: `C:\erp-backups\pre-rev003.dump`
+- **Issues during deploy**:
+  - Deploy script robocopy interrupted during frontend `.next` copy (network timeout after ~2.5 hours on node_modules). Re-ran script — robocopy resumed and skipped already-copied files.
+  - Frontend failed to start: `ENOENT .next/static` — the `.next/static` directory was missing from the interrupted copy. Copied separately from dev machine via `\\10.12.1.47\erp-deploy\static-temp`.
+  - Frontend failed again: `ENOENT .next/server/pages-manifest.json` — `.next/server` also incomplete. Copied full `.next` folder from dev machine (`next-full` staging folder).
+  - After full `.next` was in place, frontend started successfully.
+- **Result**: Deployed successfully. Quick receive tested in all 3 modes.
+- **Lessons**: 
+  - Network robocopy of `node_modules` (~538 MB) is extremely slow (~1.5 MB/min). Future deploys should use junction links for unchanged node_modules.
+  - The `.next` folder must be fully intact — partial copies cause runtime crashes. Always verify `static\` and `server\` directories exist after copy.
+  - Moving directly from `C:\erp-deploy\releases\` to `C:\apps\erp\current` (skipping the staging→app robocopy) saves significant time.
 **VMware snapshot**: Remember to delete `Pre-ERP-Deploy-2026-03-30` within 72 hours of confirming stability

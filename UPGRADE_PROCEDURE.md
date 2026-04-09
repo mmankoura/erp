@@ -287,6 +287,9 @@ net start erp-frontend
 | `copy shared\.env.backend current\backend\.env` → **"The system cannot find the path specified"** | `current\backend\` doesn't exist (switch step failed or was skipped) | Verify `dir current\backend\dist\main.js` exists. If not, the move/rename in Step 6c failed |
 | Services start but ERP doesn't load | `.env` files not copied, or `web.config` missing | Run Step 6d. Check `dir current\backend\.env` and `dir current\frontend\web.config` |
 | Health check returns error after upgrade | New code expects migration that wasn't run | Check `C:\apps\erp\logs\backend-error.log`. If migration-related, run migration or rollback |
+| Frontend fails with **ENOENT `.next/static`** or **`.next/server/pages-manifest.json`** | The deploy script robocopy was interrupted during the `.next` folder copy. The frontend `.next` directory is incomplete. | Copy the full `.next` from dev machine: `robocopy "...\erp\frontend\.next" "\\10.12.1.47\erp-deploy\next-full" /E /NP`, then on server: `robocopy C:\erp-deploy\next-full C:\apps\erp\current\frontend\.next /E /NP` and restart frontend |
+| **Deploy script robocopy interrupted** (network drop, timeout) | Network copy of large `node_modules` or `.next` folders over SMB is slow and fragile | Re-run the deploy script — robocopy resumes and skips already-copied files. After completion, verify `main.js` and `BUILD_ID` exist on server before switching |
+| **Robocopy from staging to app directory is very slow** | Copying `node_modules` (~538 MB, thousands of small files) locally still takes 10-30 min | Skip the staging→app copy. Move directly from staging: `move C:\erp-deploy\releases\YYYY-MM-DD_NNN C:\apps\erp\current` (takes seconds). Trade-off: no archive copy in releases\ |
 
 ---
 
