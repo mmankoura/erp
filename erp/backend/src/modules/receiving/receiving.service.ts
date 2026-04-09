@@ -40,6 +40,7 @@ import { PurchaseOrder } from '../../entities/purchase-order.entity';
 import { PurchaseOrderLine } from '../../entities/purchase-order-line.entity';
 import { StartSessionDto } from './dto/start-session.dto';
 import { ReceiveItemDto } from './dto/receive-item.dto';
+import { QuickReceiveDto, QuickReceiptType } from './dto/quick-receive.dto';
 import { ResolveDiscrepancyDto } from './dto/resolve-discrepancy.dto';
 import { UidGeneratorService } from './uid-generator.service';
 import { AmlService } from '../aml/aml.service';
@@ -949,6 +950,123 @@ export class ReceivingService {
     const prefix = `INS-${year}${month}${day}-`;
 
     return this.sequenceGenerator.next(prefix, 'receiving_inspections', 'inspection_number', 4, manager);
+  }
+
+  // ==================== QUICK RECEIVE (Simplified) ====================
+
+  async quickReceive(dto: QuickReceiveDto) {
+    // Only validation: material must exist
+    const material = await this.materialRepository.findOne({
+      where: { internal_part_number: dto.received_ipn, deleted_at: undefined },
+    });
+    if (!material) {
+      throw new BadRequestException(
+        `Material with IPN "${dto.received_ipn}" not found`,
+      );
+    }
+
+    // Check UID is not already in use
+    const existingLot = await this.lotRepository.findOne({
+      where: { uid: dto.uid },
+    });
+    if (existingLot) {
+      throw new ConflictException(
+        `UID "${dto.uid}" is already in use`,
+      );
+    }
+
+    // Determine ownership
+    const isPO = dto.receipt_type === QuickReceiptType.PO;
+    const isCustomer = dto.receipt_type === QuickReceiptType.CUSTOMER_SUPPLIED;
+    const ownerType = isCustomer ? OwnerType.CUSTOMER : OwnerType.COMPANY;
+    const ownerId = isCustomer ? dto.customer_id ?? null : null;
+
+    // Resolve PO details if PO mode
+    let po: PurchaseOrder | null = null;
+    let matchedPoLine: PurchaseOrderLine | null = null;
+    if (isPO && dto.po_id) {
+      po = await this.poRepository.findOne({
+        where: { id: dto.po_id },
+        relations: ['lines', 'supplier'],
+      });
+      if (!po) {
+        throw new BadRequestException(`Purchase order not found`);
+      }
+      // Find first PO line for this material with remaining qty
+      matchedPoLine =
+        po.lines
+          ?.filter(
+            (l) =>
+              l.material_id === material.id &&
+              parseFloat(String(l.quantity_received)) <
+                parseFloat(String(l.quantity_ordered)),
+          )
+          .sort((a, b) => (a.line_number ?? 0) - (b.line_number ?? 0))[0] ??
+        null;
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      // Create inventory lot
+      const lot = manager.create(InventoryLot, {
+        uid: dto.uid,
+        material_id: material.id,
+        quantity: dto.quantity_received,
+        initial_quantity: dto.quantity_received,
+        package_type: dto.package_type ?? PackageType.TR,
+        status: LotStatus.ACTIVE,
+        location: 'STOCK',
+        owner_type: ownerType,
+        owner_id: ownerId,
+        po_reference:
+          isPO && po ? po.po_number : dto.po_reference ?? null,
+        supplier_id: isPO && po ? po.supplier?.id ?? null : null,
+        received_date: new Date(),
+      });
+      const savedLot = await manager.save(InventoryLot, lot);
+
+      // Create inventory transaction
+      const tx = manager.create(InventoryTransaction, {
+        material_id: material.id,
+        transaction_type: TransactionType.RECEIPT,
+        quantity: dto.quantity_received,
+        reference_type: isPO
+          ? ReferenceType.PO_RECEIPT
+          : ReferenceType.MANUAL,
+        bucket: InventoryBucket.RAW,
+        lot_id: savedLot.id,
+        owner_type: ownerType,
+        owner_id: ownerId,
+        reason: isPO && po
+          ? `Quick receive against PO ${po.po_number}`
+          : dto.receipt_type === QuickReceiptType.STOCK
+            ? `Quick receive to stock${dto.po_reference ? ` (ref: ${dto.po_reference})` : ''}`
+            : `Quick receive - customer supplied`,
+        created_by: dto.received_by,
+      });
+      const savedTx = await manager.save(InventoryTransaction, tx);
+
+      // Update PO line if matched
+      if (matchedPoLine) {
+        await manager.query(
+          `UPDATE "purchase_order_lines"
+           SET "quantity_received" = "quantity_received" + $1, "updated_at" = NOW()
+           WHERE "id" = $2`,
+          [dto.quantity_received, matchedPoLine.id],
+        );
+        await this.updatePOStatusIfFullyReceived(po!.id, manager);
+      }
+
+      return {
+        lot: savedLot,
+        transaction: savedTx,
+        material: {
+          id: material.id,
+          internal_part_number: material.internal_part_number,
+          description: material.description,
+        },
+        po_line_updated: !!matchedPoLine,
+      };
+    });
   }
 
   private async updatePOStatusIfFullyReceived(

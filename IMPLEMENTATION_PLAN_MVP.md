@@ -101,7 +101,7 @@
 - [x] **AML Module** (11 endpoints) - Approved Manufacturer List CRUD + status transitions + validation + customer-scoped validation + findOrCreate
 - [x] **Receiving Inspection Module** (11 endpoints) - Inspection workflow (validate, approve, reject, hold, release) + bulk release
 - [x] **Attachments Module** (4 endpoints) - Upload (multipart), list by entity, download, soft-delete (ADMIN/MANAGER only)
-- [x] **Receiving Module** (12 endpoints) - Session CRUD, receive item (11-step flow), close/cancel session, resolve discrepancy, manual release, PO/material/AML lookups, flagged items list
+- [x] **Receiving Module** (13 endpoints) - Quick receive (PO/Customer Supplied/Stock modes) + legacy session CRUD, 11-step flow, close/cancel session, resolve discrepancy, manual release, PO/material/AML lookups, flagged items list. Active UI uses simplified quick-receive; full validation flow preserved in `page.v2.tsx`
 - [x] **Production Module** - WIP tracking, stage transitions, production logs
 - [x] **Kitting Module** (7 endpoints) - Create kitting list from multiple orders (BOM aggregation), UID barcode scanning with verification, print pick sheet, complete with shortage reporting, cancel. Separates SMT/TH items
 - [x] **PO History** (3 endpoints) - Import historical PO data from Excel (SPO sheet), searchable archive, record count. Added to Purchase Orders module
@@ -271,6 +271,8 @@
 - [x] **PO Numbering Sequence (Apr 7, REV-002)** - Changed PO number format from `PO-YYYYMM-NNNN` to sequential numeric starting at `8833045`. Removed dependency on SequenceGeneratorService for PO generation.
 
 - [x] **MRP Shortage Excel Export Fix (Apr 7, REV-002)** - Fixed duplication bug in shortage Excel exports where the global shortage quantity was repeated on every order row, misleading buyers into double/triple-counting. "View by Customer" export replaced single `Shortage` column with `Qty (Order)` (per-order requirement) and `Qty (All Orders)` (total across all open orders). Same fix applied to "View by Material" order details sheet and "Affected Assemblies" detail sheet for consistency across all export types.
+
+- [x] **Simplified Receiving Module (Apr 8)** - Replaced the complex 11-step receiving form (`/receiving/new`) with a streamlined quick-receive flow for operational speed. Three receipt modes: **PO** (select PO, updates qty on order → on hand), **Customer Supplied** (select customer, creates customer-owned inventory), **Stock** (free-form entry with MFG PN, manufacturer, PO reference text). Each receive creates an inventory lot (ACTIVE @ STOCK) and inventory transaction immediately — no sessions, no AML/MPN validation, no inspections, no flagging. Receipt log displayed on-page. "Complete Receiving" button navigates back to dashboard. New endpoint: `POST /receiving/quick-receive`. Original sophisticated receiving code preserved at `erp/frontend/src/app/receiving/new/page.v2.tsx` for future re-integration when full validation workflow is needed.
 
 ### Bug Fixes (Feb 2026)
 - [x] **Session Cookie Not Sent** - SameSite=None requires Secure=true on HTTP; fixed with SameSite=Lax + Next.js proxy for same-origin requests

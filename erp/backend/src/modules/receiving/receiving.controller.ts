@@ -11,6 +11,7 @@ import {
 import { ReceivingService } from './receiving.service';
 import { StartSessionDto } from './dto/start-session.dto';
 import { ReceiveItemDto } from './dto/receive-item.dto';
+import { QuickReceiveDto } from './dto/quick-receive.dto';
 import { ResolveDiscrepancyDto } from './dto/resolve-discrepancy.dto';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -22,6 +23,12 @@ import { ReceivingSessionStatus } from '../../entities/receiving-session.entity'
 @UseGuards(AuthenticatedGuard, RolesGuard)
 export class ReceivingController {
   constructor(private readonly receivingService: ReceivingService) {}
+
+  @Post('quick-receive')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
+  async quickReceive(@Body() dto: QuickReceiveDto) {
+    return this.receivingService.quickReceive(dto);
+  }
 
   @Post('sessions')
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
