@@ -6,6 +6,52 @@
 
 ---
 
+## REV-004 — 2026-04-19
+
+**Released by**: Mark Mankoura
+**Migration required**: Yes — `CreateOrderMaterialSources` (creates `order_material_sources` table, backfills from existing orders)
+**Backup taken**: [ ] (check before deploying)
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | Orders | Per-order material supply source (Company/Customer toggle). Consignment orders default all materials to Customer, turnkey to Company. Flip individual materials per order. |
+| 2 | Feature | MRP | Customer-supplied materials excluded from shortage calculations — buyer only sees what AT&A needs to purchase |
+| 3 | Feature | Warehouse | Customer Supplied Items page — tracks materials expected from customers across open orders with qty expected/received, UIDs, status |
+| 4 | Feature | Production | Material consumption on stage completion — SMT+PCB consumed when completing SMT, TH+MECH when completing TH. Consumption preview dialog before confirming. |
+| 5 | Feature | Production | Order detail page: contextual production buttons (Start Kitting, Complete SMT, Complete TH) replace generic status dropdown. Auto-syncs order status. |
+| 6 | Feature | Production | WIP tracking page now shows all active orders including not-started. Added status column, sorting/filtering. |
+| 7 | Feature | Orders | Customer PO # and WO # columns on orders page with sorting and filtering on all columns |
+| 8 | Feature | Kitting | Excel export of kitting list (Orders, Materials, SMT, TH, Scanned UIDs sheets) |
+| 9 | Enhancement | Receiving | PO mode accepts typed PO number (not dropdown). Stock mode silently matches po_reference to existing POs and updates quantity_received. |
+| 10 | Feature | Warehouse | Return to Stock page — scan UID, enter qty, lot quantity set to returned amount |
+| 11 | Enhancement | Orders | Allocate/Deallocate buttons disable based on existing allocation state |
+| 12 | Enhancement | Inventory | Lots endpoint supports owner_type filter |
+
+### Files Changed
+
+- New: `order-material-source.entity.ts`, `CreateOrderMaterialSources` migration
+- New: `/customer-supplied` page, `/return-to-stock` page
+- Modified: orders service/controller/module, mrp service/module, production service/controller/module
+- Modified: receiving service/dto, inventory service/controller, kitting page, orders pages, export-utils, navbar
+
+### Verification Steps
+
+- [ ] Orders page: verify Customer PO # and WO # columns visible, sorting/filtering works
+- [ ] Order detail: click into a consignment order — verify Supply Source column shows customer name, click to toggle
+- [ ] MRP shortages: verify customer-supplied materials do NOT appear
+- [ ] Customer Supplied Items page (Warehouse menu): verify items listed with expected/received qty
+- [ ] Order detail: click "Start Kitting" on an ENTERED order — verify units move to kitting, status changes
+- [ ] Order detail: complete SMT — verify consumption preview shows materials, confirm consumes them
+- [ ] WIP Tracking: verify all active orders visible including not-started
+- [ ] Kitting: click "Export Excel" on a kitting list — verify multi-sheet workbook downloads
+- [ ] Receiving (PO mode): type a PO number manually — verify it finds the PO
+- [ ] Return to Stock: scan a UID, enter qty — verify lot qty is SET to that amount (not added)
+- [ ] Allocate button: click once — verify it grays out and shows "Allocated"
+
+---
+
 ## REV-003 — 2026-04-08
 
 **Released by**: Mark Mankoura
