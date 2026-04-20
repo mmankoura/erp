@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { exportKittingList } from "@/lib/export-utils"
 import {
   PackageCheck,
   Plus,
@@ -28,6 +29,7 @@ import {
   CheckCircle,
   AlertTriangle,
   ArrowLeft,
+  Download,
   Loader2,
   X,
 } from "lucide-react"
@@ -492,6 +494,16 @@ function KittingDetail({
             <Button variant="outline" size="sm" onClick={() => cancelMutation.mutate()}>
               <X className="mr-1 h-4 w-4" />
               Cancel
+            </Button>
+          )}
+          {stockData && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportKittingList(stockData)}
+            >
+              <Download className="mr-1 h-4 w-4" />
+              Export Excel
             </Button>
           )}
           {canPrint && (

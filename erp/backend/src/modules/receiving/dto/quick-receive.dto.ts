@@ -38,7 +38,12 @@ export class QuickReceiveDto {
   @IsOptional()
   package_type?: PackageType;
 
-  // PO mode
+  // PO mode — either po_number (manual entry) or po_id (legacy)
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  po_number?: string;
+
   @IsUUID()
   @IsOptional()
   po_id?: string;

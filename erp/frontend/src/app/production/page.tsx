@@ -176,11 +176,16 @@ export default function ProductionPage() {
     setMoveNotes("")
   }
 
-  // Get active WIP (exclude shipped)
+  // Get active WIP (exclude fully shipped)
   const activeWip = useMemo(() => {
     if (!wipData) return []
     return wipData.filter((w) => w.quantity_shipped < w.total_quantity)
   }, [wipData])
+
+  // Counts for summary
+  const notStartedCount = activeWip.filter((w) => w.quantity_not_started > 0 && w.quantity_not_started === w.total_quantity).length
+  const inProductionCount = activeWip.filter((w) => w.quantity_in_kitting > 0 || w.quantity_in_smt > 0 || w.quantity_in_th > 0).length
+  const completedCount = activeWip.filter((w) => w.quantity_completed > 0).length
 
   // Filter WIP by selected stage
   const filteredWip = useMemo(() => {
@@ -209,7 +214,11 @@ export default function ProductionPage() {
     {
       key: "order_number",
       header: "Order",
+      defaultWidth: 180,
       sortable: true,
+      filterable: true,
+      sortAccessor: (row) => row.order_number,
+      filterAccessor: (row) => row.order_number,
       cell: (row) => (
         <Link href={`/orders/${row.order_id}`} className="text-primary hover:underline font-medium">
           {row.order_number}
@@ -219,22 +228,47 @@ export default function ProductionPage() {
     {
       key: "customer_name",
       header: "Customer",
+      defaultWidth: 140,
       sortable: true,
+      filterable: true,
+      sortAccessor: (row) => row.customer_name,
+      filterAccessor: (row) => row.customer_name,
     },
     {
       key: "product_name",
       header: "Product",
+      defaultWidth: 160,
       sortable: true,
+      filterable: true,
+      sortAccessor: (row) => row.product_name,
+      filterAccessor: (row) => row.product_name,
     },
     {
       key: "total_quantity",
       header: "Total Qty",
+      defaultWidth: 90,
       sortable: true,
+      sortAccessor: (row) => row.total_quantity,
       className: "text-right",
+    },
+    {
+      key: "status",
+      header: "Status",
+      defaultWidth: 120,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (row) => row.status,
+      filterAccessor: (row) => row.status,
+      cell: (row) => (
+        <Badge variant="outline" className="text-xs">
+          {row.status.replace("_", " ")}
+        </Badge>
+      ),
     },
     {
       key: "stages",
       header: "Production Stages",
+      defaultWidth: 300,
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           <StageBadge stage="NOT_STARTED" quantity={row.quantity_not_started} />
@@ -249,7 +283,11 @@ export default function ProductionPage() {
     {
       key: "due_date",
       header: "Due Date",
+      defaultWidth: 120,
       sortable: true,
+      filterable: true,
+      sortAccessor: (row) => new Date(row.due_date).getTime(),
+      filterAccessor: (row) => new Date(row.due_date).toLocaleDateString(),
       cell: (row) => {
         const dueDate = new Date(row.due_date)
         const isOverdue = dueDate < new Date()
@@ -381,8 +419,17 @@ export default function ProductionPage() {
             data={filteredWip || []}
             columns={columns}
             searchPlaceholder="Search orders..."
-            searchKey={["order_number", "customer_name", "product_name"]}
+            searchFilter={(row, search) => {
+              const s = search.toLowerCase()
+              return (
+                row.order_number.toLowerCase().includes(s) ||
+                row.customer_name.toLowerCase().includes(s) ||
+                row.product_name.toLowerCase().includes(s) ||
+                row.status.toLowerCase().includes(s)
+              )
+            }}
             isLoading={wipLoading}
+            pageSize={50}
           />
         </TabsContent>
 

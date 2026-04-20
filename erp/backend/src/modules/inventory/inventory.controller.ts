@@ -118,8 +118,9 @@ export class InventoryController {
   async findAllLots(
     @Query('status') status?: string,
     @Query('material_id') materialId?: string,
+    @Query('owner_type') ownerType?: string,
   ) {
-    return this.inventoryImportService.findAllLots({ status, materialId });
+    return this.inventoryImportService.findAllLots({ status, materialId, ownerType });
   }
 
   /**
@@ -476,6 +477,22 @@ export class InventoryController {
       allocationId,
       dto.counted_quantity,
       dto.created_by,
+    );
+  }
+
+  /**
+   * POST /inventory/return-to-stock
+   * Return material to stock by UID and quantity
+   */
+  @Post('return-to-stock')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
+  async returnToStock(
+    @Body() body: { uid: string; quantity: number; returned_by?: string },
+  ) {
+    return this.inventoryService.returnToStockByUid(
+      body.uid,
+      body.quantity,
+      body.returned_by,
     );
   }
 }

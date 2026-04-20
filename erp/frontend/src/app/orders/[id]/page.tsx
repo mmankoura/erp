@@ -41,12 +41,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ArrowLeft, Save, Truck, XCircle, Pencil, Package, FileText, PackageCheck, PackageX } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ArrowLeft, Save, Truck, XCircle, Pencil, Package, FileText, PackageCheck, PackageX, Play, CheckCircle, Loader2 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useRouter, useParams } from "next/navigation"
 import { MaterialReturnWorkflow } from "@/components/orders/material-return-workflow"
+import { useAuth } from "@/contexts/auth-context"
 
 const orderStatusColors: Record<string, string> = {
   ENTERED: "bg-yellow-100 text-yellow-800 border-yellow-200",
@@ -72,6 +81,7 @@ export default function OrderDetailPage() {
   const router = useRouter()
   const params = useParams()
   const orderId = params.id as string
+  const { user } = useAuth()
 
   const [isEditing, setIsEditing] = useState(false)
   const [shipQuantity, setShipQuantity] = useState(0)
@@ -83,6 +93,42 @@ export default function OrderDetailPage() {
     order?.bom_revision_id ? `/bom/revision/${order.bom_revision_id}` : "",
     { enabled: !!order?.bom_revision_id }
   )
+
+  // Allocations for this order
+  const { data: allocations, refetch: refetchAllocations } = useApi<
+    Array<{ id: string; material_id: string; quantity: number; status: string }>
+  >(
+    orderId ? `/inventory/allocations/order/${orderId}` : "",
+    { enabled: !!orderId }
+  )
+
+  const hasActiveAllocations = (allocations ?? []).some((a) => a.status === "ACTIVE")
+
+  // Supply sources for this order
+  const { data: supplySources, refetch: refetchSources } = useApi<
+    Array<{ id: string; order_id: string; material_id: string; supply_source: "COMPANY" | "CUSTOMER"; material: { internal_part_number: string } }>
+  >(
+    orderId ? `/orders/${orderId}/supply-sources` : "",
+    { enabled: !!orderId }
+  )
+
+  const supplySourceMap = new Map(
+    supplySources?.map((s) => [s.material_id, s.supply_source]) ?? []
+  )
+
+  const toggleSupplySource = async (materialId: string) => {
+    const current = supplySourceMap.get(materialId) ?? "COMPANY"
+    const next = current === "COMPANY" ? "CUSTOMER" : "COMPANY"
+    try {
+      await api.patch(`/orders/${orderId}/supply-sources`, {
+        updates: [{ material_id: materialId, supply_source: next }],
+      })
+      refetchSources()
+      toast.success(`Supply source updated to ${next === "COMPANY" ? "AT&A" : (order?.customer?.name ?? "Customer")}`)
+    } catch {
+      toast.error("Failed to update supply source")
+    }
+  }
 
   const [formData, setFormData] = useState({
     po_number: "",
@@ -188,6 +234,7 @@ export default function OrderDetailPage() {
           toast.error("No materials could be allocated — insufficient inventory")
         }
         refetch()
+        refetchAllocations()
       },
       onError: (error) => {
         toast.error(error.message || "Failed to allocate materials")
@@ -201,6 +248,7 @@ export default function OrderDetailPage() {
       onSuccess: (result) => {
         toast.success(`${result.cancelled} allocation(s) released`)
         refetch()
+        refetchAllocations()
       },
       onError: (error) => {
         toast.error(error.message || "Failed to deallocate materials")
@@ -208,8 +256,108 @@ export default function OrderDetailPage() {
     }
   )
 
+  // Production stage transitions
+  const [stageDialog, setStageDialog] = useState<{
+    open: boolean
+    fromStage: string
+    toStage: string
+    label: string
+  }>({ open: false, fromStage: "", toStage: "", label: "" })
+  const [stageQty, setStageQty] = useState("")
+  const [consumptionPreview, setConsumptionPreview] = useState<
+    Array<{ material_id: string; ipn: string; description: string | null; resource_type: string; qty_to_consume: number }>
+  >([])
+  const [loadingPreview, setLoadingPreview] = useState(false)
+
+  const openStageDialog = async (fromStage: string, toStage: string, label: string) => {
+    const defaultQty = order ? getStageQty(order, fromStage) : 0
+    setStageDialog({ open: true, fromStage, toStage, label })
+    setStageQty(String(defaultQty))
+    setConsumptionPreview([])
+
+    // Load consumption preview if moving out of SMT or TH
+    if (fromStage === "SMT" || fromStage === "TH") {
+      setLoadingPreview(true)
+      try {
+        const preview = await api.get<
+          Array<{ material_id: string; ipn: string; description: string | null; resource_type: string; qty_to_consume: number }>
+        >(`/production/order/${orderId}/consumption-preview?from_stage=${fromStage}&quantity=${defaultQty}`)
+        setConsumptionPreview(preview)
+      } catch {
+        setConsumptionPreview([])
+      } finally {
+        setLoadingPreview(false)
+      }
+    }
+  }
+
+  const updatePreview = async (qty: string) => {
+    setStageQty(qty)
+    const numQty = parseInt(qty, 10)
+    if (!numQty || numQty <= 0) return
+    if (stageDialog.fromStage === "SMT" || stageDialog.fromStage === "TH") {
+      try {
+        const preview = await api.get<
+          Array<{ material_id: string; ipn: string; description: string | null; resource_type: string; qty_to_consume: number }>
+        >(`/production/order/${orderId}/consumption-preview?from_stage=${stageDialog.fromStage}&quantity=${numQty}`)
+        setConsumptionPreview(preview)
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  const stageMutation = useMutation(
+    (vars: { from_stage: string; to_stage: string; quantity: number }) =>
+      api.post(`/production/order/${orderId}/move`, {
+        from_stage: vars.from_stage,
+        to_stage: vars.to_stage,
+        quantity: vars.quantity,
+        created_by: user?.username,
+      }),
+    {
+      onSuccess: () => {
+        toast.success(`Stage updated: ${stageDialog.label}`)
+        setStageDialog({ open: false, fromStage: "", toStage: "", label: "" })
+        refetch()
+        refetchAllocations()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to update stage")
+      },
+    }
+  )
+
+  const startProductionMutation = useMutation(
+    (_: void) =>
+      api.post(`/production/order/${orderId}/start`, {
+        quantity: order?.quantity,
+        created_by: user?.username,
+      }),
+    {
+      onSuccess: () => {
+        toast.success("Production started — units moved to kitting")
+        refetch()
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to start production")
+      },
+    }
+  )
+
   const handleSave = () => {
     updateMutation.mutate(formData)
+  }
+
+  const getStageQty = (o: Order, stage: string): number => {
+    switch (stage) {
+      case "NOT_STARTED": return o.quantity - o.quantity_in_kitting - o.quantity_in_smt - o.quantity_in_th - o.quantity_completed - o.quantity_shipped
+      case "KITTING": return o.quantity_in_kitting
+      case "SMT": return o.quantity_in_smt
+      case "TH": return o.quantity_in_th
+      case "COMPLETED": return o.quantity_completed
+      default: return 0
+    }
   }
 
   const handleShip = () => {
@@ -421,24 +569,75 @@ export default function OrderDetailPage() {
 
             <Separator />
 
-            {/* Status Transition */}
-            {availableTransitions.length > 0 && (
+            {/* Production Stage Actions */}
+            {!["SHIPPED", "CANCELLED"].includes(order.status) && (
               <div>
-                <Label className="text-muted-foreground">Update Status</Label>
+                <Label className="text-muted-foreground">Production</Label>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {availableTransitions
-                    .filter(s => s !== "CANCELLED")
-                    .map((status) => (
-                      <Button
-                        key={status}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => statusMutation.mutate(status)}
-                        disabled={statusMutation.isLoading}
-                      >
-                        {status.replace("_", " ")}
-                      </Button>
-                    ))}
+                  {/* Start Kitting — from ENTERED */}
+                  {order.status === "ENTERED" && (
+                    <Button
+                      size="sm"
+                      onClick={() => startProductionMutation.mutate(undefined)}
+                      disabled={startProductionMutation.isLoading}
+                    >
+                      <Play className="h-4 w-4 mr-1" />
+                      {startProductionMutation.isLoading ? "Starting..." : "Start Kitting"}
+                    </Button>
+                  )}
+
+                  {/* From KITTING → SMT or TH */}
+                  {order.quantity_in_kitting > 0 && (
+                    <>
+                      {(order.production_type === "SMT_AND_TH" || order.production_type === "SMT_ONLY") && (
+                        <Button size="sm" variant="outline" onClick={() => openStageDialog("KITTING", "SMT", "Start SMT")}>
+                          Start SMT ({order.quantity_in_kitting})
+                        </Button>
+                      )}
+                      {order.production_type === "TH_ONLY" && (
+                        <Button size="sm" variant="outline" onClick={() => openStageDialog("KITTING", "TH", "Start TH")}>
+                          Start TH ({order.quantity_in_kitting})
+                        </Button>
+                      )}
+                    </>
+                  )}
+
+                  {/* Complete SMT → TH or COMPLETED */}
+                  {order.quantity_in_smt > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openStageDialog(
+                        "SMT",
+                        order.production_type === "SMT_ONLY" ? "COMPLETED" : "TH",
+                        order.production_type === "SMT_ONLY" ? "Complete SMT" : "Complete SMT → TH"
+                      )}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                      Complete SMT ({order.quantity_in_smt})
+                    </Button>
+                  )}
+
+                  {/* Complete TH → COMPLETED */}
+                  {order.quantity_in_th > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openStageDialog("TH", "COMPLETED", "Complete TH")}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                      Complete TH ({order.quantity_in_th})
+                    </Button>
+                  )}
+
+                  {/* WIP summary */}
+                  <div className="w-full text-xs text-muted-foreground mt-1 space-x-3">
+                    {order.quantity_in_kitting > 0 && <span>Kitting: {order.quantity_in_kitting}</span>}
+                    {order.quantity_in_smt > 0 && <span>SMT: {order.quantity_in_smt}</span>}
+                    {order.quantity_in_th > 0 && <span>TH: {order.quantity_in_th}</span>}
+                    {order.quantity_completed > 0 && <span>Completed: {order.quantity_completed}</span>}
+                    {order.quantity_shipped > 0 && <span>Shipped: {order.quantity_shipped}</span>}
+                  </div>
                 </div>
               </div>
             )}
@@ -475,17 +674,17 @@ export default function OrderDetailPage() {
                       variant="default"
                       size="sm"
                       onClick={() => allocateMutation.mutate(undefined)}
-                      disabled={allocateMutation.isLoading || deallocateMutation.isLoading}
+                      disabled={allocateMutation.isLoading || deallocateMutation.isLoading || hasActiveAllocations}
                     >
                       <PackageCheck className="h-4 w-4 mr-2" />
-                      {allocateMutation.isLoading ? "Allocating..." : "Allocate Materials"}
+                      {allocateMutation.isLoading ? "Allocating..." : hasActiveAllocations ? "Allocated" : "Allocate Materials"}
                     </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={allocateMutation.isLoading || deallocateMutation.isLoading}
+                          disabled={allocateMutation.isLoading || deallocateMutation.isLoading || !hasActiveAllocations}
                         >
                           <PackageX className="h-4 w-4 mr-2" />
                           Deallocate
@@ -586,6 +785,7 @@ export default function OrderDetailPage() {
                       <TableHead className="text-right w-[100px]">Qty Per</TableHead>
                       <TableHead className="text-right w-[120px]">Total Qty Req</TableHead>
                       <TableHead>Ref Des</TableHead>
+                      <TableHead className="w-[140px]">Supply Source</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -621,6 +821,25 @@ export default function OrderDetailPage() {
                             <TableCell className="text-sm font-mono max-w-[150px] truncate" title={item.reference_designators || ""}>
                               {item.reference_designators || "-"}
                             </TableCell>
+                            <TableCell>
+                              {item.material_id && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleSupplySource(item.material_id)
+                                  }}
+                                  className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+                                    supplySourceMap.get(item.material_id) === "CUSTOMER"
+                                      ? "bg-blue-100 text-blue-800 hover:bg-blue-200"
+                                      : "bg-green-100 text-green-800 hover:bg-green-200"
+                                  }`}
+                                >
+                                  {supplySourceMap.get(item.material_id) === "CUSTOMER"
+                                    ? (order?.customer?.name ?? "Customer")
+                                    : "AT&A"}
+                                </button>
+                              )}
+                            </TableCell>
                           </TableRow>
                         )
                       })}
@@ -655,6 +874,107 @@ export default function OrderDetailPage() {
       {order && ["KITTING", "SMT", "TH"].includes(order.status) && order.bom_revision_id && (
         <MaterialReturnWorkflow order={order} onUpdate={() => refetch()} />
       )}
+
+      {/* Stage Transition Dialog with Consumption Preview */}
+      <Dialog open={stageDialog.open} onOpenChange={(open) => {
+        if (!open) setStageDialog({ open: false, fromStage: "", toStage: "", label: "" })
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{stageDialog.label}</DialogTitle>
+            <DialogDescription>
+              Enter the quantity to move from {stageDialog.fromStage} to {stageDialog.toStage}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Quantity</Label>
+              <Input
+                type="number"
+                value={stageQty}
+                onChange={(e) => updatePreview(e.target.value)}
+                min={1}
+                max={order ? getStageQty(order, stageDialog.fromStage) : 0}
+              />
+              <p className="text-xs text-muted-foreground">
+                {order ? getStageQty(order, stageDialog.fromStage) : 0} units available in {stageDialog.fromStage}
+              </p>
+            </div>
+
+            {/* Consumption Preview */}
+            {(stageDialog.fromStage === "SMT" || stageDialog.fromStage === "TH") && (
+              <div>
+                <Label className="text-muted-foreground">Materials to be consumed</Label>
+                {loadingPreview ? (
+                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading preview...
+                  </div>
+                ) : consumptionPreview.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">No materials to consume at this stage.</p>
+                ) : (
+                  <div className="border rounded-md mt-2 max-h-[300px] overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium">IPN</th>
+                          <th className="text-left px-3 py-2 font-medium">Type</th>
+                          <th className="text-right px-3 py-2 font-medium">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {consumptionPreview.map((item) => (
+                          <tr key={item.material_id} className="border-t">
+                            <td className="px-3 py-1.5">
+                              <span className="font-medium">{item.ipn}</span>
+                              {item.description && (
+                                <p className="text-xs text-muted-foreground truncate max-w-[200px]">{item.description}</p>
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 text-muted-foreground">{item.resource_type}</td>
+                            <td className="px-3 py-1.5 text-right font-mono">{item.qty_to_consume.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStageDialog({ open: false, fromStage: "", toStage: "", label: "" })}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const qty = parseInt(stageQty, 10)
+                if (qty > 0) {
+                  stageMutation.mutate({
+                    from_stage: stageDialog.fromStage,
+                    to_stage: stageDialog.toStage,
+                    quantity: qty,
+                  })
+                }
+              }}
+              disabled={stageMutation.isLoading || !stageQty || parseInt(stageQty, 10) <= 0}
+            >
+              {stageMutation.isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : consumptionPreview.length > 0 ? (
+                "Confirm & Consume"
+              ) : (
+                "Confirm"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

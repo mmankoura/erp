@@ -58,8 +58,9 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Inventory", url: "/inventory", icon: Warehouse },
       { title: "Receiving", url: "/receiving", icon: ClipboardCheck },
+      { title: "Customer Supplied", url: "/customer-supplied", icon: Package },
       { title: "Kitting", url: "/kitting", icon: PackageCheck },
-      { title: "Return to Stock", url: "/cycle-counts", icon: RotateCcw },
+      { title: "Return to Stock", url: "/return-to-stock", icon: RotateCcw },
     ],
   },
   {

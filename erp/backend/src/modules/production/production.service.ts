@@ -5,9 +5,22 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { Order, OrderStatus } from '../../entities/order.entity';
 import { ProductionLog, ProductionStage } from '../../entities/production-log.entity';
+import { BomItem, ResourceType } from '../../entities/bom-item.entity';
+import {
+  InventoryTransaction,
+  TransactionType,
+  ReferenceType,
+  InventoryBucket,
+  OwnerType,
+} from '../../entities/inventory-transaction.entity';
+import {
+  InventoryAllocation,
+  AllocationStatus,
+} from '../../entities/inventory-allocation.entity';
+import { OrderMaterialSource, SupplySource } from '../../entities/order-material-source.entity';
 import { AuditService } from '../audit/audit.service';
 import {
   AuditEventType,
@@ -66,11 +79,25 @@ export class ProductionService {
     [ProductionStage.SHIPPED]: [],
   };
 
+  // Resource types consumed at each stage
+  private readonly consumptionRules: Record<string, ResourceType[]> = {
+    [ProductionStage.SMT]: [ResourceType.SMT, ResourceType.PCB],
+    [ProductionStage.TH]: [ResourceType.TH, ResourceType.MECH],
+  };
+
   constructor(
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(ProductionLog)
     private readonly productionLogRepository: Repository<ProductionLog>,
+    @InjectRepository(BomItem)
+    private readonly bomItemRepository: Repository<BomItem>,
+    @InjectRepository(InventoryTransaction)
+    private readonly transactionRepository: Repository<InventoryTransaction>,
+    @InjectRepository(InventoryAllocation)
+    private readonly allocationRepository: Repository<InventoryAllocation>,
+    @InjectRepository(OrderMaterialSource)
+    private readonly omsRepository: Repository<OrderMaterialSource>,
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
   ) {}
@@ -164,8 +191,32 @@ export class ProductionService {
         }
       }
 
+      // Auto-sync order status to match destination stage
+      const stageToStatus: Record<string, OrderStatus> = {
+        [ProductionStage.KITTING]: OrderStatus.KITTING,
+        [ProductionStage.SMT]: OrderStatus.SMT,
+        [ProductionStage.TH]: OrderStatus.TH,
+        [ProductionStage.SHIPPED]: OrderStatus.SHIPPED,
+      };
+      const newStatus = stageToStatus[input.to_stage];
+      if (newStatus && order.status !== newStatus) {
+        order.status = newStatus;
+      }
+
       // Save order
       await manager.save(Order, order);
+
+      // Consume materials when moving OUT of SMT or TH
+      const consumeTypes = this.consumptionRules[input.from_stage];
+      if (consumeTypes) {
+        await this.consumeMaterialsForStage(
+          order,
+          consumeTypes,
+          input.quantity,
+          input.created_by,
+          manager,
+        );
+      }
 
       // Create production log entry
       const log = manager.create(ProductionLog, {
@@ -281,6 +332,7 @@ export class ProductionService {
   async getWipSummary(): Promise<WipSummary[]> {
     const orders = await this.orderRepository.find({
       where: [
+        { status: OrderStatus.ENTERED },
         { status: OrderStatus.KITTING },
         { status: OrderStatus.SMT },
         { status: OrderStatus.TH },
@@ -315,6 +367,7 @@ export class ProductionService {
   async getStageSummary(): Promise<StageSummary[]> {
     const orders = await this.orderRepository.find({
       where: [
+        { status: OrderStatus.ENTERED },
         { status: OrderStatus.KITTING },
         { status: OrderStatus.SMT },
         { status: OrderStatus.TH },
@@ -324,6 +377,7 @@ export class ProductionService {
     });
 
     const stages: ProductionStage[] = [
+      ProductionStage.NOT_STARTED,
       ProductionStage.KITTING,
       ProductionStage.SMT,
       ProductionStage.TH,
@@ -438,5 +492,139 @@ export class ProductionService {
       created_by: createdBy,
       notes: 'Shipped to customer',
     });
+  }
+
+  // ==================== MATERIAL CONSUMPTION ====================
+
+  /**
+   * Get a preview of what materials will be consumed for a stage transition
+   */
+  async getConsumptionPreview(
+    orderId: string,
+    fromStage: ProductionStage,
+    quantity: number,
+  ): Promise<Array<{
+    material_id: string;
+    ipn: string;
+    description: string | null;
+    resource_type: string;
+    qty_per_unit: number;
+    qty_to_consume: number;
+  }>> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
+    if (!order) {
+      throw new NotFoundException(`Order not found`);
+    }
+
+    const consumeTypes = this.consumptionRules[fromStage];
+    if (!consumeTypes) {
+      return [];
+    }
+
+    const bomItems = await this.bomItemRepository.find({
+      where: { bom_revision_id: order.bom_revision_id },
+      relations: ['material'],
+    });
+
+    // Get customer-supplied items to exclude
+    const customerSupplied = await this.omsRepository.find({
+      where: { order_id: orderId, supply_source: SupplySource.CUSTOMER },
+    });
+    const customerSuppliedIds = new Set(customerSupplied.map((s) => s.material_id));
+
+    return bomItems
+      .filter((item) => {
+        const rt = item.material?.resource_type;
+        if (!rt || !consumeTypes.includes(rt as ResourceType)) return false;
+        if (customerSuppliedIds.has(item.material_id)) return false;
+        return true;
+      })
+      .map((item) => {
+        const bomQty = parseFloat(String(item.quantity_required));
+        const scrap = parseFloat(String(item.scrap_factor)) || 0;
+        const qtyPerUnit = bomQty * (1 + scrap / 100);
+        return {
+          material_id: item.material_id,
+          ipn: item.material?.internal_part_number ?? '',
+          description: item.material?.description ?? null,
+          resource_type: item.material?.resource_type ?? '',
+          qty_per_unit: qtyPerUnit,
+          qty_to_consume: Math.ceil(quantity * qtyPerUnit),
+        };
+      });
+  }
+
+  /**
+   * Consume materials for a completed production stage
+   */
+  private async consumeMaterialsForStage(
+    order: Order,
+    resourceTypes: ResourceType[],
+    quantityCompleted: number,
+    createdBy: string | undefined,
+    manager: EntityManager,
+  ): Promise<void> {
+    const bomItems = await manager.find(BomItem, {
+      where: { bom_revision_id: order.bom_revision_id },
+      relations: ['material'],
+    });
+
+    // Get customer-supplied items to exclude
+    const customerSupplied = await manager.find(OrderMaterialSource, {
+      where: { order_id: order.id, supply_source: SupplySource.CUSTOMER },
+    });
+    const customerSuppliedIds = new Set(customerSupplied.map((s) => s.material_id));
+
+    // Determine ownership
+    const ownerType = order.order_type === 'CONSIGNMENT'
+      ? OwnerType.CUSTOMER
+      : OwnerType.COMPANY;
+    const ownerId = order.order_type === 'CONSIGNMENT'
+      ? order.customer_id
+      : null;
+
+    for (const item of bomItems) {
+      const rt = item.material?.resource_type;
+      if (!rt || !resourceTypes.includes(rt as ResourceType)) continue;
+      if (customerSuppliedIds.has(item.material_id)) continue;
+
+      const bomQty = parseFloat(String(item.quantity_required));
+      const scrap = parseFloat(String(item.scrap_factor)) || 0;
+      const qtyToConsume = Math.ceil(
+        quantityCompleted * bomQty * (1 + scrap / 100),
+      );
+
+      if (qtyToConsume <= 0) continue;
+
+      // Create consumption transaction (negative quantity)
+      const tx = manager.create(InventoryTransaction, {
+        material_id: item.material_id,
+        transaction_type: TransactionType.CONSUMPTION,
+        quantity: -qtyToConsume,
+        reference_type: ReferenceType.WORK_ORDER,
+        reference_id: order.id,
+        bucket: InventoryBucket.WIP,
+        owner_type: ownerType,
+        owner_id: ownerId,
+        reason: `Production consumption: ${order.order_number} (${qtyToConsume} pcs of ${item.material?.internal_part_number})`,
+        created_by: createdBy ?? null,
+      });
+      await manager.save(InventoryTransaction, tx);
+
+      // Update allocation status to CONSUMED if exists
+      const allocation = await manager.findOne(InventoryAllocation, {
+        where: {
+          order_id: order.id,
+          material_id: item.material_id,
+          status: AllocationStatus.ACTIVE,
+        },
+      });
+      if (allocation) {
+        allocation.status = AllocationStatus.CONSUMED;
+        await manager.save(InventoryAllocation, allocation);
+      }
+    }
   }
 }

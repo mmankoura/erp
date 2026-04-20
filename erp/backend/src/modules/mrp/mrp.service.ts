@@ -5,6 +5,7 @@ import { Order, OrderStatus } from '../../entities/order.entity';
 import { BomItem } from '../../entities/bom-item.entity';
 import { Material } from '../../entities/material.entity';
 import { Customer } from '../../entities/customer.entity';
+import { OrderMaterialSource, SupplySource } from '../../entities/order-material-source.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { PurchaseOrdersService } from '../purchase-orders/purchase-orders.service';
 
@@ -195,6 +196,8 @@ export class MrpService {
     private readonly bomItemRepository: Repository<BomItem>,
     @InjectRepository(Material)
     private readonly materialRepository: Repository<Material>,
+    @InjectRepository(OrderMaterialSource)
+    private readonly omsRepository: Repository<OrderMaterialSource>,
     private readonly inventoryService: InventoryService,
     @Inject(forwardRef(() => PurchaseOrdersService))
     private readonly purchaseOrdersService: PurchaseOrdersService,
@@ -740,6 +743,16 @@ export class MrpService {
       allocationsByOrder.set(orderId, materialMap);
     }
 
+    // Load supply sources to filter out customer-supplied materials
+    const supplySources = orderIds.length > 0
+      ? await this.omsRepository.find({
+          where: { order_id: In(orderIds), supply_source: SupplySource.CUSTOMER },
+        })
+      : [];
+    const customerSuppliedKeys = new Set(
+      supplySources.map((s) => `${s.order_id}:${s.material_id}`),
+    );
+
     // Track material requirements with enhanced info
     const materialRequirements = new Map<
       string,
@@ -757,6 +770,11 @@ export class MrpService {
       const orderAllocations = allocationsByOrder.get(order.id) ?? new Map();
 
       for (const item of items) {
+        // Skip customer-supplied materials — buyer doesn't need to procure these
+        if (customerSuppliedKeys.has(`${order.id}:${item.material_id}`)) {
+          continue;
+        }
+
         const bomQuantity = parseFloat(String(item.quantity_required));
         const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
         const requiredQuantity =

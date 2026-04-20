@@ -7,7 +7,9 @@ import {
   Query,
   ParseUUIDPipe,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
+import { ProductionStage } from '../../entities/production-log.entity';
 import { ProductionService } from './production.service';
 import {
   StartProductionDto,
@@ -53,6 +55,23 @@ export class ProductionController {
   @Get('order/:orderId')
   async getOrderWip(@Param('orderId', ParseUUIDPipe) orderId: string) {
     return this.productionService.getOrderWip(orderId);
+  }
+
+  /**
+   * GET /production/order/:orderId/consumption-preview
+   * Preview what materials will be consumed for a stage transition
+   */
+  @Get('order/:orderId/consumption-preview')
+  async getConsumptionPreview(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Query('from_stage') fromStage: ProductionStage,
+    @Query('quantity') quantity: string,
+  ) {
+    return this.productionService.getConsumptionPreview(
+      orderId,
+      fromStage,
+      parseInt(quantity, 10) || 0,
+    );
   }
 
   /**

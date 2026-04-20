@@ -20,6 +20,10 @@ import {
   InventoryAllocation,
   AllocationStatus,
 } from '../../entities/inventory-allocation.entity';
+import {
+  InventoryLot,
+  LotStatus,
+} from '../../entities/inventory-lot.entity';
 import { Material } from '../../entities/material.entity';
 import { Order, OrderStatus } from '../../entities/order.entity';
 import { BomItem } from '../../entities/bom-item.entity';
@@ -1920,5 +1924,63 @@ export class InventoryService {
       variance,
       transaction: varianceTransaction,
     };
+  }
+
+  // ==================== RETURN TO STOCK BY UID ====================
+
+  async returnToStockByUid(
+    uid: string,
+    quantity: number,
+    returnedBy?: string,
+  ) {
+    const lotRepo = this.dataSource.getRepository(InventoryLot);
+    const lot = await lotRepo.findOne({
+      where: { uid },
+      relations: ['material'],
+    });
+
+    if (!lot) {
+      throw new NotFoundException(`Lot with UID "${uid}" not found`);
+    }
+
+    if (quantity <= 0) {
+      throw new BadRequestException('Quantity must be greater than 0');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      // Create RETURN transaction (positive — adds back to stock)
+      const tx = manager.create(InventoryTransaction, {
+        material_id: lot.material_id,
+        transaction_type: TransactionType.RETURN,
+        quantity: quantity,
+        reference_type: ReferenceType.MANUAL,
+        bucket: InventoryBucket.RAW,
+        lot_id: lot.id,
+        owner_type: lot.owner_type,
+        owner_id: lot.owner_id,
+        reason: `Return to stock: ${quantity} pcs of ${lot.material?.internal_part_number ?? uid} (lot qty set to ${quantity})`,
+        created_by: returnedBy ?? null,
+      });
+      const savedTx = await manager.save(InventoryTransaction, tx);
+
+      // Update lot: set quantity to returned amount, location to STOCK, status to ACTIVE
+      lot.location = 'STOCK';
+      lot.status = LotStatus.ACTIVE;
+      lot.quantity = quantity;
+      await manager.save(InventoryLot, lot);
+
+      return {
+        transaction: savedTx,
+        lot: {
+          uid: lot.uid,
+          material_id: lot.material_id,
+          ipn: lot.material?.internal_part_number ?? '',
+          description: lot.material?.description ?? null,
+          quantity: lot.quantity,
+          location: lot.location,
+          status: lot.status,
+        },
+      };
+    });
   }
 }

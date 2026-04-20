@@ -15,6 +15,7 @@ import {
 import { OrdersService, OrderFilters } from './orders.service';
 import { CreateOrderDto, UpdateOrderDto } from './dto';
 import { OrderStatus } from '../../entities/order.entity';
+import { SupplySource } from '../../entities/order-material-source.entity';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -43,6 +44,11 @@ export class OrdersController {
       includeDeleted: includeDeleted === 'true',
     };
     return this.ordersService.findAll(filters);
+  }
+
+  @Get('customer-supplied/items')
+  async getCustomerSuppliedItems() {
+    return this.ordersService.getCustomerSuppliedItems();
   }
 
   @Get('stats')
@@ -122,4 +128,21 @@ export class OrdersController {
   async restore(@Param('id', ParseUUIDPipe) id: string) {
     return this.ordersService.restore(id);
   }
+
+  // ==================== SUPPLY SOURCES ====================
+
+  @Get(':id/supply-sources')
+  async getSupplySources(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordersService.getSupplySources(id);
+  }
+
+  @Patch(':id/supply-sources')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async updateSupplySources(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { updates: Array<{ material_id: string; supply_source: SupplySource }> },
+  ) {
+    return this.ordersService.updateSupplySources(id, body.updates);
+  }
+
 }

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useApi } from "@/hooks/use-api"
-import { api, type PurchaseOrder, type Customer, type PackageType } from "@/lib/api"
+import { api, type Customer, type PackageType } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -58,7 +58,7 @@ export default function QuickReceivePage() {
   const [packageType, setPackageType] = useState<PackageType>("REEL")
 
   // PO mode
-  const [selectedPoId, setSelectedPoId] = useState("")
+  const [poNumber, setPoNumber] = useState("")
 
   // Customer mode
   const [selectedCustomerId, setSelectedCustomerId] = useState("")
@@ -75,14 +75,8 @@ export default function QuickReceivePage() {
 
   const uidRef = useRef<HTMLInputElement>(null)
 
-  // Fetch open POs and customers
-  const { data: purchaseOrders } = useApi<PurchaseOrder[]>("/purchase-orders")
+  // Fetch customers
   const { data: customers } = useApi<Customer[]>("/customers")
-
-  // Filter to open POs only
-  const openPOs = purchaseOrders?.filter((po) =>
-    ["SUBMITTED", "CONFIRMED", "PARTIALLY_RECEIVED"].includes(po.status)
-  )
 
   const resetForm = useCallback(() => {
     setUid("")
@@ -101,7 +95,7 @@ export default function QuickReceivePage() {
     if (!uid.trim()) { setError("UID is required"); return }
     if (!ipn.trim()) { setError("IPN is required"); return }
     if (!qty || parseFloat(qty) <= 0) { setError("Quantity must be greater than 0"); return }
-    if (receiptType === "PO" && !selectedPoId) { setError("Select a Purchase Order"); return }
+    if (receiptType === "PO" && !poNumber.trim()) { setError("Enter a PO number"); return }
     if (receiptType === "CUSTOMER_SUPPLIED" && !selectedCustomerId) { setError("Select a Customer"); return }
 
     setSubmitting(true)
@@ -116,7 +110,7 @@ export default function QuickReceivePage() {
       }
 
       if (receiptType === "PO") {
-        payload.po_id = selectedPoId
+        payload.po_number = poNumber.trim()
       } else if (receiptType === "CUSTOMER_SUPPLIED") {
         payload.customer_id = selectedCustomerId
       } else {
@@ -131,7 +125,6 @@ export default function QuickReceivePage() {
         po_line_updated: boolean
       }>("/receiving/quick-receive", payload)
 
-      const selectedPo = openPOs?.find((p) => p.id === selectedPoId)
       const selectedCustomer = customers?.find((c) => c.id === selectedCustomerId)
 
       setReceivedItems((prev) => [
@@ -142,7 +135,7 @@ export default function QuickReceivePage() {
           qty: parseFloat(qty),
           package_type: packageType,
           receipt_type: receiptType,
-          po_number: selectedPo?.po_number,
+          po_number: poNumber || undefined,
           customer_name: selectedCustomer?.name,
           po_line_updated: result.po_line_updated,
           timestamp: new Date(),
@@ -207,22 +200,15 @@ export default function QuickReceivePage() {
               </Select>
             </div>
 
-            {/* PO Selector */}
+            {/* PO Number */}
             {receiptType === "PO" && (
               <div className="space-y-1.5">
-                <Label>Purchase Order</Label>
-                <Select value={selectedPoId} onValueChange={setSelectedPoId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select PO..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {openPOs?.map((po) => (
-                      <SelectItem key={po.id} value={po.id}>
-                        {po.po_number} — {po.supplier?.name ?? "Unknown"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>PO Number</Label>
+                <Input
+                  value={poNumber}
+                  onChange={(e) => setPoNumber(e.target.value)}
+                  placeholder="Enter PO number"
+                />
               </div>
             )}
 

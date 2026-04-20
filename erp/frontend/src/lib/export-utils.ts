@@ -4,6 +4,8 @@ import type {
   CustomerShortage,
   ResourceTypeShortage,
   OrderBuildability,
+  KittingStockResponse,
+  KittingItemWithStock,
 } from "./api"
 
 // Helper to trigger download
@@ -313,4 +315,115 @@ export function exportAffectedAssemblies(
   XLSX.utils.book_append_sheet(wb, detailSheet, "Details")
 
   downloadWorkbook(wb, filename)
+}
+
+// Export kitting list
+export function exportKittingList(
+  stockData: KittingStockResponse,
+  filename?: string
+) {
+  const kit = stockData.kitting_list
+  const allItems = [
+    ...stockData.smt_items,
+    ...stockData.th_items,
+    ...stockData.other_items,
+  ]
+
+  const wb = XLSX.utils.book_new()
+  const fname = filename ?? `kitting-${kit.list_number}.xlsx`
+
+  // Orders sheet
+  const ordersData = kit.orders.map((o) => ({
+    "Order #": o.order?.order_number ?? "",
+    Customer: o.order?.customer?.name ?? "",
+    Product: o.order?.product?.name ?? "",
+    "Order Qty": o.order_quantity,
+    "Due Date": o.order?.due_date ? new Date(o.order.due_date).toLocaleDateString() : "",
+    Status: o.order?.status ?? "",
+  }))
+
+  const ordersSheet = XLSX.utils.json_to_sheet(ordersData)
+  XLSX.utils.book_append_sheet(wb, ordersSheet, "Orders")
+
+  // Materials sheet (all items)
+  const materialsData = allItems.map((item) => ({
+    IPN: item.material?.internal_part_number ?? "",
+    MPN: item.material?.manufacturer_pn ?? "",
+    Description: item.material?.description ?? "",
+    "Resource Type": item.resource_type ?? "",
+    "Qty Required": Math.ceil(item.total_qty_required),
+    "Qty On Hand": item.quantity_on_hand,
+    "Qty Verified": item.qty_verified,
+    Short: item.is_short ? item.shortage_qty : 0,
+    Status: item.qty_verified >= item.total_qty_required
+      ? "OK"
+      : item.qty_verified > 0
+        ? "Partial"
+        : item.is_short
+          ? "Short"
+          : "Pending",
+    Locations: item.uid_locations?.map((l) => `${l.uid} (${l.quantity} @ ${l.location})`).join(", ") ?? "",
+  }))
+
+  const materialsSheet = XLSX.utils.json_to_sheet(materialsData)
+  XLSX.utils.book_append_sheet(wb, materialsSheet, "Materials")
+
+  // SMT sheet
+  if (stockData.smt_items.length > 0) {
+    const smtSheet = XLSX.utils.json_to_sheet(
+      formatKittingItemsForSheet(stockData.smt_items)
+    )
+    XLSX.utils.book_append_sheet(wb, smtSheet, "SMT")
+  }
+
+  // TH sheet
+  if (stockData.th_items.length > 0) {
+    const thSheet = XLSX.utils.json_to_sheet(
+      formatKittingItemsForSheet(stockData.th_items)
+    )
+    XLSX.utils.book_append_sheet(wb, thSheet, "TH")
+  }
+
+  // Other sheet
+  if (stockData.other_items.length > 0) {
+    const otherSheet = XLSX.utils.json_to_sheet(
+      formatKittingItemsForSheet(stockData.other_items)
+    )
+    XLSX.utils.book_append_sheet(wb, otherSheet, "Other")
+  }
+
+  // Scanned UIDs sheet
+  const scanData: Array<Record<string, unknown>> = []
+  for (const item of allItems) {
+    if (item.scans && item.scans.length > 0) {
+      for (const scan of item.scans) {
+        scanData.push({
+          IPN: item.material?.internal_part_number ?? "",
+          UID: scan.uid_code,
+          Quantity: scan.quantity,
+          "Scanned By": scan.scanned_by ?? "",
+          "Scanned At": scan.created_at ? new Date(scan.created_at).toLocaleString() : "",
+        })
+      }
+    }
+  }
+  if (scanData.length > 0) {
+    const scanSheet = XLSX.utils.json_to_sheet(scanData)
+    XLSX.utils.book_append_sheet(wb, scanSheet, "Scanned UIDs")
+  }
+
+  downloadWorkbook(wb, fname)
+}
+
+function formatKittingItemsForSheet(items: KittingItemWithStock[]) {
+  return items.map((item) => ({
+    IPN: item.material?.internal_part_number ?? "",
+    MPN: item.material?.manufacturer_pn ?? "",
+    Description: item.material?.description ?? "",
+    "Qty Required": Math.ceil(item.total_qty_required),
+    "Qty On Hand": item.quantity_on_hand,
+    "Qty Verified": item.qty_verified,
+    Short: item.is_short ? item.shortage_qty : 0,
+    Locations: item.uid_locations?.map((l) => `${l.uid} (${l.quantity} @ ${l.location})`).join(", ") ?? "",
+  }))
 }

@@ -154,33 +154,75 @@ export default function OrdersPage() {
     {
       key: "order_number",
       header: "Order #",
-      defaultWidth: 120,
+      defaultWidth: 180,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (order) => order.order_number,
+      filterAccessor: (order) => order.order_number,
       cell: (order) => (
         <span className="font-medium">{order.order_number}</span>
+      ),
+    },
+    {
+      key: "po_number",
+      header: "Customer PO #",
+      defaultWidth: 140,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (order) => order.po_number ?? "",
+      filterAccessor: (order) => order.po_number ?? "",
+      cell: (order) => (
+        <span className="text-sm">{order.po_number || "\u2014"}</span>
+      ),
+    },
+    {
+      key: "wo_number",
+      header: "WO #",
+      defaultWidth: 120,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (order) => order.wo_number ?? "",
+      filterAccessor: (order) => order.wo_number ?? "",
+      cell: (order) => (
+        <span className="text-sm">{order.wo_number || "\u2014"}</span>
       ),
     },
     {
       key: "customer",
       header: "Customer",
       defaultWidth: 150,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (order) => order.customer?.name ?? "",
+      filterAccessor: (order) => order.customer?.name ?? "",
       cell: (order) => order.customer?.name || "Unknown",
     },
     {
       key: "product",
       header: "Product",
       defaultWidth: 180,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (order) => order.product?.name ?? order.product?.part_number ?? "",
+      filterAccessor: (order) => order.product?.name ?? order.product?.part_number ?? "",
       cell: (order) => order.product?.name || order.product?.part_number || "Unknown",
     },
     {
       key: "quantity",
       header: "Qty",
       defaultWidth: 80,
+      sortable: true,
+      sortAccessor: (order) => order.quantity,
       cell: (order) => order.quantity.toLocaleString(),
     },
     {
       key: "status",
       header: "Order Status",
       defaultWidth: 130,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (order) => order.status,
+      filterAccessor: (order) => order.status.replace("_", " "),
       cell: (order) => (
         <Badge variant="outline" className={orderStatusColors[order.status]}>
           {order.status.replace("_", " ")}
@@ -192,7 +234,6 @@ export default function OrdersPage() {
       header: "Material Status",
       defaultWidth: 140,
       cell: (order) => {
-        // Only show material status for active orders
         if (["CANCELLED", "SHIPPED"].includes(order.status)) {
           return <span className="text-muted-foreground text-sm">-</span>
         }
@@ -204,6 +245,10 @@ export default function OrdersPage() {
       key: "due_date",
       header: "Due Date",
       defaultWidth: 130,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (order) => new Date(order.due_date).getTime(),
+      filterAccessor: (order) => new Date(order.due_date).toLocaleDateString(),
       cell: (order) => {
         const date = new Date(order.due_date)
         const isOverdue = date < new Date() && !["SHIPPED", "CANCELLED"].includes(order.status)
@@ -219,6 +264,10 @@ export default function OrdersPage() {
       key: "order_type",
       header: "Type",
       defaultWidth: 100,
+      sortable: true,
+      filterable: true,
+      sortAccessor: (order) => order.order_type,
+      filterAccessor: (order) => order.order_type,
       cell: (order) => (
         <Badge variant="secondary" className="text-xs">
           {order.order_type}

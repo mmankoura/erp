@@ -7,11 +7,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Order, OrderStatus, OrderProductionType } from '../../entities/order.entity';
+import { Order, OrderStatus, OrderType, OrderProductionType } from '../../entities/order.entity';
 import { BomItem, ResourceType } from '../../entities/bom-item.entity';
 import { Product } from '../../entities/product.entity';
 import { Customer } from '../../entities/customer.entity';
 import { BomRevision } from '../../entities/bom-revision.entity';
+import { OrderMaterialSource, SupplySource } from '../../entities/order-material-source.entity';
 import { CreateOrderDto, UpdateOrderDto } from './dto';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
@@ -63,6 +64,10 @@ export class OrdersService {
     private readonly customerRepository: Repository<Customer>,
     @InjectRepository(BomRevision)
     private readonly bomRevisionRepository: Repository<BomRevision>,
+    @InjectRepository(BomItem)
+    private readonly bomItemRepository: Repository<BomItem>,
+    @InjectRepository(OrderMaterialSource)
+    private readonly omsRepository: Repository<OrderMaterialSource>,
     private readonly inventoryService: InventoryService,
     private readonly auditService: AuditService,
     private readonly sequenceGenerator: SequenceGeneratorService,
@@ -206,6 +211,10 @@ export class OrdersService {
     });
 
     const saved = await this.orderRepository.save(order);
+
+    // Seed supply sources from BOM
+    await this.seedSupplySources(saved.id, bomRevisionId, dto.order_type ?? OrderType.TURNKEY);
+
     const createdOrder = await this.findOne(saved.id);
 
     // Emit audit event for order creation
@@ -672,5 +681,132 @@ export class OrdersService {
       relations: ['customer', 'product', 'bom_revision'],
       order: { due_date: 'ASC' },
     });
+  }
+
+  // ==================== SUPPLY SOURCES ====================
+
+  private async seedSupplySources(
+    orderId: string,
+    bomRevisionId: string,
+    orderType: OrderType,
+  ): Promise<void> {
+    const bomItems = await this.bomItemRepository.find({
+      where: { bom_revision_id: bomRevisionId },
+    });
+
+    const defaultSource =
+      orderType === OrderType.CONSIGNMENT
+        ? SupplySource.CUSTOMER
+        : SupplySource.COMPANY;
+
+    const sources = bomItems
+      .filter((item) => item.material_id)
+      .map((item) => ({
+        order_id: orderId,
+        material_id: item.material_id,
+        supply_source: defaultSource,
+      }));
+
+    // Deduplicate by material_id (same material can appear in multiple BOM lines)
+    const seen = new Set<string>();
+    const unique = sources.filter((s) => {
+      if (seen.has(s.material_id)) return false;
+      seen.add(s.material_id);
+      return true;
+    });
+
+    if (unique.length > 0) {
+      await this.omsRepository
+        .createQueryBuilder()
+        .insert()
+        .into(OrderMaterialSource)
+        .values(unique)
+        .orIgnore()
+        .execute();
+    }
+  }
+
+  async getSupplySources(orderId: string): Promise<OrderMaterialSource[]> {
+    return this.omsRepository.find({
+      where: { order_id: orderId },
+      relations: ['material'],
+      order: { material: { internal_part_number: 'ASC' } },
+    });
+  }
+
+  async updateSupplySources(
+    orderId: string,
+    updates: Array<{ material_id: string; supply_source: SupplySource }>,
+  ): Promise<OrderMaterialSource[]> {
+    const order = await this.findOne(orderId);
+    if (!order) {
+      throw new NotFoundException(`Order not found`);
+    }
+
+    for (const update of updates) {
+      await this.omsRepository.upsert(
+        {
+          order_id: orderId,
+          material_id: update.material_id,
+          supply_source: update.supply_source,
+        },
+        ['order_id', 'material_id'],
+      );
+    }
+
+    return this.getSupplySources(orderId);
+  }
+
+  async getCustomerSuppliedItems(): Promise<
+    Array<{
+      order_id: string;
+      order_number: string;
+      customer_name: string;
+      customer_id: string;
+      product_name: string;
+      due_date: Date;
+      material_id: string;
+      ipn: string;
+      description: string | null;
+      qty_required: number;
+    }>
+  > {
+    const results = await this.omsRepository
+      .createQueryBuilder('oms')
+      .innerJoin('oms.order', 'o')
+      .innerJoin('o.customer', 'c')
+      .innerJoin('o.product', 'p')
+      .innerJoin('o.bom_revision', 'br')
+      .innerJoin('bom_items', 'bi', 'bi.bom_revision_id = br.id AND bi.material_id = oms.material_id')
+      .innerJoin('oms.material', 'm')
+      .where('oms.supply_source = :source', { source: SupplySource.CUSTOMER })
+      .andWhere('o.status IN (:...statuses)', { statuses: ACTIVE_STATUSES })
+      .andWhere('o.deleted_at IS NULL')
+      .select([
+        'oms.order_id AS order_id',
+        'o.order_number AS order_number',
+        'c.name AS customer_name',
+        'c.id AS customer_id',
+        'p.name AS product_name',
+        'o.due_date AS due_date',
+        'oms.material_id AS material_id',
+        'm.internal_part_number AS ipn',
+        'm.description AS description',
+        '(o.quantity * bi.quantity_required * (1 + COALESCE(bi.scrap_factor, 0) / 100)) AS qty_required',
+      ])
+      .getRawMany();
+
+    return results.map((r) => ({
+      order_id: r.order_id,
+      order_number: r.order_number,
+      customer_name: r.customer_name,
+      customer_id: r.customer_id,
+      product_name: r.product_name,
+      due_date: r.due_date,
+      material_id: r.material_id,
+      ipn: r.ipn,
+      description: r.description,
+      qty_required: parseFloat(String(r.qty_required)),
+    }));
   }
 }

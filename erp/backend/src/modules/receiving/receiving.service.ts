@@ -978,21 +978,39 @@ export class ReceivingService {
     // Determine ownership
     const isPO = dto.receipt_type === QuickReceiptType.PO;
     const isCustomer = dto.receipt_type === QuickReceiptType.CUSTOMER_SUPPLIED;
+    const isStock = dto.receipt_type === QuickReceiptType.STOCK;
     const ownerType = isCustomer ? OwnerType.CUSTOMER : OwnerType.COMPANY;
     const ownerId = isCustomer ? dto.customer_id ?? null : null;
 
-    // Resolve PO details if PO mode
+    // Resolve PO — by number (manual entry) or by ID (legacy), or from stock po_reference
     let po: PurchaseOrder | null = null;
     let matchedPoLine: PurchaseOrderLine | null = null;
+    const poLookupNumber = isPO
+      ? (dto.po_number ?? null)
+      : isStock
+        ? (dto.po_reference ?? null)
+        : null;
+
     if (isPO && dto.po_id) {
+      // Legacy: look up by UUID
       po = await this.poRepository.findOne({
         where: { id: dto.po_id },
         relations: ['lines', 'supplier'],
       });
-      if (!po) {
-        throw new BadRequestException(`Purchase order not found`);
-      }
-      // Find first PO line for this material with remaining qty
+    } else if (poLookupNumber) {
+      // Look up by PO number (PO mode manual entry or Stock mode po_reference)
+      po = await this.poRepository.findOne({
+        where: { po_number: poLookupNumber },
+        relations: ['lines', 'supplier'],
+      });
+    }
+
+    if (isPO && !po && (dto.po_number || dto.po_id)) {
+      throw new BadRequestException(`Purchase order not found`);
+    }
+
+    // Find matching PO line for this material
+    if (po) {
       matchedPoLine =
         po.lines
           ?.filter(
@@ -1017,9 +1035,8 @@ export class ReceivingService {
         location: 'STOCK',
         owner_type: ownerType,
         owner_id: ownerId,
-        po_reference:
-          isPO && po ? po.po_number : dto.po_reference ?? null,
-        supplier_id: isPO && po ? po.supplier?.id ?? null : null,
+        po_reference: po ? po.po_number : dto.po_reference ?? null,
+        supplier_id: po ? po.supplier?.id ?? null : null,
         received_date: new Date(),
       });
       const savedLot = await manager.save(InventoryLot, lot);
@@ -1029,18 +1046,18 @@ export class ReceivingService {
         material_id: material.id,
         transaction_type: TransactionType.RECEIPT,
         quantity: dto.quantity_received,
-        reference_type: isPO
+        reference_type: po
           ? ReferenceType.PO_RECEIPT
           : ReferenceType.MANUAL,
         bucket: InventoryBucket.RAW,
         lot_id: savedLot.id,
         owner_type: ownerType,
         owner_id: ownerId,
-        reason: isPO && po
+        reason: po
           ? `Quick receive against PO ${po.po_number}`
-          : dto.receipt_type === QuickReceiptType.STOCK
-            ? `Quick receive to stock${dto.po_reference ? ` (ref: ${dto.po_reference})` : ''}`
-            : `Quick receive - customer supplied`,
+          : isCustomer
+            ? `Quick receive - customer supplied`
+            : `Quick receive to stock${dto.po_reference ? ` (ref: ${dto.po_reference})` : ''}`,
         created_by: dto.received_by,
       });
       const savedTx = await manager.save(InventoryTransaction, tx);

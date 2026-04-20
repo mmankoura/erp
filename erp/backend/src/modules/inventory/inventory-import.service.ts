@@ -250,6 +250,7 @@ export class InventoryImportService {
   async findAllLots(filters?: {
     status?: string;
     materialId?: string;
+    ownerType?: string;
   }): Promise<InventoryLot[]> {
     const where: Record<string, unknown> = {};
 
@@ -258,6 +259,9 @@ export class InventoryImportService {
     }
     if (filters?.materialId) {
       where.material_id = filters.materialId;
+    }
+    if (filters?.ownerType) {
+      where.owner_type = filters.ownerType;
     }
 
     return this.lotRepository.find({
