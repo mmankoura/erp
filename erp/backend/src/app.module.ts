@@ -20,6 +20,7 @@ import { ReceivingModule } from './modules/receiving/receiving.module';
 import { CycleCountModule } from './modules/cycle-count/cycle-count.module';
 import { ProductionModule } from './modules/production/production.module';
 import { KittingModule } from './modules/kitting/kitting.module';
+import { ConsumableOrdersModule } from './modules/consumable-orders/consumable-orders.module';
 import { SharedModule } from './modules/shared/shared.module';
 
 @Module({
@@ -50,6 +51,7 @@ import { SharedModule } from './modules/shared/shared.module';
     CycleCountModule, // Cycle counting / physical inventory
     ProductionModule, // WIP / production tracking
     KittingModule, // Kitting list management
+    ConsumableOrdersModule, // Consumable purchase orders (solder paste, stencils, etc.)
   ],
 })
 export class AppModule {}

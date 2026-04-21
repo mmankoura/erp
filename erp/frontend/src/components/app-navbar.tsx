@@ -67,6 +67,7 @@ const navGroups: NavGroup[] = [
     label: "Purchasing",
     items: [
       { title: "Supplier Purchase Orders", url: "/purchase-orders", icon: ClipboardList },
+      { title: "Consumable Orders", url: "/consumable-orders", icon: ClipboardList },
       { title: "MRP / Shortages", url: "/mrp", icon: TrendingDown },
       { title: "Suppliers", url: "/suppliers", icon: Truck },
     ],

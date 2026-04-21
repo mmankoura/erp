@@ -105,6 +105,7 @@
 - [x] **Production Module** - WIP tracking, stage transitions, production logs
 - [x] **Kitting Module** (7 endpoints) - Create kitting list from multiple orders (BOM aggregation), UID barcode scanning with verification, print pick sheet, complete with shortage reporting, cancel. Separates SMT/TH items
 - [x] **PO History** (3 endpoints) - Import historical PO data from Excel (SPO sheet), searchable archive, record count. Added to Purchase Orders module
+- [x] **Consumable Orders Module** (5 endpoints) - Separate entity for production consumable purchases (solder paste, stencils, etc.). Auto-generated order numbers (CON-YYYYMMDD-NNN). CRUD with line items (AT&A P/N, description, MFR, MFR P/N, qty, unit cost, customer). Status: ORDERED/RECEIVED with undo receive. No inventory/MRP impact.
 
 ### Frontend (Next.js) ✅ Complete
 - [x] Next.js 14 initialized with App Router, Tailwind CSS v4, TypeScript
@@ -134,6 +135,7 @@
 - [x] Receiving dashboard - tabbed: Open Sessions, Flagged Items (with resolution dialog), Inspections
 - [x] Kitting page - Full-screen create view (multi-select orders), detail view with barcode scanning, SMT/TH item separation, printable pick sheet, shortage reporting on completion
 - [x] Purchase Orders History tab - One-time Excel import (SPO sheet), searchable DataTable archive
+- [x] Consumable Orders page - Create/edit/delete consumable orders with line items, mark received/undo receive, status filter, DataTable with search/sort/filter
 - [ ] Settings page (placeholder - low priority)
 
 ### Production Deployment ✅ Complete (April 1, 2026)
@@ -271,6 +273,8 @@
 - [x] **PO Numbering Sequence (Apr 7, REV-002)** - Changed PO number format from `PO-YYYYMM-NNNN` to sequential numeric starting at `8833045`. Removed dependency on SequenceGeneratorService for PO generation.
 
 - [x] **MRP Shortage Excel Export Fix (Apr 7, REV-002)** - Fixed duplication bug in shortage Excel exports where the global shortage quantity was repeated on every order row, misleading buyers into double/triple-counting. "View by Customer" export replaced single `Shortage` column with `Qty (Order)` (per-order requirement) and `Qty (All Orders)` (total across all open orders). Same fix applied to "View by Material" order details sheet and "Affected Assemblies" detail sheet for consistency across all export types.
+
+- [x] **Consumable Orders Module (Apr 21)** - Separate entity for production consumable purchases (solder paste, stencils, etc.). Auto-generated order numbers (CON-YYYYMMDD-NNN). Create/edit/delete with line items (AT&A P/N, description, MFR, MFR P/N, qty, unit cost, customer, currency). Status: ORDERED/RECEIVED with undo receive. Full DataTable with search/sort/filter. Under Purchasing menu.
 
 - [x] **Simplified Receiving Module (Apr 8)** - Replaced the complex 11-step receiving form (`/receiving/new`) with a streamlined quick-receive flow for operational speed. Three receipt modes: **PO** (select PO, updates qty on order → on hand), **Customer Supplied** (select customer, creates customer-owned inventory), **Stock** (free-form entry with MFG PN, manufacturer, PO reference text). Each receive creates an inventory lot (ACTIVE @ STOCK) and inventory transaction immediately — no sessions, no AML/MPN validation, no inspections, no flagging. Receipt log displayed on-page. "Complete Receiving" button navigates back to dashboard. New endpoint: `POST /receiving/quick-receive`. Original sophisticated receiving code preserved at `erp/frontend/src/app/receiving/new/page.v2.tsx` for future re-integration when full validation workflow is needed.
 

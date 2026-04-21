@@ -18,6 +18,7 @@ const pathLabels: Record<string, string> = {
   "suppliers": "Suppliers",
   "orders": "Customer Orders",
   "purchase-orders": "Supplier Purchase Orders",
+  "consumable-orders": "Consumable Orders",
   "inventory": "Inventory",
   "mrp": "MRP / Shortages",
   "receiving": "Receiving",
