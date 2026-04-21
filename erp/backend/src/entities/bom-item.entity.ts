@@ -3,11 +3,13 @@ import {
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
+  OneToMany,
   JoinColumn,
   Index,
 } from 'typeorm';
 import { BomRevision } from './bom-revision.entity';
 import { Material } from './material.entity';
+import { BomItemAlternate } from './bom-item-alternate.entity';
 
 export enum ResourceType {
   SMT = 'SMT',
@@ -69,4 +71,7 @@ export class BomItem {
 
   @Column({ type: 'text', nullable: true })
   notes: string | null;
+
+  @OneToMany(() => BomItemAlternate, (alt) => alt.bom_item, { cascade: true })
+  alternates: BomItemAlternate[];
 }

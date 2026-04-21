@@ -488,6 +488,15 @@ export interface ResourceTypeUsage {
   reference_designators: string | null
 }
 
+export interface AlternateInfo {
+  material_id: string
+  ipn: string
+  description: string | null
+  quantity_on_hand: number
+  quantity_to_use: number
+  priority: number
+}
+
 export interface EnhancedMaterialShortage {
   material_id: string
   material: Material
@@ -497,6 +506,8 @@ export interface EnhancedMaterialShortage {
   quantity_on_order: number
   total_required: number
   shortage: number
+  use_alternates: boolean
+  alternates: AlternateInfo[]
   orders: EnhancedOrderInfo[]
   resource_type_usages: ResourceTypeUsage[]
   affected_products: Array<{
@@ -779,6 +790,14 @@ export interface BomRevision {
   items?: BomItem[]
 }
 
+export interface BomItemAlternate {
+  id: string
+  bom_item_id: string
+  material_id: string
+  material?: Material
+  priority: number
+}
+
 export interface BomItem {
   id: string
   bom_revision_id: string
@@ -793,6 +812,7 @@ export interface BomItem {
   polarized: boolean
   scrap_factor: number
   notes: string | null
+  alternates?: BomItemAlternate[]
 }
 
 export interface CreateBomRevisionDto {
@@ -1188,9 +1208,18 @@ export interface KittingListScan {
   created_at: string
 }
 
+export interface KittingAlternateInfo {
+  material_id: string
+  ipn: string
+  quantity_on_hand: number
+  use_quantity: number
+}
+
 export interface KittingItemWithStock extends KittingListItem {
   quantity_on_hand: number
   quantity_available: number
+  use_alternate: boolean
+  alternates: KittingAlternateInfo[]
   uid_locations: Array<{
     uid: string
     quantity: number

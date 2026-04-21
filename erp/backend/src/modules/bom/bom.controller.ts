@@ -229,4 +229,29 @@ export class BomController {
   async commitImport(@Body() dto: BomImportCommitDto) {
     return this.bomImportService.commitImport(dto);
   }
+
+  // ==================== BOM ITEM ALTERNATES ====================
+
+  @Get('item/:itemId/alternates')
+  async getAlternates(@Param('itemId', ParseUUIDPipe) itemId: string) {
+    return this.bomService.getAlternates(itemId);
+  }
+
+  @Post('item/:itemId/alternates')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async addAlternate(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() body: { ipn: string },
+  ) {
+    return this.bomService.addAlternate(itemId, body.ipn);
+  }
+
+  @Delete('alternate/:alternateId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeAlternate(
+    @Param('alternateId', ParseUUIDPipe) alternateId: string,
+  ) {
+    await this.bomService.removeAlternate(alternateId);
+  }
 }

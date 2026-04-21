@@ -6,6 +6,7 @@ import type {
   OrderBuildability,
   KittingStockResponse,
   KittingItemWithStock,
+  ApprovedManufacturer,
 } from "./api"
 
 // Helper to trigger download
@@ -22,45 +23,63 @@ function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+// Build AML lookup: material_id → approved manufacturers
+function buildAmlMap(amlEntries?: ApprovedManufacturer[]): Map<string, ApprovedManufacturer[]> {
+  const map = new Map<string, ApprovedManufacturer[]>()
+  if (!amlEntries) return map
+  for (const entry of amlEntries) {
+    if (entry.status !== "APPROVED") continue
+    const existing = map.get(entry.material_id) ?? []
+    existing.push(entry)
+    map.set(entry.material_id, existing)
+  }
+  return map
+}
+
 // Export shortages by material
 export function exportShortagesByMaterial(
   shortages: EnhancedMaterialShortage[],
-  filename = "shortages-by-material.xlsx"
+  filename = "shortages-by-material.xlsx",
+  amlEntries?: ApprovedManufacturer[],
 ) {
   const wb = XLSX.utils.book_new()
+  const amlMap = buildAmlMap(amlEntries)
 
   // Main shortages sheet
-  const mainData = shortages.map((s) => ({
-    IPN: s.material.internal_part_number,
-    Description: s.material.description ?? "",
-    "Qty On Hand": s.quantity_on_hand,
-    "Qty Available": s.quantity_available,
-    "Qty On Order": s.quantity_on_order,
-    "Total Required": s.total_required,
-    Shortage: s.shortage,
-    "Affected Orders": s.orders.length,
-    "Affected Products": s.affected_products.map((p) => p.product_name).join(", "),
-  }))
+  const mainData = shortages.map((s) => {
+    const amls = amlMap.get(s.material_id) ?? []
+    return {
+      IPN: s.material.internal_part_number,
+      Description: s.material.description ?? "",
+      "Approved MFG": amls.map((a) => a.manufacturer).join(", ") || s.material.manufacturer || "",
+      "Approved MPN": amls.map((a) => a.manufacturer_part_number).join(", ") || s.material.manufacturer_pn || "",
+      "Qty On Hand": s.quantity_on_hand,
+      "Qty Available": s.quantity_available,
+      "Qty On Order": s.quantity_on_order,
+      "Total Required": s.total_required,
+      Shortage: s.shortage,
+      Status: s.use_alternates ? "Use Alternate" : s.shortage > 0 ? "Short" : "",
+      "Alternate IPN": s.alternates?.map((a) => a.ipn).join(", ") ?? "",
+      "Alt On Hand": s.alternates?.map((a) => `${a.ipn}: ${a.quantity_on_hand}`).join(", ") ?? "",
+      "Alt Qty to Use": s.alternates?.map((a) => `${a.ipn}: ${a.quantity_to_use}`).join(", ") ?? "",
+      "Affected Orders": s.orders.length,
+      "Affected Products": s.affected_products.map((p) => p.product_name).join(", "),
+    }
+  })
 
   const mainSheet = XLSX.utils.json_to_sheet(mainData)
   XLSX.utils.book_append_sheet(wb, mainSheet, "Shortages")
 
   // Detailed orders sheet
-  const detailData: Array<{
-    IPN: string
-    "Order #": string
-    Customer: string
-    Product: string
-    "Due Date": string
-    "Qty (Order)": number
-    "Qty (All Orders)": number
-    "Qty Allocated": number
-  }> = []
+  const detailData: Array<Record<string, unknown>> = []
 
   for (const shortage of shortages) {
+    const amls = amlMap.get(shortage.material_id) ?? []
     for (const order of shortage.orders) {
       detailData.push({
         IPN: shortage.material.internal_part_number,
+        "Approved MFG": amls.map((a) => a.manufacturer).join(", ") || shortage.material.manufacturer || "",
+        "Approved MPN": amls.map((a) => a.manufacturer_part_number).join(", ") || shortage.material.manufacturer_pn || "",
         "Order #": order.order_number,
         Customer: order.customer_name,
         Product: order.product_name,
@@ -81,9 +100,11 @@ export function exportShortagesByMaterial(
 // Export shortages by customer
 export function exportShortagesByCustomer(
   customers: CustomerShortage[],
-  filename = "shortages-by-customer.xlsx"
+  filename = "shortages-by-customer.xlsx",
+  amlEntries?: ApprovedManufacturer[],
 ) {
   const wb = XLSX.utils.book_new()
+  const amlMap = buildAmlMap(amlEntries)
 
   // Summary sheet
   const summaryData = customers.map((c) => ({
@@ -97,21 +118,12 @@ export function exportShortagesByCustomer(
   XLSX.utils.book_append_sheet(wb, summarySheet, "Summary")
 
   // Detailed sheet
-  const detailData: Array<{
-    Customer: string
-    "Customer Code": string
-    "Order #": string
-    Product: string
-    "Due Date": string
-    IPN: string
-    Description: string
-    "Qty (Order)": number
-    "Qty (All Orders)": number
-  }> = []
+  const detailData: Array<Record<string, unknown>> = []
 
   for (const customer of customers) {
     for (const order of customer.orders) {
       for (const shortage of order.shortages) {
+        const amls = amlMap.get(shortage.material_id) ?? []
         detailData.push({
           Customer: customer.customer_name,
           "Customer Code": customer.customer_code,
@@ -120,6 +132,8 @@ export function exportShortagesByCustomer(
           "Due Date": new Date(order.due_date).toLocaleDateString(),
           IPN: shortage.ipn,
           Description: shortage.description ?? "",
+          "Approved MFG": amls.map((a) => a.manufacturer).join(", "),
+          "Approved MPN": amls.map((a) => a.manufacturer_part_number).join(", "),
           "Qty (Order)": shortage.required_quantity,
           "Qty (All Orders)": shortage.total_required,
         })
@@ -136,9 +150,11 @@ export function exportShortagesByCustomer(
 // Export shortages by resource type
 export function exportShortagesByResourceType(
   resourceTypes: ResourceTypeShortage[],
-  filename = "shortages-by-resource-type.xlsx"
+  filename = "shortages-by-resource-type.xlsx",
+  amlEntries?: ApprovedManufacturer[],
 ) {
   const wb = XLSX.utils.book_new()
+  const amlMap = buildAmlMap(amlEntries)
 
   // Summary sheet
   const summaryData = resourceTypes.map((rt) => ({
@@ -152,18 +168,22 @@ export function exportShortagesByResourceType(
 
   // Create a sheet per resource type
   for (const rt of resourceTypes) {
-    const sheetData = rt.materials.map((m) => ({
-      IPN: m.ipn,
-      Description: m.description ?? "",
-      Available: m.quantity_available,
-      "On Order": m.quantity_on_order,
-      Required: m.total_required,
-      Shortage: m.shortage,
-      "Orders Affected": m.affected_orders_count,
-    }))
+    const sheetData = rt.materials.map((m) => {
+      const amls = amlMap.get(m.material_id) ?? []
+      return {
+        IPN: m.ipn,
+        Description: m.description ?? "",
+        "Approved MFG": amls.map((a) => a.manufacturer).join(", "),
+        "Approved MPN": amls.map((a) => a.manufacturer_part_number).join(", "),
+        Available: m.quantity_available,
+        "On Order": m.quantity_on_order,
+        Required: m.total_required,
+        Shortage: m.shortage,
+        "Orders Affected": m.affected_orders_count,
+      }
+    })
 
     const sheet = XLSX.utils.json_to_sheet(sheetData)
-    // Sheet names have max 31 chars
     const sheetName = rt.resource_type.substring(0, 31)
     XLSX.utils.book_append_sheet(wb, sheet, sheetName)
   }
@@ -174,9 +194,11 @@ export function exportShortagesByResourceType(
 // Export order buildability
 export function exportOrderBuildability(
   orders: OrderBuildability[],
-  filename = "order-buildability.xlsx"
+  filename = "order-buildability.xlsx",
+  amlEntries?: ApprovedManufacturer[],
 ) {
   const wb = XLSX.utils.book_new()
+  const amlMap = buildAmlMap(amlEntries)
 
   // Main orders sheet
   const mainData = orders.map((o) => ({
@@ -196,27 +218,19 @@ export function exportOrderBuildability(
   XLSX.utils.book_append_sheet(wb, mainSheet, "Orders")
 
   // Critical shortages sheet
-  const shortageData: Array<{
-    "Order #": string
-    Customer: string
-    Product: string
-    IPN: string
-    Description: string
-    Required: number
-    Available: number
-    "On Order": number
-    "Order Shortage": number
-    "Global Shortage": number
-  }> = []
+  const shortageData: Array<Record<string, unknown>> = []
 
   for (const order of orders) {
     for (const shortage of order.critical_shortages) {
+      const amls = amlMap.get(shortage.material_id) ?? []
       shortageData.push({
         "Order #": order.order_number,
         Customer: order.customer_name,
         Product: order.product_name,
         IPN: shortage.ipn,
         Description: shortage.description ?? "",
+        "Approved MFG": amls.map((a) => a.manufacturer).join(", "),
+        "Approved MPN": amls.map((a) => a.manufacturer_part_number).join(", "),
         Required: shortage.required,
         Available: shortage.available,
         "On Order": shortage.on_order,
@@ -237,9 +251,11 @@ export function exportOrderBuildability(
 // Export affected assemblies
 export function exportAffectedAssemblies(
   shortages: EnhancedMaterialShortage[],
-  filename = "affected-assemblies.xlsx"
+  filename = "affected-assemblies.xlsx",
+  amlEntries?: ApprovedManufacturer[],
 ) {
   const wb = XLSX.utils.book_new()
+  const amlMap = buildAmlMap(amlEntries)
 
   // Build product-centric data
   const productMap = new Map<
@@ -249,7 +265,7 @@ export function exportAffectedAssemblies(
       product_name: string
       shortage_count: number
       total_shortage_qty: number
-      shortages: Array<{ ipn: string; description: string | null; quantity_required: number; total_required: number }>
+      shortages: Array<{ material_id: string; ipn: string; description: string | null; quantity_required: number; total_required: number }>
     }
   >()
 
@@ -269,6 +285,7 @@ export function exportAffectedAssemblies(
       existing.shortage_count++
       existing.total_shortage_qty += product.quantity_required
       existing.shortages.push({
+        material_id: shortage.material_id,
         ipn: shortage.material.internal_part_number,
         description: shortage.material.description,
         quantity_required: product.quantity_required,
@@ -291,20 +308,17 @@ export function exportAffectedAssemblies(
   XLSX.utils.book_append_sheet(wb, summarySheet, "Summary")
 
   // Detailed sheet
-  const detailData: Array<{
-    Product: string
-    IPN: string
-    Description: string
-    "Qty (Product)": number
-    "Qty (All Orders)": number
-  }> = []
+  const detailData: Array<Record<string, unknown>> = []
 
   for (const product of products) {
     for (const shortage of product.shortages) {
+      const amls = amlMap.get(shortage.material_id) ?? []
       detailData.push({
         Product: product.product_name,
         IPN: shortage.ipn,
         Description: shortage.description ?? "",
+        "Approved MFG": amls.map((a) => a.manufacturer).join(", "),
+        "Approved MPN": amls.map((a) => a.manufacturer_part_number).join(", "),
         "Qty (Product)": shortage.quantity_required,
         "Qty (All Orders)": shortage.total_required,
       })
@@ -353,6 +367,9 @@ export function exportKittingList(
     "Resource Type": item.resource_type ?? "",
     "Qty Required": Math.ceil(item.total_qty_required),
     "Qty On Hand": item.quantity_on_hand,
+    "Pick Instruction": item.use_alternate
+      ? item.alternates?.map((a) => `USE: ${a.ipn} (${a.use_quantity} pcs)`).join(", ") ?? ""
+      : "",
     "Qty Verified": item.qty_verified,
     Short: item.is_short ? item.shortage_qty : 0,
     Status: item.qty_verified >= item.total_qty_required
@@ -422,6 +439,9 @@ function formatKittingItemsForSheet(items: KittingItemWithStock[]) {
     Description: item.material?.description ?? "",
     "Qty Required": Math.ceil(item.total_qty_required),
     "Qty On Hand": item.quantity_on_hand,
+    "Pick Instruction": item.use_alternate
+      ? item.alternates?.map((a) => `USE: ${a.ipn} (${a.use_quantity} pcs)`).join(", ") ?? ""
+      : "",
     "Qty Verified": item.qty_verified,
     Short: item.is_short ? item.shortage_qty : 0,
     Locations: item.uid_locations?.map((l) => `${l.uid} (${l.quantity} @ ${l.location})`).join(", ") ?? "",

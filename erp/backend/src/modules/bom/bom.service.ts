@@ -8,6 +8,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { BomRevision } from '../../entities/bom-revision.entity';
 import { BomItem } from '../../entities/bom-item.entity';
+import { BomItemAlternate } from '../../entities/bom-item-alternate.entity';
+import { Material } from '../../entities/material.entity';
 import { Product } from '../../entities/product.entity';
 import { Order } from '../../entities/order.entity';
 import {
@@ -43,6 +45,10 @@ export class BomService {
     private readonly revisionRepository: Repository<BomRevision>,
     @InjectRepository(BomItem)
     private readonly itemRepository: Repository<BomItem>,
+    @InjectRepository(BomItemAlternate)
+    private readonly alternateRepository: Repository<BomItemAlternate>,
+    @InjectRepository(Material)
+    private readonly materialRepository: Repository<Material>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
     @InjectRepository(Order)
@@ -78,7 +84,7 @@ export class BomService {
   async findRevision(id: string): Promise<BomRevision> {
     const revision = await this.revisionRepository.findOne({
       where: { id },
-      relations: ['product', 'items', 'items.material'],
+      relations: ['product', 'items', 'items.material', 'items.alternates', 'items.alternates.material'],
     });
     if (!revision) {
       throw new NotFoundException(`BOM revision with ID "${id}" not found`);
@@ -89,7 +95,7 @@ export class BomService {
   async findActiveRevision(productId: string): Promise<BomRevision | null> {
     return this.revisionRepository.findOne({
       where: { product_id: productId, is_active: true },
-      relations: ['items', 'items.material'],
+      relations: ['items', 'items.material', 'items.alternates', 'items.alternates.material'],
     });
   }
 
@@ -575,5 +581,79 @@ export class BomService {
     };
 
     return this.createFullRevision(dto);
+  }
+
+  // ==================== BOM ITEM ALTERNATES ====================
+
+  async getAlternates(bomItemId: string): Promise<BomItemAlternate[]> {
+    return this.alternateRepository.find({
+      where: { bom_item_id: bomItemId },
+      relations: ['material'],
+      order: { priority: 'ASC' },
+    });
+  }
+
+  async addAlternate(
+    bomItemId: string,
+    ipn: string,
+  ): Promise<BomItemAlternate> {
+    // Verify BOM item exists
+    const bomItem = await this.itemRepository.findOne({
+      where: { id: bomItemId },
+    });
+    if (!bomItem) {
+      throw new NotFoundException('BOM item not found');
+    }
+
+    // Resolve IPN to material
+    const material = await this.materialRepository.findOne({
+      where: { internal_part_number: ipn, deleted_at: undefined },
+    });
+    if (!material) {
+      throw new BadRequestException(`Material with IPN "${ipn}" not found`);
+    }
+
+    // Don't allow adding the primary material as an alternate
+    if (material.id === bomItem.material_id) {
+      throw new BadRequestException('Cannot add primary material as an alternate');
+    }
+
+    // Check for duplicate
+    const existing = await this.alternateRepository.findOne({
+      where: { bom_item_id: bomItemId, material_id: material.id },
+    });
+    if (existing) {
+      throw new ConflictException('This alternate already exists for this BOM item');
+    }
+
+    // Get next priority
+    const maxPriority = await this.alternateRepository
+      .createQueryBuilder('alt')
+      .select('MAX(alt.priority)', 'max')
+      .where('alt.bom_item_id = :bomItemId', { bomItemId })
+      .getRawOne();
+    const nextPriority = (maxPriority?.max ?? 0) + 1;
+
+    const alternate = this.alternateRepository.create({
+      bom_item_id: bomItemId,
+      material_id: material.id,
+      priority: nextPriority,
+    });
+
+    const saved = await this.alternateRepository.save(alternate);
+    return this.alternateRepository.findOne({
+      where: { id: saved.id },
+      relations: ['material'],
+    }) as Promise<BomItemAlternate>;
+  }
+
+  async removeAlternate(alternateId: string): Promise<void> {
+    const alternate = await this.alternateRepository.findOne({
+      where: { id: alternateId },
+    });
+    if (!alternate) {
+      throw new NotFoundException('Alternate not found');
+    }
+    await this.alternateRepository.remove(alternate);
   }
 }

@@ -682,6 +682,27 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
       sortAccessor: (item) => item.quantity_on_hand,
     },
     {
+      key: "alternate",
+      header: "Pick Instruction",
+      cell: (item) => {
+        if (!item.use_alternate || !item.alternates?.length) return <span className="text-muted-foreground">—</span>
+        return (
+          <div className="space-y-0.5">
+            {item.alternates.map((alt) => (
+              <div key={alt.material_id} className="text-sm">
+                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
+                  USE: {alt.ipn}
+                </Badge>
+                <span className="text-muted-foreground ml-1 text-xs">
+                  ({alt.use_quantity} of {alt.quantity_on_hand} avail)
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      },
+    },
+    {
       key: "location",
       header: "Location",
       cell: (item) => (

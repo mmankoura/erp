@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useApi } from "@/hooks/use-api"
 import {
   type MrpShortage,
@@ -8,15 +8,25 @@ import {
   type MrpShortagesResponse,
   type MrpRequirementsResponse,
   type EnhancedShortageReport,
+  type EnhancedMaterialShortage,
   type ShortagesByCustomerResponse,
   type ShortagesByResourceTypeResponse,
   type OrderBuildabilityResponse,
+  type ApprovedManufacturer,
 } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   AlertTriangle,
   Package,
@@ -42,6 +52,7 @@ import {
 
 // Extended type with id for table keys
 type MrpShortageWithId = MrpShortage & { id: string }
+type EnhancedShortageWithId = EnhancedMaterialShortage & { id: string }
 type MrpRequirementWithId = MrpRequirement & { id: string }
 
 // Helper function to compute severity
@@ -53,7 +64,7 @@ function getSeverity(shortage: number, totalRequired: number) {
 }
 
 // Search filter for shortages table
-function shortagesSearchFilter(item: MrpShortageWithId, search: string): boolean {
+function shortagesSearchFilter(item: EnhancedShortageWithId, search: string): boolean {
   const q = search.toLowerCase()
   return (
     item.material.internal_part_number.toLowerCase().includes(q) ||
@@ -62,7 +73,8 @@ function shortagesSearchFilter(item: MrpShortageWithId, search: string): boolean
     item.quantity_on_hand.toString().includes(q) ||
     item.quantity_available.toString().includes(q) ||
     item.quantity_on_order.toString().includes(q) ||
-    Math.abs(item.shortage).toString().includes(q)
+    Math.abs(item.shortage).toString().includes(q) ||
+    (item.alternates ?? []).some((a) => a.ipn.toLowerCase().includes(q))
   )
 }
 
@@ -82,7 +94,7 @@ function requirementsSearchFilter(item: MrpRequirementWithId, search: string): b
 }
 
 // Column definitions for Shortages table
-const shortagesColumns: Column<MrpShortageWithId>[] = [
+const shortagesColumns: Column<EnhancedShortageWithId>[] = [
   {
     key: "material",
     header: "Material",
@@ -174,19 +186,27 @@ const shortagesColumns: Column<MrpShortageWithId>[] = [
   {
     key: "status",
     header: "Status",
-    defaultWidth: 100,
+    defaultWidth: 120,
     resizable: false,
     sortable: true,
     filterable: true,
     sortAccessor: (item) => {
+      if (item.use_alternates && item.shortage === 0) return 3
       const severity = getSeverity(item.shortage, item.total_required)
       return severity === "critical" ? 0 : severity === "warning" ? 1 : 2
     },
     filterAccessor: (item) => {
+      if (item.use_alternates && item.shortage === 0) return "Use Alternate"
       const severity = getSeverity(item.shortage, item.total_required)
       return severity === "critical" ? "Critical" : severity === "warning" ? "Warning" : "Low"
     },
     cell: (item) => {
+      if (item.use_alternates && item.shortage === 0) {
+        return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Use Alternate</Badge>
+      }
+      if (item.use_alternates && item.shortage > 0) {
+        return <Badge className="bg-orange-100 text-orange-800 border-orange-200">Partial Alt</Badge>
+      }
       const severity = getSeverity(item.shortage, item.total_required)
       return (
         <Badge
@@ -204,6 +224,30 @@ const shortagesColumns: Column<MrpShortageWithId>[] = [
               ? "Warning"
               : "Low"}
         </Badge>
+      )
+    },
+  },
+  {
+    key: "alternates",
+    header: "Alternate",
+    defaultWidth: 180,
+    sortable: true,
+    filterable: true,
+    sortAccessor: (item) => item.alternates?.[0]?.ipn ?? "",
+    filterAccessor: (item) => item.alternates?.map((a) => a.ipn).join(", ") ?? "",
+    cell: (item) => {
+      if (!item.alternates || item.alternates.length === 0) return <span className="text-muted-foreground">—</span>
+      return (
+        <div>
+          {item.alternates.map((alt) => (
+            <div key={alt.material_id} className="text-sm">
+              <span className="font-medium">{alt.ipn}</span>
+              <span className="text-muted-foreground ml-1">
+                ({alt.quantity_on_hand} avail, use {alt.quantity_to_use})
+              </span>
+            </div>
+          ))}
+        </div>
       )
     },
   },
@@ -384,6 +428,12 @@ const requirementsColumns: Column<MrpRequirementWithId>[] = [
 export default function MRPPage() {
   const [shortageView, setShortageView] = useState<ShortageView>("by-material")
   const [isExporting, setIsExporting] = useState(false)
+  const [reqFilterOrder, setReqFilterOrder] = useState<string>("")
+  const [reqFilterProduct, setReqFilterProduct] = useState<string>("")
+  const [reqFilterResourceType, setReqFilterResourceType] = useState<string>("")
+  const [shortFilterOrder, setShortFilterOrder] = useState<string>("")
+  const [shortFilterCustomer, setShortFilterCustomer] = useState<string>("")
+  const [shortFilterResourceType, setShortFilterResourceType] = useState<string>("")
 
   // Basic shortages/requirements data
   const { data: shortagesResponse, isLoading: shortagesLoading } =
@@ -401,6 +451,14 @@ export default function MRPPage() {
   const { data: buildabilityResponse, isLoading: buildabilityLoading } =
     useApi<OrderBuildabilityResponse>("/mrp/orders/buildability")
 
+  // AML data for export
+  const { data: amlEntries } = useApi<ApprovedManufacturer[]>("/aml")
+
+  // Orders for requirements filtering
+  const { data: allOrders } = useApi<Array<{
+    id: string; order_number: string; product?: { name: string; part_number: string }; status: string
+  }>>("/orders")
+
   // Extract arrays from wrapper responses
   const shortagesRaw = shortagesResponse?.shortages || null
   const requirementsRaw = requirementsResponse?.materials || null
@@ -410,9 +468,137 @@ export default function MRPPage() {
     ? shortagesRaw.map((item) => ({ ...item, id: item.material_id }))
     : null
 
+  const enhancedShortages: EnhancedShortageWithId[] | null = enhancedShortagesResponse?.shortages
+    ? enhancedShortagesResponse.shortages.map((item) => ({ ...item, id: item.material_id }))
+    : null
+
   const requirements: MrpRequirementWithId[] | null = requirementsRaw
     ? requirementsRaw.map((item) => ({ ...item, id: item.material_id }))
     : null
+
+  // Build order→material and material→resource_type maps from enhanced data for filtering
+  const orderMaterialMap = useMemo(() => {
+    const map = new Map<string, Set<string>>() // order_id → Set<material_id>
+    if (!enhancedShortagesResponse?.shortages) return map
+    for (const s of enhancedShortagesResponse.shortages) {
+      for (const o of s.orders) {
+        const existing = map.get(o.order_id) ?? new Set()
+        existing.add(s.material_id)
+        map.set(o.order_id, existing)
+      }
+    }
+    return map
+  }, [enhancedShortagesResponse])
+
+  const productMaterialMap = useMemo(() => {
+    const map = new Map<string, Set<string>>() // product_name → Set<material_id>
+    if (!enhancedShortagesResponse?.shortages) return map
+    for (const s of enhancedShortagesResponse.shortages) {
+      for (const p of s.affected_products) {
+        const existing = map.get(p.product_name) ?? new Set()
+        existing.add(s.material_id)
+        map.set(p.product_name, existing)
+      }
+    }
+    return map
+  }, [enhancedShortagesResponse])
+
+  // Get unique orders and products for filter dropdowns
+  const activeOrders = useMemo(() => {
+    if (!allOrders) return []
+    return allOrders
+      .filter((o) => ["ENTERED", "KITTING", "SMT", "TH"].includes(o.status))
+      .map((o) => ({ id: o.id, label: `${o.order_number} — ${o.product?.name ?? ""}` }))
+  }, [allOrders])
+
+  const uniqueProducts = useMemo(() => {
+    if (!allOrders) return []
+    const seen = new Set<string>()
+    return allOrders
+      .filter((o) => ["ENTERED", "KITTING", "SMT", "TH"].includes(o.status))
+      .filter((o) => {
+        const name = o.product?.name ?? ""
+        if (seen.has(name)) return false
+        seen.add(name)
+        return true
+      })
+      .map((o) => o.product?.name ?? "")
+  }, [allOrders])
+
+  const resourceTypes = ["SMT", "TH", "MECH", "PCB"]
+
+  // Filter requirements based on selected filters
+  const filteredRequirements = useMemo(() => {
+    if (!requirements) return null
+    let result = requirements
+
+    if (reqFilterOrder) {
+      const materialIds = orderMaterialMap.get(reqFilterOrder)
+      if (materialIds) {
+        result = result.filter((r) => materialIds.has(r.material_id))
+      } else {
+        result = []
+      }
+    }
+
+    if (reqFilterProduct) {
+      const materialIds = productMaterialMap.get(reqFilterProduct)
+      if (materialIds) {
+        result = result.filter((r) => materialIds.has(r.material_id))
+      } else {
+        result = []
+      }
+    }
+
+    if (reqFilterResourceType) {
+      result = result.filter((r) => r.material?.resource_type === reqFilterResourceType)
+    }
+
+    return result
+  }, [requirements, reqFilterOrder, reqFilterProduct, reqFilterResourceType, orderMaterialMap, productMaterialMap])
+
+  // Unique customers from enhanced shortages
+  const uniqueCustomers = useMemo(() => {
+    if (!enhancedShortagesResponse?.shortages) return []
+    const seen = new Set<string>()
+    const customers: Array<{ id: string; name: string }> = []
+    for (const s of enhancedShortagesResponse.shortages) {
+      for (const o of s.orders) {
+        if (!seen.has(o.customer_id)) {
+          seen.add(o.customer_id)
+          customers.push({ id: o.customer_id, name: o.customer_name })
+        }
+      }
+    }
+    return customers.sort((a, b) => a.name.localeCompare(b.name))
+  }, [enhancedShortagesResponse])
+
+  // Filter shortages
+  const filteredShortages = useMemo(() => {
+    if (!enhancedShortages) return null
+    let result = enhancedShortages
+
+    if (shortFilterOrder) {
+      result = result.filter((s) =>
+        s.orders.some((o) => o.order_id === shortFilterOrder)
+      )
+    }
+
+    if (shortFilterCustomer) {
+      result = result.filter((s) =>
+        s.orders.some((o) => o.customer_id === shortFilterCustomer)
+      )
+    }
+
+    if (shortFilterResourceType) {
+      result = result.filter((s) => {
+        const rt = s.resource_type_usages?.find((u) => u.resource_type === shortFilterResourceType)
+        return !!rt
+      })
+    }
+
+    return result
+  }, [enhancedShortages, shortFilterOrder, shortFilterCustomer, shortFilterResourceType])
 
   // Calculate summary stats
   const totalShortages = shortages?.length || 0
@@ -440,7 +626,8 @@ export default function MRPPage() {
           if (enhancedShortagesResponse?.shortages) {
             exportShortagesByMaterial(
               enhancedShortagesResponse.shortages,
-              `shortages-by-material-${timestamp}.xlsx`
+              `shortages-by-material-${timestamp}.xlsx`,
+              amlEntries ?? undefined,
             )
           }
           break
@@ -448,7 +635,8 @@ export default function MRPPage() {
           if (byCustomerResponse?.customers) {
             exportShortagesByCustomer(
               byCustomerResponse.customers,
-              `shortages-by-customer-${timestamp}.xlsx`
+              `shortages-by-customer-${timestamp}.xlsx`,
+              amlEntries ?? undefined,
             )
           }
           break
@@ -456,7 +644,8 @@ export default function MRPPage() {
           if (byResourceTypeResponse?.resource_types) {
             exportShortagesByResourceType(
               byResourceTypeResponse.resource_types,
-              `shortages-by-part-type-${timestamp}.xlsx`
+              `shortages-by-part-type-${timestamp}.xlsx`,
+              amlEntries ?? undefined,
             )
           }
           break
@@ -464,7 +653,8 @@ export default function MRPPage() {
           if (buildabilityResponse?.orders) {
             exportOrderBuildability(
               buildabilityResponse.orders,
-              `order-buildability-${timestamp}.xlsx`
+              `order-buildability-${timestamp}.xlsx`,
+              amlEntries ?? undefined,
             )
           }
           break
@@ -472,7 +662,8 @@ export default function MRPPage() {
           if (enhancedShortagesResponse?.shortages) {
             exportAffectedAssemblies(
               enhancedShortagesResponse.shortages,
-              `affected-assemblies-${timestamp}.xlsx`
+              `affected-assemblies-${timestamp}.xlsx`,
+              amlEntries ?? undefined,
             )
           }
           break
@@ -480,36 +671,91 @@ export default function MRPPage() {
     } finally {
       setIsExporting(false)
     }
-  }, [shortageView, enhancedShortagesResponse, byCustomerResponse, byResourceTypeResponse, buildabilityResponse])
+  }, [shortageView, enhancedShortagesResponse, byCustomerResponse, byResourceTypeResponse, buildabilityResponse, amlEntries])
 
   // Render the appropriate view
   const renderShortageView = () => {
     switch (shortageView) {
       case "by-material":
-        return shortages && shortages.length > 0 ? (
-          <DataTable
-            data={shortages}
-            columns={shortagesColumns}
-            isLoading={shortagesLoading}
-            searchFilter={shortagesSearchFilter}
-            searchPlaceholder="Search by IPN, description, quantity..."
-            emptyMessage="No shortages found"
-            storageKey="mrp-shortages"
-            pageSize={50}
-          />
-        ) : shortagesLoading ? (
-          <div className="space-y-2">
-            {[...Array(5)].map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8">
-            <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
-            <p className="text-lg font-medium text-green-600">No Shortages</p>
-            <p className="text-muted-foreground">
-              All material requirements can be fulfilled with current stock and open POs.
-            </p>
+        return (
+          <div className="space-y-4">
+            {/* Shortage filters */}
+            <div className="flex flex-wrap gap-3">
+              <div className="w-[250px]">
+                <Select value={shortFilterOrder || "__all__"} onValueChange={(v) => setShortFilterOrder(v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="All Orders" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Orders</SelectItem>
+                    {activeOrders.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-[180px]">
+                <Select value={shortFilterCustomer || "__all__"} onValueChange={(v) => setShortFilterCustomer(v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="All Customers" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Customers</SelectItem>
+                    {uniqueCustomers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-[150px]">
+                <Select value={shortFilterResourceType || "__all__"} onValueChange={(v) => setShortFilterResourceType(v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Types</SelectItem>
+                    {resourceTypes.map((rt) => (
+                      <SelectItem key={rt} value={rt}>{rt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {(shortFilterOrder || shortFilterCustomer || shortFilterResourceType) && (
+                <Button variant="ghost" size="sm" className="h-8" onClick={() => {
+                  setShortFilterOrder("")
+                  setShortFilterCustomer("")
+                  setShortFilterResourceType("")
+                }}>
+                  Clear filters
+                </Button>
+              )}
+            </div>
+            {filteredShortages && filteredShortages.length > 0 ? (
+              <DataTable
+                data={filteredShortages}
+                columns={shortagesColumns}
+                isLoading={enhancedLoading}
+                searchFilter={shortagesSearchFilter}
+                searchPlaceholder="Search by IPN, description, quantity, alternate..."
+                emptyMessage="No shortages found for the selected filters"
+                storageKey="mrp-shortages"
+                pageSize={50}
+              />
+            ) : enhancedLoading ? (
+              <div className="space-y-2">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                <p className="text-lg font-medium text-green-600">No Shortages</p>
+                <p className="text-muted-foreground">
+                  All material requirements can be fulfilled with current stock and open POs.
+                </p>
+              </div>
+            )}
           </div>
         )
 
@@ -684,20 +930,75 @@ export default function MRPPage() {
         <TabsContent value="requirements" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>All Material Requirements</CardTitle>
-              <CardDescription>
-                Summary of requirements across all active orders (ENTERED, KITTING, SMT, TH)
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>All Material Requirements</CardTitle>
+                  <CardDescription>
+                    Summary of requirements across all active orders (ENTERED, KITTING, SMT, TH)
+                  </CardDescription>
+                </div>
+              </div>
+              {/* Filter dropdowns */}
+              <div className="flex flex-wrap gap-3 pt-2">
+                <div className="w-[250px]">
+                  <Select value={reqFilterOrder || "__all__"} onValueChange={(v) => setReqFilterOrder(v === "__all__" ? "" : v)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All Orders" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Orders</SelectItem>
+                      {activeOrders.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-[200px]">
+                  <Select value={reqFilterProduct || "__all__"} onValueChange={(v) => setReqFilterProduct(v === "__all__" ? "" : v)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All Products" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Products</SelectItem>
+                      {uniqueProducts.map((p) => (
+                        <SelectItem key={p} value={p}>{p}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-[150px]">
+                  <Select value={reqFilterResourceType || "__all__"} onValueChange={(v) => setReqFilterResourceType(v === "__all__" ? "" : v)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Types</SelectItem>
+                      {resourceTypes.map((rt) => (
+                        <SelectItem key={rt} value={rt}>{rt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(reqFilterOrder || reqFilterProduct || reqFilterResourceType) && (
+                  <Button variant="ghost" size="sm" className="h-8" onClick={() => {
+                    setReqFilterOrder("")
+                    setReqFilterProduct("")
+                    setReqFilterResourceType("")
+                  }}>
+                    Clear filters
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
-              {requirements && requirements.length > 0 ? (
+              {filteredRequirements && filteredRequirements.length > 0 ? (
                 <DataTable
-                  data={requirements}
+                  data={filteredRequirements}
                   columns={requirementsColumns}
                   isLoading={requirementsLoading}
                   searchFilter={requirementsSearchFilter}
                   searchPlaceholder="Search by IPN, description, quantity..."
-                  emptyMessage="No material requirements found. No active orders require materials."
+                  emptyMessage="No material requirements found for the selected filters."
                   storageKey="mrp-requirements"
                   pageSize={50}
                 />

@@ -34,16 +34,13 @@ export class CreateOrderMaterialSources1768500000000
     );
 
     // Backfill existing orders: seed supply sources from BOM items
-    // TURNKEY orders → all COMPANY, CONSIGNMENT orders → all CUSTOMER
+    // All materials default to COMPANY — customer-supplied items are explicitly marked per order
     await queryRunner.query(`
       INSERT INTO "order_material_sources" ("order_id", "material_id", "supply_source")
       SELECT DISTINCT
         o."id" AS order_id,
         bi."material_id",
-        CASE
-          WHEN o."order_type" = 'TURNKEY' THEN 'COMPANY'::"supply_source_enum"
-          ELSE 'CUSTOMER'::"supply_source_enum"
-        END AS supply_source
+        'COMPANY'::"supply_source_enum" AS supply_source
       FROM "orders" o
       JOIN "bom_items" bi ON bi."bom_revision_id" = o."bom_revision_id"
       WHERE o."deleted_at" IS NULL

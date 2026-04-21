@@ -259,9 +259,25 @@ export default function ProductDetailPage() {
       },
       {
         key: "alternate_ipn",
-        header: "Alternate IPN",
-        defaultWidth: 130,
-        cell: (item) => <span className="text-sm">{item.alternate_ipn || "-"}</span>,
+        header: "Alternates",
+        defaultWidth: 180,
+        cell: (item) => {
+          const alts = item.alternates ?? []
+          if (alts.length === 0 && !item.alternate_ipn) return <span className="text-muted-foreground">—</span>
+          // Show from new table if available, fallback to legacy field
+          if (alts.length > 0) {
+            return (
+              <div className="space-y-0.5">
+                {alts.map((alt) => (
+                  <div key={alt.id} className="text-sm">
+                    <span className="font-medium">{alt.material?.internal_part_number ?? alt.material_id}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          }
+          return <span className="text-sm">{item.alternate_ipn}</span>
+        },
       },
       {
         key: "manufacturer",
@@ -1157,6 +1173,17 @@ function EditItemDialog({
     reference_designators: "",
     notes: "",
   })
+  const [newAlternateIpn, setNewAlternateIpn] = useState("")
+  const [alternateError, setAlternateError] = useState<string | null>(null)
+  const [addingAlternate, setAddingAlternate] = useState(false)
+
+  // Fetch current alternates for this item
+  const { data: alternates, refetch: refetchAlternates } = useApi<
+    Array<{ id: string; material_id: string; material?: { internal_part_number: string; description: string | null }; priority: number }>
+  >(
+    item ? `/bom/item/${item.id}/alternates` : "",
+    { enabled: !!item }
+  )
 
   // Pre-populate form when item changes
   useEffect(() => {
@@ -1181,6 +1208,34 @@ function EditItemDialog({
     }
   )
 
+  const handleAddAlternate = async () => {
+    if (!newAlternateIpn.trim() || !item) return
+    setAlternateError(null)
+    setAddingAlternate(true)
+    try {
+      await api.post(`/bom/item/${item.id}/alternates`, { ipn: newAlternateIpn.trim() })
+      setNewAlternateIpn("")
+      refetchAlternates()
+      onSuccess() // refresh parent BOM data
+      toast.success(`Alternate ${newAlternateIpn.trim()} added`)
+    } catch (err: unknown) {
+      setAlternateError(err instanceof Error ? err.message : "Failed to add alternate")
+    } finally {
+      setAddingAlternate(false)
+    }
+  }
+
+  const handleRemoveAlternate = async (alternateId: string) => {
+    try {
+      await api.delete(`/bom/alternate/${alternateId}`)
+      refetchAlternates()
+      onSuccess()
+      toast.success("Alternate removed")
+    } catch {
+      toast.error("Failed to remove alternate")
+    }
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     updateMutation.mutate({
@@ -1195,7 +1250,7 @@ function EditItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-lg">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Edit BOM Item</DialogTitle>
@@ -1210,14 +1265,51 @@ function EditItemDialog({
                 {item.material?.internal_part_number || "-"}
               </p>
             </div>
+
+            {/* Alternates management */}
             <div className="space-y-2">
-              <Label htmlFor="edit_alternate_ipn">Alternate Internal P/N</Label>
-              <Input
-                id="edit_alternate_ipn"
-                value={formData.alternate_ipn}
-                onChange={(e) => setFormData({ ...formData, alternate_ipn: e.target.value })}
-                placeholder="Optional alternate part number"
-              />
+              <Label>Alternates</Label>
+              {alternates && alternates.length > 0 ? (
+                <div className="space-y-1">
+                  {alternates.map((alt) => (
+                    <div key={alt.id} className="flex items-center justify-between bg-muted/50 rounded px-2 py-1">
+                      <span className="text-sm font-medium">{alt.material?.internal_part_number ?? alt.material_id}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-destructive hover:text-destructive"
+                        onClick={() => handleRemoveAlternate(alt.id)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No alternates</p>
+              )}
+              <div className="flex gap-2">
+                <Input
+                  value={newAlternateIpn}
+                  onChange={(e) => { setNewAlternateIpn(e.target.value); setAlternateError(null) }}
+                  placeholder="Enter alternate IPN"
+                  className="flex-1"
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddAlternate() } }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddAlternate}
+                  disabled={addingAlternate || !newAlternateIpn.trim()}
+                >
+                  {addingAlternate ? "Adding..." : "Add"}
+                </Button>
+              </div>
+              {alternateError && (
+                <p className="text-sm text-red-600">{alternateError}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit_quantity_required">Qty Per *</Label>

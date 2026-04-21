@@ -76,6 +76,15 @@ export interface ResourceTypeUsage {
   reference_designators: string | null;
 }
 
+export interface AlternateInfo {
+  material_id: string;
+  ipn: string;
+  description: string | null;
+  quantity_on_hand: number;
+  quantity_to_use: number;
+  priority: number;
+}
+
 export interface EnhancedMaterialShortage {
   material_id: string;
   material: Material;
@@ -85,6 +94,8 @@ export interface EnhancedMaterialShortage {
   quantity_on_order: number;
   total_required: number;
   shortage: number;
+  use_alternates: boolean;
+  alternates: AlternateInfo[];
   orders: EnhancedOrderInfo[];
   resource_type_usages: ResourceTypeUsage[];
   affected_products: Array<{
@@ -296,7 +307,7 @@ export class MrpService {
     // Get all BOM items for these revisions
     const bomItems = await this.bomItemRepository.find({
       where: { bom_revision_id: In(bomRevisionIds) },
-      relations: ['material'],
+      relations: ['material', 'alternates', 'alternates.material'],
     });
 
     // Build a map of bom_revision_id -> items
@@ -320,6 +331,14 @@ export class MrpService {
       allocationsByOrder.set(orderId, materialMap);
     }
 
+    // Load customer-supplied items to filter out
+    const csSourcesBasic = orderIds.length > 0
+      ? await this.omsRepository.find({
+          where: { order_id: In(orderIds), supply_source: SupplySource.CUSTOMER },
+        })
+      : [];
+    const csKeysBasic = new Set(csSourcesBasic.map((s) => `${s.order_id}:${s.material_id}`));
+
     // Calculate total requirements per material across all orders
     const materialRequirements = new Map<
       string,
@@ -342,6 +361,8 @@ export class MrpService {
       const orderAllocations = allocationsByOrder.get(order.id) ?? new Map();
 
       for (const item of items) {
+        // Skip customer-supplied materials
+        if (csKeysBasic.has(`${order.id}:${item.material_id}`)) continue;
         const bomQuantity = parseFloat(String(item.quantity_required));
         const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
         const requiredQuantity =
@@ -474,7 +495,7 @@ export class MrpService {
 
     const bomItems = await this.bomItemRepository.find({
       where: { bom_revision_id: In(bomRevisionIds) },
-      relations: ['material'],
+      relations: ['material', 'alternates', 'alternates.material'],
     });
 
     const bomItemsByRevision = new Map<string, BomItem[]>();
@@ -720,7 +741,7 @@ export class MrpService {
 
     const bomItems = await this.bomItemRepository.find({
       where: { bom_revision_id: In(bomRevisionIds) },
-      relations: ['material'],
+      relations: ['material', 'alternates', 'alternates.material'],
     });
 
     const bomItemsByRevision = new Map<string, BomItem[]>();
@@ -878,15 +899,74 @@ export class MrpService {
       });
     }
 
+    // Build alternates map: primary material_id → alternates (from BOM items)
+    const alternatesMap = new Map<string, Array<{ material_id: string; material: Material; priority: number }>>();
+    for (const item of bomItems) {
+      if (item.alternates && item.alternates.length > 0) {
+        const existing = alternatesMap.get(item.material_id) ?? [];
+        for (const alt of item.alternates) {
+          if (alt.material && !existing.some((e) => e.material_id === alt.material_id)) {
+            existing.push({
+              material_id: alt.material_id,
+              material: alt.material,
+              priority: alt.priority,
+            });
+          }
+        }
+        if (existing.length > 0) {
+          existing.sort((a, b) => a.priority - b.priority);
+          alternatesMap.set(item.material_id, existing);
+        }
+      }
+    }
+
+    // Get stock for all alternate materials
+    const allAlternateMaterialIds = [...new Set(
+      Array.from(alternatesMap.values()).flatMap((alts) => alts.map((a) => a.material_id)),
+    )];
+    const alternateStock = allAlternateMaterialIds.length > 0
+      ? await this.inventoryService.getStockByMaterialIds(allAlternateMaterialIds)
+      : new Map();
+
     // Calculate shortages
     const shortages: EnhancedMaterialShortage[] = [];
 
     for (const [materialId, req] of materialRequirements) {
       const stock = stockLevels.get(materialId) ?? { on_hand: 0, allocated: 0, available: 0, on_order: 0 };
       const effectiveSupply = stock.on_hand + stock.on_order;
-      const shortage = req.total_required - effectiveSupply;
+      let shortage = req.total_required - effectiveSupply;
 
-      if (shortage > 0) {
+      // Check alternates if primary is short
+      const alternateInfos: AlternateInfo[] = [];
+      let useAlternates = false;
+      const alts = alternatesMap.get(materialId);
+
+      if (shortage > 0 && alts && alts.length > 0) {
+        let remainingShortage = shortage;
+        for (const alt of alts) {
+          const altStock = alternateStock.get(alt.material_id);
+          const altOnHand = altStock?.quantity_on_hand ?? 0;
+          if (altOnHand > 0) {
+            const qtyToUse = Math.min(remainingShortage, altOnHand);
+            alternateInfos.push({
+              material_id: alt.material_id,
+              ipn: alt.material.internal_part_number,
+              description: alt.material.description,
+              quantity_on_hand: altOnHand,
+              quantity_to_use: Math.ceil(qtyToUse * 10000) / 10000,
+              priority: alt.priority,
+            });
+            remainingShortage -= qtyToUse;
+            useAlternates = true;
+            if (remainingShortage <= 0) break;
+          }
+        }
+        // Update shortage to reflect what alternates can cover
+        shortage = Math.max(0, remainingShortage);
+      }
+
+      // Only report if still short after alternates, OR if using alternates (buyer needs to know)
+      if (shortage > 0 || useAlternates) {
         shortages.push({
           material_id: materialId,
           material: req.material,
@@ -896,6 +976,8 @@ export class MrpService {
           quantity_on_order: stock.on_order,
           total_required: Math.ceil(req.total_required * 10000) / 10000,
           shortage: Math.ceil(shortage * 10000) / 10000,
+          use_alternates: useAlternates,
+          alternates: alternateInfos,
           orders: req.orders.map((o) => ({
             ...o,
             required_quantity: Math.ceil(o.required_quantity * 10000) / 10000,
@@ -1100,7 +1182,7 @@ export class MrpService {
 
     const bomItems = await this.bomItemRepository.find({
       where: { bom_revision_id: In(bomRevisionIds) },
-      relations: ['material'],
+      relations: ['material', 'alternates', 'alternates.material'],
     });
 
     const bomItemsByRevision = new Map<string, BomItem[]>();
@@ -1126,11 +1208,23 @@ export class MrpService {
       });
     }
 
+    // Load customer-supplied items early so we can exclude from global calc
+    const orderIds = orders.map((o) => o.id);
+    const csSourcesEarly = orderIds.length > 0
+      ? await this.omsRepository.find({
+          where: { order_id: In(orderIds), supply_source: SupplySource.CUSTOMER },
+        })
+      : [];
+    const csKeysEarly = new Set(csSourcesEarly.map((s) => `${s.order_id}:${s.material_id}`));
+
     // Calculate TOTAL requirements per material across ALL orders (for global shortage calc)
     const totalMaterialRequirements = new Map<string, number>();
     for (const order of orders) {
       const items = bomItemsByRevision.get(order.bom_revision_id) ?? [];
       for (const item of items) {
+        // Skip customer-supplied
+        if (csKeysEarly.has(`${order.id}:${item.material_id}`)) continue;
+
         const bomQuantity = parseFloat(String(item.quantity_required));
         const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
         const requiredQuantity = order.quantity * bomQuantity * (1 + scrapFactor / 100);
@@ -1163,6 +1257,26 @@ export class MrpService {
       allocationsByOrder.set(order.id, materialMap);
     }
 
+    // Reuse customer-supplied keys loaded earlier
+    const customerSuppliedBuildKeys = csKeysEarly;
+
+    // Build alternates map for buildability
+    const buildAlternatesMap = new Map<string, Array<{ material_id: string; material: Material; priority: number }>>();
+    for (const item of bomItems) {
+      if (item.alternates && item.alternates.length > 0) {
+        const existing = buildAlternatesMap.get(item.material_id) ?? [];
+        for (const alt of item.alternates) {
+          if (alt.material && !existing.some((e) => e.material_id === alt.material_id)) {
+            existing.push({ material_id: alt.material_id, material: alt.material, priority: alt.priority });
+          }
+        }
+        if (existing.length > 0) {
+          existing.sort((a, b) => a.priority - b.priority);
+          buildAlternatesMap.set(item.material_id, existing);
+        }
+      }
+    }
+
     const orderBuildability: OrderBuildability[] = [];
     let canBuildCount = 0;
     let partialCount = 0;
@@ -1186,6 +1300,12 @@ export class MrpService {
       }> = [];
 
       for (const item of items) {
+        // Skip customer-supplied materials
+        if (customerSuppliedBuildKeys.has(`${order.id}:${item.material_id}`)) {
+          materialsReady++;
+          continue;
+        }
+
         const bomQuantity = parseFloat(String(item.quantity_required));
         const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
         const requiredQuantity = order.quantity * bomQuantity * (1 + scrapFactor / 100);
@@ -1195,13 +1315,26 @@ export class MrpService {
         const quantityOnOrder = onOrderQuantities.get(item.material_id) ?? 0;
 
         // Check if this material has a GLOBAL shortage (total demand > total supply)
-        const globalShortage = globalShortages.get(item.material_id) ?? 0;
+        let globalShortage = globalShortages.get(item.material_id) ?? 0;
 
         // Check if THIS ORDER specifically can be fulfilled from current supply
-        // (available + already allocated to this order + on order)
         const effectiveAvailable = stock.available + allocatedToOrder;
         const totalSupplyForOrder = effectiveAvailable + quantityOnOrder;
-        const orderShortage = Math.max(0, requiredQuantity - totalSupplyForOrder);
+        let orderShortage = Math.max(0, requiredQuantity - totalSupplyForOrder);
+
+        // Check alternates if short
+        if (orderShortage > 0 || globalShortage > 0) {
+          const alts = buildAlternatesMap.get(item.material_id);
+          if (alts) {
+            let altSupply = 0;
+            for (const alt of alts) {
+              const altStock = stockLevels.get(alt.material_id);
+              altSupply += altStock?.on_hand ?? 0;
+            }
+            orderShortage = Math.max(0, orderShortage - altSupply);
+            globalShortage = Math.max(0, globalShortage - altSupply);
+          }
+        }
 
         // Material is short if there's EITHER a global shortage OR this order can't be fulfilled
         const isShort = globalShortage > 0 || orderShortage > 0;

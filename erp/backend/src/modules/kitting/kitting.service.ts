@@ -12,6 +12,7 @@ import { KittingListItem } from '../../entities/kitting-list-item.entity';
 import { KittingListScan } from '../../entities/kitting-list-scan.entity';
 import { Order, OrderStatus } from '../../entities/order.entity';
 import { BomItem } from '../../entities/bom-item.entity';
+import { BomItemAlternate } from '../../entities/bom-item-alternate.entity';
 import { InventoryLot, LotStatus } from '../../entities/inventory-lot.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../audit/audit.service';
@@ -200,6 +201,27 @@ export class KittingService {
   }> {
     const kittingList = await this.findOne(id);
 
+    // Load all BOM item alternates for materials on this kitting list
+    const materialIds = kittingList.items.map((i) => i.material_id);
+    const allAlternates = materialIds.length > 0
+      ? await this.dataSource.getRepository(BomItemAlternate).find({
+          where: { bom_item: { material_id: In(materialIds) } },
+          relations: ['bom_item', 'material'],
+          order: { priority: 'ASC' },
+        })
+      : [];
+
+    // Group alternates by primary material_id
+    const altsByMaterial = new Map<string, BomItemAlternate[]>();
+    for (const alt of allAlternates) {
+      const key = alt.bom_item.material_id;
+      const existing = altsByMaterial.get(key) ?? [];
+      if (!existing.some((e) => e.material_id === alt.material_id)) {
+        existing.push(alt);
+      }
+      altsByMaterial.set(key, existing);
+    }
+
     const itemsWithStock: KittingItemWithStock[] = await Promise.all(
       kittingList.items.map(async (item) => {
         const stock = await this.inventoryService.getStockByMaterialId(item.material_id);
@@ -209,10 +231,48 @@ export class KittingService {
           order: { location: 'ASC' },
         });
 
+        // Check alternates if primary stock is insufficient
+        const alts = altsByMaterial.get(item.material_id) ?? [];
+        const alternateInfos: KittingAlternateInfo[] = [];
+        let useAlternate = false;
+        const qtyNeeded = parseFloat(String(item.total_qty_required));
+
+        if (stock.quantity_on_hand < qtyNeeded && alts.length > 0) {
+          let remaining = qtyNeeded - stock.quantity_on_hand;
+          for (const alt of alts) {
+            const altStock = await this.inventoryService.getStockByMaterialId(alt.material_id);
+            if (altStock.quantity_on_hand > 0) {
+              const useQty = Math.min(remaining, altStock.quantity_on_hand);
+              alternateInfos.push({
+                material_id: alt.material_id,
+                ipn: alt.material?.internal_part_number ?? '',
+                quantity_on_hand: altStock.quantity_on_hand,
+                use_quantity: Math.ceil(useQty),
+              });
+              remaining -= useQty;
+              useAlternate = true;
+              if (remaining <= 0) break;
+            }
+          }
+
+          // Also include alternate UIDs in uid_locations
+          for (const altInfo of alternateInfos) {
+            const altUids = await this.inventoryLotRepository.find({
+              where: { material_id: altInfo.material_id, status: LotStatus.ACTIVE },
+              order: { location: 'ASC' },
+            });
+            for (const u of altUids) {
+              uids.push(u);
+            }
+          }
+        }
+
         return {
           ...item,
           quantity_on_hand: stock.quantity_on_hand,
           quantity_available: stock.quantity_available,
+          use_alternate: useAlternate,
+          alternates: alternateInfos,
           uid_locations: uids.map((u) => ({
             uid: u.uid,
             quantity: u.quantity,
@@ -295,10 +355,24 @@ export class KittingService {
       throw new NotFoundException(`UID "${dto.uid}" not found`);
     }
 
-    // Find matching kitting list item by material_id
-    const matchingItems = kittingList.items.filter(
+    // Find matching kitting list item by material_id (primary or alternate)
+    let matchingItems = kittingList.items.filter(
       (item) => item.material_id === inventoryLot.material_id,
     );
+
+    // If no direct match, check if the scanned material is an alternate for any kitting item
+    if (matchingItems.length === 0) {
+      const alternates = await this.dataSource.getRepository(BomItemAlternate).find({
+        where: { material_id: inventoryLot.material_id },
+        relations: ['bom_item'],
+      });
+      if (alternates.length > 0) {
+        const primaryMaterialIds = alternates.map((a) => a.bom_item.material_id);
+        matchingItems = kittingList.items.filter(
+          (item) => primaryMaterialIds.includes(item.material_id),
+        );
+      }
+    }
 
     if (matchingItems.length === 0) {
       throw new BadRequestException(
@@ -530,9 +604,18 @@ export class KittingService {
   }
 }
 
+export interface KittingAlternateInfo {
+  material_id: string;
+  ipn: string;
+  quantity_on_hand: number;
+  use_quantity: number;
+}
+
 export interface KittingItemWithStock extends KittingListItem {
   quantity_on_hand: number;
   quantity_available: number;
+  use_alternate: boolean;
+  alternates: KittingAlternateInfo[];
   uid_locations: Array<{
     uid: string;
     quantity: number;

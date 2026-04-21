@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BomRevision } from '../../entities/bom-revision.entity';
 import { BomItem } from '../../entities/bom-item.entity';
+import { BomItemAlternate } from '../../entities/bom-item-alternate.entity';
 import { BomImportMapping } from '../../entities/bom-import-mapping.entity';
 import { Product } from '../../entities/product.entity';
 import { Material } from '../../entities/material.entity';
@@ -16,6 +17,7 @@ import { AmlModule } from '../aml/aml.module';
     TypeOrmModule.forFeature([
       BomRevision,
       BomItem,
+      BomItemAlternate,
       BomImportMapping,
       Product,
       Material,

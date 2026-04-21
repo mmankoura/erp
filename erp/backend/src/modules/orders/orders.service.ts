@@ -213,7 +213,7 @@ export class OrdersService {
     const saved = await this.orderRepository.save(order);
 
     // Seed supply sources from BOM
-    await this.seedSupplySources(saved.id, bomRevisionId, dto.order_type ?? OrderType.TURNKEY);
+    await this.seedSupplySources(saved.id, bomRevisionId);
 
     const createdOrder = await this.findOne(saved.id);
 
@@ -688,16 +688,13 @@ export class OrdersService {
   private async seedSupplySources(
     orderId: string,
     bomRevisionId: string,
-    orderType: OrderType,
   ): Promise<void> {
     const bomItems = await this.bomItemRepository.find({
       where: { bom_revision_id: bomRevisionId },
     });
 
-    const defaultSource =
-      orderType === OrderType.CONSIGNMENT
-        ? SupplySource.CUSTOMER
-        : SupplySource.COMPANY;
+    // All materials default to COMPANY — customer-supplied items are explicitly marked per order
+    const defaultSource = SupplySource.COMPANY;
 
     const sources = bomItems
       .filter((item) => item.material_id)
