@@ -6,49 +6,57 @@
 
 ---
 
-## REV-004 — 2026-04-19
+## REV-004 — 2026-04-21
 
 **Released by**: Mark Mankoura
-**Migration required**: Yes — `CreateOrderMaterialSources` (creates `order_material_sources` table, backfills from existing orders)
+**Migration required**: Yes — 2 migrations:
+1. `CreateOrderMaterialSources` — supply source table (all materials default to COMPANY)
+2. `CreateBomItemAlternates` — BOM alternate parts table (backfills from legacy alternate_ipn)
+
 **Backup taken**: [ ] (check before deploying)
 
 ### Changes
 
 | # | Type | Module | Description |
 |---|------|--------|-------------|
-| 1 | Feature | Orders | Per-order material supply source (Company/Customer toggle). Consignment orders default all materials to Customer, turnkey to Company. Flip individual materials per order. |
-| 2 | Feature | MRP | Customer-supplied materials excluded from shortage calculations — buyer only sees what AT&A needs to purchase |
-| 3 | Feature | Warehouse | Customer Supplied Items page — tracks materials expected from customers across open orders with qty expected/received, UIDs, status |
-| 4 | Feature | Production | Material consumption on stage completion — SMT+PCB consumed when completing SMT, TH+MECH when completing TH. Consumption preview dialog before confirming. |
-| 5 | Feature | Production | Order detail page: contextual production buttons (Start Kitting, Complete SMT, Complete TH) replace generic status dropdown. Auto-syncs order status. |
-| 6 | Feature | Production | WIP tracking page now shows all active orders including not-started. Added status column, sorting/filtering. |
-| 7 | Feature | Orders | Customer PO # and WO # columns on orders page with sorting and filtering on all columns |
-| 8 | Feature | Kitting | Excel export of kitting list (Orders, Materials, SMT, TH, Scanned UIDs sheets) |
-| 9 | Enhancement | Receiving | PO mode accepts typed PO number (not dropdown). Stock mode silently matches po_reference to existing POs and updates quantity_received. |
-| 10 | Feature | Warehouse | Return to Stock page — scan UID, enter qty, lot quantity set to returned amount |
-| 11 | Enhancement | Orders | Allocate/Deallocate buttons disable based on existing allocation state |
-| 12 | Enhancement | Inventory | Lots endpoint supports owner_type filter |
-
-### Files Changed
-
-- New: `order-material-source.entity.ts`, `CreateOrderMaterialSources` migration
-- New: `/customer-supplied` page, `/return-to-stock` page
-- Modified: orders service/controller/module, mrp service/module, production service/controller/module
-- Modified: receiving service/dto, inventory service/controller, kitting page, orders pages, export-utils, navbar
+| 1 | Feature | Orders | Per-order material supply source (AT&A/Customer toggle on BOM table). All materials default to COMPANY — customer-supplied items explicitly marked. |
+| 2 | Feature | MRP | Customer-supplied materials excluded from all shortage views (by-material, by-customer, buildability, requirements) |
+| 3 | Feature | MRP | BOM alternates — when primary material is short, checks alternate stock. Shows "Use Alternate" status with IPN and qty to use |
+| 4 | Feature | MRP | Shortages "By Material": Order, Customer, Resource Type dropdown filters |
+| 5 | Feature | MRP | Requirements tab: Order, Product, Resource Type dropdown filters |
+| 6 | Feature | MRP | All Excel exports include Approved MFG and Approved MPN columns (all 5 export types) |
+| 7 | Feature | MRP | Shortages export includes Status, Alternate IPN, Alt On Hand, Alt Qty to Use columns |
+| 8 | Feature | BOM | BOM item alternates table — add/remove multiple alternates per BOM line with IPN validation |
+| 9 | Feature | Warehouse | Customer Supplied Items page with DataTable sorting/filtering |
+| 10 | Feature | Production | Material consumption on stage completion — SMT+PCB at SMT, TH+MECH at TH. Consumption preview dialog. |
+| 11 | Feature | Production | Order detail: contextual production buttons (Start Kitting, Complete SMT, Complete TH). Auto-syncs order status. |
+| 12 | Feature | Production | WIP tracking page shows all active orders including not-started. Status column, sorting/filtering. |
+| 13 | Feature | Orders | Customer PO # and WO # columns with sorting/filtering on all columns |
+| 14 | Feature | Kitting | Excel export with pick instructions ("USE: alternate IPN" when primary unavailable) |
+| 15 | Feature | Kitting | Barcode scan accepts alternate material UIDs |
+| 16 | Enhancement | Receiving | PO mode accepts typed PO number. Stock mode silently matches po_reference to existing POs. |
+| 17 | Feature | Warehouse | Return to Stock page — scan UID, enter qty, lot qty set to returned amount |
+| 18 | Enhancement | Orders | Allocate/Deallocate buttons disable based on existing allocation state |
+| 19 | Fix | UI | Breadcrumbs show "Details" instead of UUID |
 
 ### Verification Steps
 
-- [ ] Orders page: verify Customer PO # and WO # columns visible, sorting/filtering works
-- [ ] Order detail: click into a consignment order — verify Supply Source column shows customer name, click to toggle
-- [ ] MRP shortages: verify customer-supplied materials do NOT appear
-- [ ] Customer Supplied Items page (Warehouse menu): verify items listed with expected/received qty
-- [ ] Order detail: click "Start Kitting" on an ENTERED order — verify units move to kitting, status changes
-- [ ] Order detail: complete SMT — verify consumption preview shows materials, confirm consumes them
-- [ ] WIP Tracking: verify all active orders visible including not-started
-- [ ] Kitting: click "Export Excel" on a kitting list — verify multi-sheet workbook downloads
-- [ ] Receiving (PO mode): type a PO number manually — verify it finds the PO
-- [ ] Return to Stock: scan a UID, enter qty — verify lot qty is SET to that amount (not added)
-- [ ] Allocate button: click once — verify it grays out and shows "Allocated"
+- [ ] MRP By Material: verify Order/Customer/Type filter dropdowns work
+- [ ] MRP By Material: verify "Use Alternate" badge for materials with alternates (e.g., 292008 → 292037)
+- [ ] MRP Requirements: verify Order/Product/Type filter dropdowns work
+- [ ] MRP Excel export: verify Approved MFG/MPN columns present in all exports
+- [ ] Order Buildability: verify customer-supplied materials excluded, alternates considered
+- [ ] Order detail (ZPU-SM): verify Supply Source column shows AT&A/ORTHOGONE, toggle works
+- [ ] Order detail: Start Kitting → verify status changes and units move
+- [ ] Order detail: Complete SMT → verify consumption preview and materials consumed
+- [ ] Product BOM page: edit a BOM item → verify Alternates section with add/remove
+- [ ] WIP Tracking: verify all orders visible including not-started
+- [ ] Kitting detail: verify "Pick Instruction" column shows USE alternate when primary short
+- [ ] Kitting Excel export: verify pick instruction column
+- [ ] Customer Supplied page: verify items listed with sorting/filtering
+- [ ] Receiving (PO mode): type PO number manually
+- [ ] Return to Stock: scan UID, enter qty → lot qty SET to returned amount
+- [ ] Breadcrumbs: verify "Details" shows instead of UUID on detail pages
 
 ---
 
