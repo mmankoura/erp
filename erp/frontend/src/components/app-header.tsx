@@ -26,6 +26,8 @@ const pathLabels: Record<string, string> = {
   "production": "WIP Tracking",
   "kitting": "Kitting",
   "cycle-counts": "Return to Stock",
+  "return-to-stock": "Return to Stock",
+  "customer-supplied": "Customer Supplied",
   "bom": "Bill of Materials",
   "validate": "Validate",
   "users": "Users",
@@ -33,6 +35,8 @@ const pathLabels: Record<string, string> = {
   "new": "New",
   "edit": "Edit",
 }
+
+const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
 
 export function AppHeader() {
   const pathname = usePathname()
@@ -51,7 +55,7 @@ export function AppHeader() {
           {segments.map((segment, index) => {
             const path = "/" + segments.slice(0, index + 1).join("/")
             const isLast = index === segments.length - 1
-            const label = pathLabels[segment] || segment
+            const label = pathLabels[segment] || (isUuid(segment) ? "Details" : segment)
 
             return (
               <span key={path} className="flex items-center gap-2">
