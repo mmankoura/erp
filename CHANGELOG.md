@@ -6,6 +6,30 @@
 
 ---
 
+## REV-005 — 2026-04-23
+
+**Released by**: Mark Mankoura
+**Migration required**: Yes — `CreateConsumableOrders` (creates consumable_orders and consumable_order_lines tables)
+**Backup taken**: [ ] (check before deploying)
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | Purchasing | Consumable Orders module — separate entity for production consumables (solder paste, stencils). Auto-generated CON-YYYYMMDD-NNN order numbers. Create/edit/delete with line items (AT&A P/N, description, MFR, MFR P/N, qty, unit cost, customer, currency). Status: ORDERED/RECEIVED with undo receive. |
+| 2 | Fix | Warehouse | Return to Stock allows qty=0 — lot marked as CONSUMED when fully used |
+
+### Verification Steps
+
+- [ ] Purchasing > Consumable Orders: create a new order with line items — verify CON-YYYYMMDD-NNN number generated
+- [ ] Edit an existing consumable order — verify changes saved
+- [ ] Mark order as received — verify status changes to RECEIVED
+- [ ] Undo receive — verify status reverts to ORDERED
+- [ ] Delete a consumable order
+- [ ] Return to Stock: enter UID with qty=0 — verify lot marked as CONSUMED
+
+---
+
 ## REV-004 — 2026-04-21
 
 **Released by**: Mark Mankoura
