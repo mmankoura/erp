@@ -1943,8 +1943,8 @@ export class InventoryService {
       throw new NotFoundException(`Lot with UID "${uid}" not found`);
     }
 
-    if (quantity <= 0) {
-      throw new BadRequestException('Quantity must be greater than 0');
+    if (quantity < 0) {
+      throw new BadRequestException('Quantity cannot be negative');
     }
 
     return this.dataSource.transaction(async (manager) => {
@@ -1963,10 +1963,15 @@ export class InventoryService {
       });
       const savedTx = await manager.save(InventoryTransaction, tx);
 
-      // Update lot: set quantity to returned amount, location to STOCK, status to ACTIVE
-      lot.location = 'STOCK';
-      lot.status = LotStatus.ACTIVE;
+      // Update lot: set quantity to returned amount
       lot.quantity = quantity;
+      if (quantity === 0) {
+        lot.status = LotStatus.CONSUMED;
+        lot.location = 'CONSUMED';
+      } else {
+        lot.status = LotStatus.ACTIVE;
+        lot.location = 'STOCK';
+      }
       await manager.save(InventoryLot, lot);
 
       return {

@@ -48,7 +48,8 @@ export default function ReturnToStockPage() {
     setError(null)
 
     if (!uid.trim()) { setError("UID is required"); return }
-    if (!qty || parseFloat(qty) <= 0) { setError("Quantity must be greater than 0"); return }
+    if (qty === "" || qty === undefined) { setError("Quantity is required"); return }
+    if (parseFloat(qty) < 0) { setError("Quantity cannot be negative"); return }
 
     setSubmitting(true)
     try {
