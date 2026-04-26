@@ -30,6 +30,15 @@ export class ReceivingController {
     return this.receivingService.quickReceive(dto);
   }
 
+  @Post('undo-receive/:lotId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async undoQuickReceive(
+    @Param('lotId', ParseUUIDPipe) lotId: string,
+    @Body('undone_by') undoneBy?: string,
+  ) {
+    return this.receivingService.undoQuickReceive(lotId, undoneBy);
+  }
+
   @Post('sessions')
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async startSession(@Body() dto: StartSessionDto) {

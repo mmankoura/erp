@@ -89,7 +89,11 @@ export class InventoryTransaction {
 
   @Index()
   @Column({ type: 'uuid', nullable: true })
-  lot_id: string | null; // Phase 2: FK to material_lots table
+  lot_id: string | null;
+
+  @ManyToOne('InventoryLot', { nullable: true })
+  @JoinColumn({ name: 'lot_id' })
+  lot: any;
 
   @Column({
     type: 'enum',

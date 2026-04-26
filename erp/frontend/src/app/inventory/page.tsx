@@ -1,6 +1,9 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { useApi, useMutation } from "@/hooks/use-api"
+import { RecentTransactionsGrid } from "@/components/recent-transactions-grid"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import {
   api,
   type InventoryStock,
@@ -59,7 +62,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { toast } from "sonner"
 
 // Transaction type colors
@@ -518,6 +521,7 @@ type InventoryStockWithId = InventoryStock & { id: string }
 type InventoryLotWithId = InventoryLot & { id: string }
 
 export default function InventoryPage() {
+  const router = useRouter()
   const { data: inventoryRaw, isLoading, refetch } = useApi<InventoryStock[]>("/inventory")
   const { data: lowStock } = useApi<InventoryStock[]>("/inventory/low-stock?threshold=10")
   const { data: recentTransactions } = useApi<InventoryTransaction[]>(
@@ -849,6 +853,50 @@ export default function InventoryPage() {
     },
   ]
 
+  // VirtualGrid columns for Stock Levels
+  const stockVgColumns: VirtualGridColumn<InventoryStockWithId>[] = [
+    { id: "customer", header: "Customer", size: 140, sortable: true, filterable: true, filterAccessor: (s) => s.material?.customer?.name || "-", accessorFn: (s) => s.material?.customer?.name || "", cell: (s) => <span className="text-sm">{s.material?.customer?.name || "\u2014"}</span> },
+    { id: "material", header: "Material", size: 220, sortable: true, filterable: true, filterAccessor: (s) => s.material?.internal_part_number || "", accessorFn: (s) => s.material?.internal_part_number || "", cell: (s) => (<div><span className="font-medium text-sm">{s.material?.internal_part_number}</span>{s.material?.description && <p className="text-xs text-muted-foreground truncate">{s.material.description}</p>}</div>) },
+    { id: "resource_type", header: "Type", size: 80, sortable: true, filterable: true, filterAccessor: (s) => s.material?.resource_type || "-", accessorFn: (s) => s.material?.resource_type || "", cell: (s) => s.material?.resource_type ? <Badge variant="outline">{s.material.resource_type}</Badge> : <span className="text-muted-foreground">{"\u2014"}</span> },
+    { id: "on_hand", header: "On Hand", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_hand, cell: (s) => <span className="font-mono text-sm">{s.quantity_on_hand.toLocaleString()}</span> },
+    { id: "required", header: "Required", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_required, cell: (s) => <span className={`font-mono text-sm ${s.quantity_required > 0 ? "text-purple-600" : ""}`}>{s.quantity_required.toLocaleString()}</span> },
+    { id: "allocated", header: "Allocated", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_allocated, cell: (s) => <AllocationPopover materialId={s.material_id} quantity={s.quantity_allocated} /> },
+    { id: "available", header: "Available", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_available, cell: (s) => <span className={`font-mono text-sm font-medium ${s.quantity_available <= 0 ? "text-red-600" : s.quantity_available < 10 ? "text-yellow-600" : "text-green-600"}`}>{s.quantity_available.toLocaleString()}</span> },
+    { id: "on_order", header: "On Order", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_order, cell: (s) => <span className={`font-mono text-sm ${s.quantity_on_order > 0 ? "text-blue-600" : ""}`}>{s.quantity_on_order.toLocaleString()}</span> },
+    { id: "actions", header: "", size: 120, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /><AdjustStockDialog stock={s} onSuccess={refetch} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><ArrowUpDown className="h-4 w-4" /></Button>} /></div>) },
+  ]
+
+  // VirtualGrid columns for Lots/Reels
+  const lotsVgColumns: VirtualGridColumn<InventoryLotWithId>[] = [
+    { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.uid, accessorFn: (l) => l.uid, cell: (l) => <span className="font-mono font-medium text-sm">{l.uid}</span> },
+    { id: "customer", header: "Customer", size: 140, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span className="text-sm">{l.material?.customer?.name || "\u2014"}</span> },
+    { id: "ipn", header: "IPN", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.material?.internal_part_number || "", accessorFn: (l) => l.material?.internal_part_number || "", cell: (l) => <span className="font-medium text-sm">{l.material?.internal_part_number}</span> },
+    { id: "quantity", header: "Quantity", size: 100, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Badge variant="outline">{l.package_type}</Badge> },
+    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-sm text-muted-foreground">{l.po_reference || "\u2014"}</span> },
+    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"}>{l.status}</Badge> },
+    { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", cell: (l) => <span className="text-xs text-muted-foreground">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
+    { id: "actions", header: "", size: 60, accessorFn: () => "", cell: (l) => <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete lot ${l.uid}?`)) deleteLotMutation.mutate(l.id) }}><Trash2 className="h-4 w-4" /></Button> },
+  ]
+
+  // Receiving Log: lots sorted by created_at desc
+  const receivingLogData = useMemo(() => {
+    if (!lotsRaw) return null
+    return [...lotsRaw].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }, [lotsRaw])
+
+  const receivingLogColumns: VirtualGridColumn<InventoryLotWithId>[] = [
+    { id: "date", header: "Date", size: 140, sortable: true, accessorFn: (l) => l.created_at, cell: (l) => <span className="text-sm tabular-nums">{new Date(l.created_at).toLocaleDateString()} {new Date(l.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span> },
+    { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.uid, accessorFn: (l) => l.uid, cell: (l) => <span className="font-mono text-xs">{l.uid}</span> },
+    { id: "customer", header: "Customer", size: 130, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span className="text-sm">{l.material?.customer?.name || "\u2014"}</span> },
+    { id: "ipn", header: "IPN", size: 150, sortable: true, filterable: true, filterAccessor: (l) => l.material?.internal_part_number || "", accessorFn: (l) => l.material?.internal_part_number || "", cell: (l) => (<div><span className="font-medium text-sm">{l.material?.internal_part_number}</span>{l.material?.description && <p className="text-xs text-muted-foreground truncate">{l.material.description}</p>}</div>) },
+    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Badge variant="outline" className="text-xs">{l.package_type}</Badge> },
+    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-sm text-muted-foreground">{l.po_reference || "\u2014"}</span> },
+    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"} className="text-xs">{l.status}</Badge> },
+    { id: "location", header: "Location", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.location, accessorFn: (l) => l.location, cell: (l) => <span className="text-xs">{l.location}</span> },
+  ]
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -857,19 +905,19 @@ export default function InventoryPage() {
           <p className="text-muted-foreground">Track stock levels and transactions</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportWizardOpen(true)}>
-            <Upload className="h-4 w-4 mr-2" />
-            Import Inventory
+          <Button variant="outline" onClick={() => router.push("/customer-supplied")}>
+            Customer Supplied
           </Button>
-          <ReceiveStockDialog
-            onSuccess={refetch}
-            trigger={
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Receive Stock
-              </Button>
-            }
-          />
+          <Button variant="outline" onClick={() => router.push("/return-to-stock")}>
+            Return to Stock
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/kitting")}>
+            Kitting
+          </Button>
+          <Button onClick={() => router.push("/receiving/new")}>
+            <Plus className="h-4 w-4 mr-2" />
+            Receive Stock
+          </Button>
         </div>
       </div>
 
@@ -930,209 +978,85 @@ export default function InventoryPage() {
         <TabsList>
           <TabsTrigger value="stock">Stock Levels</TabsTrigger>
           <TabsTrigger value="lots">Lots/Reels</TabsTrigger>
+          <TabsTrigger value="receiving">Receiving Log</TabsTrigger>
           <TabsTrigger value="recent">Recent Activity</TabsTrigger>
           <TabsTrigger value="low-stock">Low Stock</TabsTrigger>
         </TabsList>
 
         <TabsContent value="stock" className="space-y-4">
-          {/* Advanced Relational Filters */}
-          <div>
-            <button
-              type="button"
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-            >
-              {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              Advanced Filters
-              {activeRelationalFilterCount > 0 && (
-                <Badge variant="secondary" className="ml-1 text-xs">
-                  {activeRelationalFilterCount} active
-                </Badge>
-              )}
-            </button>
-            {showAdvancedFilters && (
-              <div className="mt-2 p-4 bg-muted/30 rounded-lg border">
-                <RelationalFilterBuilder
-                  onApply={handleRelationalApply}
-                  onClear={handleRelationalClear}
-                  activeFilterCount={activeRelationalFilterCount}
-                />
-              </div>
-            )}
-          </div>
-
-          <DataTable
+          <VirtualGrid
             data={filteredInventory}
-            columns={columns}
+            columns={stockVgColumns}
+            title="Stock Levels"
             isLoading={isLoading}
-            searchFilter={(stock, search) => {
-              const q = search.toLowerCase()
-              return (
-                (stock.material?.internal_part_number?.toLowerCase().includes(q)) ||
-                (stock.material?.description?.toLowerCase().includes(q)) ||
-                (stock.material?.customer?.name?.toLowerCase().includes(q)) ||
-                stock.quantity_on_hand.toString().includes(q) ||
-                stock.quantity_required.toString().includes(q) ||
-                stock.quantity_available.toString().includes(q) ||
-                stock.quantity_on_order.toString().includes(q)
-              ) as boolean
-            }}
             searchPlaceholder="Search by IPN, description, customer, or quantity..."
-            emptyMessage="No inventory found."
-            storageKey="inventory-stock"
-            pageSize={50}
+            searchFn={(stock, q) =>
+              !!(stock.material?.internal_part_number?.toLowerCase().includes(q) ||
+              stock.material?.description?.toLowerCase().includes(q) ||
+              stock.material?.customer?.name?.toLowerCase().includes(q) ||
+              stock.quantity_on_hand.toString().includes(q) ||
+              stock.quantity_available.toString().includes(q) ||
+              stock.quantity_on_order.toString().includes(q))
+            }
           />
         </TabsContent>
 
         <TabsContent value="lots" className="space-y-4">
-          <DataTable
+          <VirtualGrid
             data={lots}
-            columns={lotColumns}
+            columns={lotsVgColumns}
+            title="Lots / Reels"
             isLoading={lotsLoading}
-            searchFilter={(lot, search) => {
-              const q = search.toLowerCase()
-              return (
-                lot.uid.toLowerCase().includes(q) ||
-                (lot.material?.internal_part_number?.toLowerCase().includes(q)) ||
-                (lot.material?.customer?.name?.toLowerCase().includes(q)) ||
-                lot.package_type.toLowerCase().includes(q) ||
-                (lot.po_reference?.toLowerCase().includes(q)) ||
-                lot.status.toLowerCase().includes(q)
-              ) as boolean
-            }}
             searchPlaceholder="Search by UID, IPN, customer, PO ref, or status..."
-            emptyMessage="No lots found. Import inventory to add lots."
-            enableSelection
-            onBulkDelete={(ids) => {
-              if (confirm(`Delete ${ids.length} selected lots?`)) {
-                bulkDeleteLotsMutation.mutate(ids)
-              }
-            }}
-            storageKey="inventory-lots"
-            pageSize={50}
+            searchFn={(lot, q) =>
+              !!(lot.uid.toLowerCase().includes(q) ||
+              lot.material?.internal_part_number?.toLowerCase().includes(q) ||
+              lot.material?.customer?.name?.toLowerCase().includes(q) ||
+              lot.package_type.toLowerCase().includes(q) ||
+              lot.po_reference?.toLowerCase().includes(q) ||
+              lot.status.toLowerCase().includes(q))
+            }
+          />
+        </TabsContent>
+
+        <TabsContent value="receiving" className="space-y-4">
+          <VirtualGrid
+            data={receivingLogData}
+            columns={receivingLogColumns}
+            title="Receiving Log"
+            isLoading={lotsLoading}
+            searchPlaceholder="Search by UID, IPN, customer, PO ref, status..."
+            searchFn={(l, q) =>
+              !!(l.uid.toLowerCase().includes(q) ||
+              (l.material?.internal_part_number ?? "").toLowerCase().includes(q) ||
+              (l.material?.description ?? "").toLowerCase().includes(q) ||
+              (l.material?.customer?.name ?? "").toLowerCase().includes(q) ||
+              (l.po_reference ?? "").toLowerCase().includes(q) ||
+              l.status.toLowerCase().includes(q) ||
+              l.package_type.toLowerCase().includes(q) ||
+              l.location.toLowerCase().includes(q))
+            }
           />
         </TabsContent>
 
         <TabsContent value="recent" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Transactions</CardTitle>
-              <CardDescription>Latest inventory movements</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {recentTransactions && recentTransactions.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Material</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Quantity</TableHead>
-                      <TableHead>By</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recentTransactions.map((tx) => {
-                      const config = transactionTypeConfig[tx.transaction_type] || {
-                        label: tx.transaction_type,
-                        color: "",
-                      }
-                      return (
-                        <TableRow key={tx.id}>
-                          <TableCell className="text-sm">
-                            {new Date(tx.created_at).toLocaleString()}
-                          </TableCell>
-                          <TableCell>{tx.material?.customer?.name || "-"}</TableCell>
-                          <TableCell className="font-medium">
-                            {tx.material?.internal_part_number}
-                          </TableCell>
-                          <TableCell>
-                            <span className={config.color}>{config.label}</span>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            <span
-                              className={
-                                tx.quantity > 0
-                                  ? "text-green-600"
-                                  : tx.quantity < 0
-                                    ? "text-red-600"
-                                    : ""
-                              }
-                            >
-                              {tx.quantity > 0 ? "+" : ""}
-                              {tx.quantity}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-sm">{tx.created_by || "-"}</TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="text-center text-muted-foreground py-8">No recent transactions</p>
-              )}
-            </CardContent>
-          </Card>
+          <RecentTransactionsGrid />
         </TabsContent>
 
         <TabsContent value="low-stock" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-red-500" />
-                Low Stock Items
-              </CardTitle>
-              <CardDescription>Materials with available quantity at or below 10</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {lowStock && lowStock.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Material</TableHead>
-                      <TableHead className="text-right">On Hand</TableHead>
-                      <TableHead className="text-right">Required</TableHead>
-                      <TableHead className="text-right">Allocated</TableHead>
-                      <TableHead className="text-right">Available</TableHead>
-                      <TableHead className="text-right">On Order</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lowStock.map((stock) => (
-                      <TableRow key={stock.material_id}>
-                        <TableCell>{stock.material?.customer?.name || "-"}</TableCell>
-                        <TableCell>
-                          <span className="font-medium">{stock.material?.internal_part_number}</span>
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {stock.quantity_on_hand}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-purple-600">
-                          {stock.quantity_required}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {stock.quantity_allocated}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-red-600 font-medium">
-                          {stock.quantity_available}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-blue-600">
-                          {stock.quantity_on_order}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="text-center text-muted-foreground py-8">
-                  No low stock items. All materials are above threshold.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          <VirtualGrid
+            data={lowStock?.map((s) => ({ ...s, id: s.material_id })) ?? null}
+            columns={stockVgColumns}
+            title="Low Stock Items"
+            isLoading={false}
+            searchPlaceholder="Search by IPN, description, customer..."
+            searchFn={(stock, q) =>
+              !!(stock.material?.internal_part_number?.toLowerCase().includes(q) ||
+              stock.material?.description?.toLowerCase().includes(q) ||
+              stock.material?.customer?.name?.toLowerCase().includes(q))
+            }
+            height={400}
+          />
         </TabsContent>
       </Tabs>
     </div>

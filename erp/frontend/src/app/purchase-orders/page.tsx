@@ -63,6 +63,7 @@ import {
   Upload,
   Loader2,
   History,
+  FileDown,
 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
@@ -793,6 +794,17 @@ function PurchaseOrderDetailDialog({
               </DialogDescription>
             </div>
             <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  const { generatePoPdf } = await import("@/lib/po-pdf")
+                  await generatePoPdf(po)
+                }}
+              >
+                <FileDown className="h-4 w-4 mr-1" />
+                PDF
+              </Button>
               {canSubmit && (
                 <Button
                   size="sm"
@@ -916,8 +928,8 @@ function PurchaseOrderDetailDialog({
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          <p>{line.manufacturer || "-"}</p>
-                          <p className="text-xs text-muted-foreground">{line.manufacturer_pn || "-"}</p>
+                          <p>{line.manufacturer || line.material?.manufacturer || "-"}</p>
+                          <p className="text-xs text-muted-foreground">{line.manufacturer_pn || line.material?.manufacturer_pn || "-"}</p>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">{line.quantity_ordered}</TableCell>

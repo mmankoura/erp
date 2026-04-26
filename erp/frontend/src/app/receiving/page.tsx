@@ -10,6 +10,7 @@ import {
   type DispositionActionType,
 } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -454,7 +455,7 @@ const sessionStatusConfig: Record<string, { label: string; variant: "default" | 
 }
 
 export default function ReceivingPage() {
-  const [activeTab, setActiveTab] = useState<"sessions" | "flagged" | "inspections">("sessions")
+  const [activeTab, setActiveTab] = useState<"sessions" | "flagged" | "inspections" | "log">("log")
   const [sessionStatusFilter, setSessionStatusFilter] = useState<string>("OPEN")
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
@@ -475,6 +476,36 @@ export default function ReceivingPage() {
       : `/receiving-inspections/status/${statusFilter}`
 
   const { data: inspections, isLoading: inspectionsLoading, refetch: refetchInspections } = useApi<ReceivingInspection[]>(inspectionEndpoint)
+
+  // Fetch all lots for receiving log
+  interface ReceivingLogLot {
+    id: string
+    uid: string
+    material_id: string
+    material: { internal_part_number: string; description: string | null; customer?: { name: string } | null } | null
+    quantity: number
+    package_type: string
+    po_reference: string | null
+    supplier: { name: string } | null
+    owner_type: string
+    status: string
+    location: string
+    received_date: string | null
+    created_at: string
+  }
+  const { data: allLots, isLoading: lotsLoading } = useApi<ReceivingLogLot[]>("/inventory/lots")
+
+  const receivingLogColumns: VirtualGridColumn<ReceivingLogLot>[] = [
+    { id: "date", header: "Date", size: 140, sortable: true, accessorFn: (l) => l.created_at, cell: (l) => <span className="text-sm tabular-nums">{new Date(l.created_at).toLocaleDateString()} {new Date(l.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span> },
+    { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.uid, accessorFn: (l) => l.uid, cell: (l) => <span className="font-mono text-xs">{l.uid}</span> },
+    { id: "customer", header: "Customer", size: 130, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span className="text-sm">{l.material?.customer?.name || "\u2014"}</span> },
+    { id: "ipn", header: "IPN", size: 150, sortable: true, filterable: true, filterAccessor: (l) => l.material?.internal_part_number || "", accessorFn: (l) => l.material?.internal_part_number || "", cell: (l) => (<div><span className="font-medium text-sm">{l.material?.internal_part_number}</span>{l.material?.description && <p className="text-xs text-muted-foreground truncate">{l.material.description}</p>}</div>) },
+    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Badge variant="outline" className="text-xs">{l.package_type}</Badge> },
+    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-sm text-muted-foreground">{l.po_reference || "\u2014"}</span> },
+    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"} className="text-xs">{l.status}</Badge> },
+    { id: "location", header: "Location", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.location, accessorFn: (l) => l.location, cell: (l) => <span className="text-xs">{l.location}</span> },
+  ]
 
   // Calculate stats
   const openSessionCount = sessions?.filter((s) => s.status === "OPEN").length || sessions?.length || 0
@@ -816,6 +847,17 @@ export default function ReceivingPage() {
         >
           Inspections
         </button>
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "log"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setActiveTab("log")}
+        >
+          Receiving Log
+          <Badge variant="secondary" className="ml-2 text-xs">{allLots?.length ?? 0}</Badge>
+        </button>
       </div>
 
       {/* Open Sessions Tab */}
@@ -911,6 +953,26 @@ export default function ReceivingPage() {
             storageKey="receiving-inspections"
           />
         </div>
+      )}
+
+      {/* Receiving Log Tab */}
+      {activeTab === "log" && (
+        <VirtualGrid
+          data={allLots ?? null}
+          columns={receivingLogColumns}
+          title="Receiving Log"
+          isLoading={lotsLoading}
+          searchPlaceholder="Search by UID, IPN, customer, PO ref, status..."
+          searchFn={(l, q) =>
+            !!(l.uid.toLowerCase().includes(q) ||
+            (l.material?.internal_part_number ?? "").toLowerCase().includes(q) ||
+            (l.material?.description ?? "").toLowerCase().includes(q) ||
+            (l.material?.customer?.name ?? "").toLowerCase().includes(q) ||
+            (l.po_reference ?? "").toLowerCase().includes(q) ||
+            l.status.toLowerCase().includes(q) ||
+            l.package_type.toLowerCase().includes(q))
+          }
+        />
       )}
     </div>
   )

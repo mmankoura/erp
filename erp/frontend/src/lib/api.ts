@@ -197,10 +197,16 @@ export interface Supplier {
   id: string
   name: string
   code: string
+  contact_name: string | null
   email: string | null
   phone: string | null
   address: string | null
   notes: string | null
+  attention: string | null
+  default_terms: string | null
+  default_fob: string | null
+  default_ship_to: string | null
+  currency: string
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -279,6 +285,11 @@ export interface PurchaseOrder {
   total_amount: number | null
   currency: string
   notes: string | null
+  terms: string | null
+  revision: number
+  fob: string | null
+  ship_to: string | null
+  requested_by: string | null
   created_by: string | null
   lines?: PurchaseOrderLine[]
   created_at: string

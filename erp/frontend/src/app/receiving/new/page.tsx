@@ -15,21 +15,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { CheckCircle, AlertCircle, Loader2, Trash2 } from "lucide-react"
+import { toast } from "sonner"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { useAuth } from "@/contexts/auth-context"
 
 type ReceiptType = "PO" | "CUSTOMER_SUPPLIED" | "STOCK"
 
 interface ReceivedItem {
+  id: string
+  lot_id: string
   uid: string
   ipn: string
   description: string | null
@@ -40,6 +36,21 @@ interface ReceivedItem {
   customer_name?: string
   po_line_updated: boolean
   timestamp: Date
+  undone?: boolean
+}
+
+// Column builder — delete handler passed in at component level
+function buildReceiptLogColumns(onUndo: (item: ReceivedItem) => void): VirtualGridColumn<ReceivedItem>[] {
+  return [
+    { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (r) => r.uid, accessorFn: (r) => r.uid, cell: (r) => <span className={`font-mono text-xs ${r.undone ? "line-through text-muted-foreground" : ""}`}>{r.uid}</span> },
+    { id: "ipn", header: "IPN", size: 140, sortable: true, filterable: true, filterAccessor: (r) => r.ipn, accessorFn: (r) => r.ipn, cell: (r) => <span className={`font-medium text-sm ${r.undone ? "line-through text-muted-foreground" : ""}`}>{r.ipn}</span> },
+    { id: "description", header: "Description", size: 200, accessorFn: (r) => r.description ?? "", cell: (r) => <span className="text-muted-foreground text-sm truncate block">{r.description ?? "\u2014"}</span> },
+    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (r) => r.qty, cell: (r) => <span className={`font-mono text-sm ${r.undone ? "line-through text-muted-foreground" : ""}`}>{r.qty.toLocaleString()}</span> },
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (r) => r.package_type, accessorFn: (r) => r.package_type, cell: (r) => <span className="text-sm">{r.package_type}</span> },
+    { id: "type", header: "Type", size: 140, sortable: true, filterable: true, filterAccessor: (r) => r.receipt_type === "PO" ? `PO ${r.po_number ?? ""}` : r.receipt_type === "CUSTOMER_SUPPLIED" ? r.customer_name ?? "Customer" : "Stock", accessorFn: (r) => r.receipt_type, cell: (r) => <Badge variant="outline" className="text-xs">{r.receipt_type === "PO" ? `PO ${r.po_number ?? ""}` : r.receipt_type === "CUSTOMER_SUPPLIED" ? r.customer_name ?? "Customer" : "Stock"}</Badge> },
+    { id: "status", header: "Status", size: 100, accessorFn: (r) => r.undone ? "Undone" : r.po_line_updated ? "Received" : "In Stock", cell: (r) => r.undone ? <Badge variant="secondary" className="text-xs">Undone</Badge> : <div className="flex items-center gap-1 text-green-600"><CheckCircle className="h-4 w-4" /><span className="text-xs">{r.po_line_updated ? "Received" : "In Stock"}</span></div> },
+    { id: "actions", header: "", size: 60, accessorFn: () => "", cell: (r) => r.undone ? null : <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Undo receive" onClick={() => onUndo(r)}><Trash2 className="h-3.5 w-3.5" /></Button> },
+  ]
 }
 
 const PACKAGE_TYPES: PackageType[] = ["REEL", "TUBE", "TRAY", "BAG", "BOX", "BULK", "TR", "OTHER"]
@@ -113,6 +124,7 @@ export default function QuickReceivePage() {
         payload.po_number = poNumber.trim()
       } else if (receiptType === "CUSTOMER_SUPPLIED") {
         payload.customer_id = selectedCustomerId
+        if (poReference.trim()) payload.po_reference = poReference.trim()
       } else {
         if (mpn.trim()) payload.received_mpn = mpn.trim()
         if (manufacturer.trim()) payload.received_manufacturer = manufacturer.trim()
@@ -120,7 +132,7 @@ export default function QuickReceivePage() {
       }
 
       const result = await api.post<{
-        lot: { uid: string }
+        lot: { id: string; uid: string }
         material: { internal_part_number: string; description: string | null }
         po_line_updated: boolean
       }>("/receiving/quick-receive", payload)
@@ -129,6 +141,8 @@ export default function QuickReceivePage() {
 
       setReceivedItems((prev) => [
         {
+          id: `${result.lot.uid}-${Date.now()}`,
+          lot_id: result.lot.id,
           uid: result.lot.uid,
           ipn: result.material.internal_part_number,
           description: result.material.description,
@@ -152,6 +166,22 @@ export default function QuickReceivePage() {
     }
   }
 
+  const handleUndo = async (item: ReceivedItem) => {
+    if (!confirm(`Undo receive for ${item.uid} (${item.ipn}, ${item.qty} pcs)? This will delete the lot and reverse the inventory transaction.`)) return
+    try {
+      await api.post(`/receiving/undo-receive/${item.lot_id}`, { undone_by: user?.username })
+      setReceivedItems((prev) =>
+        prev.map((r) => r.id === item.id ? { ...r, undone: true } : r)
+      )
+      toast.success(`Undone: ${item.uid} (${item.ipn})`)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to undo"
+      toast.error(message)
+    }
+  }
+
+  const receiptLogColumns = buildReceiptLogColumns(handleUndo)
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && e.ctrlKey) {
       e.preventDefault()
@@ -171,7 +201,7 @@ export default function QuickReceivePage() {
           )}
           <Button
             variant="outline"
-            onClick={() => router.push("/receiving")}
+            onClick={() => router.push("/inventory")}
           >
             Complete Receiving
           </Button>
@@ -214,21 +244,31 @@ export default function QuickReceivePage() {
 
             {/* Customer Selector */}
             {receiptType === "CUSTOMER_SUPPLIED" && (
-              <div className="space-y-1.5">
-                <Label>Customer</Label>
-                <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select customer..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers?.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <>
+                <div className="space-y-1.5">
+                  <Label>Customer</Label>
+                  <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select customer..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers?.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>PO # / Packing Slip #</Label>
+                  <Input
+                    value={poReference}
+                    onChange={(e) => setPoReference(e.target.value)}
+                    placeholder="Optional reference"
+                  />
+                </div>
+              </>
             )}
 
             {/* Stock mode extra fields */}
@@ -337,66 +377,23 @@ export default function QuickReceivePage() {
         </Card>
 
         {/* Right: Receipt Log */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">Receipt Log</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {receivedItems.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">
-                No items received yet. Fill in the form and click Receive.
-              </p>
-            ) : (
-              <div className="overflow-auto max-h-[600px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8">#</TableHead>
-                      <TableHead>UID</TableHead>
-                      <TableHead>IPN</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead>Package</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {receivedItems.map((item, idx) => (
-                      <TableRow key={`${item.uid}-${idx}`}>
-                        <TableCell className="text-muted-foreground">{receivedItems.length - idx}</TableCell>
-                        <TableCell className="font-mono text-xs">{item.uid}</TableCell>
-                        <TableCell className="font-medium">{item.ipn}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                          {item.description ?? "\u2014"}
-                        </TableCell>
-                        <TableCell className="text-right">{item.qty}</TableCell>
-                        <TableCell>{item.package_type}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {item.receipt_type === "PO"
-                              ? `PO ${item.po_number ?? ""}`
-                              : item.receipt_type === "CUSTOMER_SUPPLIED"
-                                ? item.customer_name ?? "Customer"
-                                : "Stock"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1 text-green-600">
-                            <CheckCircle className="h-4 w-4" />
-                            <span className="text-xs">
-                              {item.po_line_updated ? "Received" : "In Stock"}
-                            </span>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-2">
+          <VirtualGrid
+            data={receivedItems}
+            columns={receiptLogColumns}
+            title="Receipt Log"
+            searchPlaceholder="Search by UID, IPN, package..."
+            searchFn={(r, q) =>
+              !!(r.uid.toLowerCase().includes(q) ||
+              r.ipn.toLowerCase().includes(q) ||
+              r.package_type.toLowerCase().includes(q) ||
+              (r.description ?? "").toLowerCase().includes(q) ||
+              (r.po_number ?? "").toLowerCase().includes(q) ||
+              (r.customer_name ?? "").toLowerCase().includes(q))
+            }
+            height={500}
+          />
+        </div>
       </div>
     </div>
   )

@@ -90,11 +90,10 @@ robocopy "%PROJECT%\erp\backend\dist" "%RELEASE%\backend\dist" /E /NP /NFL /NDL
 if %ERRORLEVEL% GEQ 8 (echo FAILED: backend dist copy & exit /b 1)
 
 if "%BACKEND_NM%"=="COPY" (
-    echo [2/7] Backend node_modules (FULL COPY — this will take a while)...
+    echo [2/7] Backend node_modules - FULL COPY - this will take a while...
     robocopy "%PROJECT%\erp\backend\node_modules" "%RELEASE%\backend\node_modules" /E /NP /NFL /NDL
-    if !ERRORLEVEL! GEQ 8 (echo FAILED: backend node_modules copy & exit /b 1)
 ) else (
-    echo [2/7] Backend node_modules — SKIPPED (junction link will be created on server)
+    echo [2/7] Backend node_modules — SKIPPED
 )
 
 echo [3/7] Backend package.json + package-lock.json...
@@ -109,11 +108,10 @@ robocopy "%PROJECT%\erp\frontend\.next" "%RELEASE%\frontend\.next" /E /NP /NFL /
 if %ERRORLEVEL% GEQ 8 (echo FAILED: frontend .next copy & exit /b 1)
 
 if "%FRONTEND_NM%"=="COPY" (
-    echo [5/7] Frontend node_modules (FULL COPY — this will take a while)...
+    echo [5/7] Frontend node_modules - FULL COPY - this will take a while...
     robocopy "%PROJECT%\erp\frontend\node_modules" "%RELEASE%\frontend\node_modules" /E /NP /NFL /NDL
-    if !ERRORLEVEL! GEQ 8 (echo FAILED: frontend node_modules copy & exit /b 1)
 ) else (
-    echo [5/7] Frontend node_modules — SKIPPED (junction link will be created on server)
+    echo [5/7] Frontend node_modules — SKIPPED
 )
 
 echo [6/7] Frontend public + package.json + package-lock.json...

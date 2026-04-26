@@ -76,6 +76,27 @@ export class InventoryController {
     return this.inventoryService.getRecentTransactions(limitValue);
   }
 
+  /**
+   * GET /inventory/transactions/grid?page=1&pageSize=50&search=&sortColumn=date&sortDirection=DESC
+   * Paginated transactions for data grid
+   */
+  @Get('transactions/grid')
+  async getTransactionsGrid(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('search') search?: string,
+    @Query('sortColumn') sortColumn?: string,
+    @Query('sortDirection') sortDirection?: string,
+  ) {
+    return this.inventoryService.getTransactionsPaginated({
+      page: page ? parseInt(page, 10) : undefined,
+      pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
+      search: search || undefined,
+      sortColumn: sortColumn || undefined,
+      sortDirection: (sortDirection as 'ASC' | 'DESC') || undefined,
+    });
+  }
+
   // ==================== IMPORT ENDPOINTS ====================
 
   /**
@@ -119,8 +140,14 @@ export class InventoryController {
     @Query('status') status?: string,
     @Query('material_id') materialId?: string,
     @Query('owner_type') ownerType?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.inventoryImportService.findAllLots({ status, materialId, ownerType });
+    return this.inventoryImportService.findAllLots({
+      status,
+      materialId,
+      ownerType,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
   }
 
   /**

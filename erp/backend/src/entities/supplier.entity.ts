@@ -36,6 +36,21 @@ export class Supplier {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  attention: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  default_terms: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  default_fob: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  default_ship_to: string | null;
+
+  @Column({ type: 'varchar', length: 3, default: 'USD' })
+  currency: string;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

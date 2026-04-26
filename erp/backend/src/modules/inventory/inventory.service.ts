@@ -853,6 +853,78 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Get paginated transactions with search/sort support
+   */
+  async getTransactionsPaginated(options: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    sortColumn?: string;
+    sortDirection?: 'ASC' | 'DESC';
+  }): Promise<{
+    data: InventoryTransaction[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> {
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 50;
+    const sortDir = options.sortDirection ?? 'DESC';
+
+    const qb = this.transactionRepository
+      .createQueryBuilder('t')
+      .leftJoinAndSelect('t.material', 'm')
+      .leftJoinAndSelect('m.customer', 'c')
+      .leftJoinAndSelect('t.owner', 'owner')
+      .leftJoinAndSelect('t.lot', 'lot');
+
+    // Search across material IPN, description, transaction type, created_by, reason
+    if (options.search) {
+      const search = `%${options.search.toLowerCase()}%`;
+      qb.where(
+        `(LOWER(m.internal_part_number) LIKE :search
+          OR LOWER(m.description) LIKE :search
+          OR LOWER(t.transaction_type) LIKE :search
+          OR LOWER(t.created_by) LIKE :search
+          OR LOWER(t.reason) LIKE :search
+          OR LOWER(c.name) LIKE :search
+          OR LOWER(owner.name) LIKE :search
+          OR LOWER(lot.uid) LIKE :search)`,
+        { search },
+      );
+    }
+
+    // Sort
+    const sortMap: Record<string, string> = {
+      date: 't.created_at',
+      material: 'm.internal_part_number',
+      type: 't.transaction_type',
+      quantity: 't.quantity',
+      by: 't.created_by',
+      customer: 'c.name',
+    };
+    const sortField = sortMap[options.sortColumn ?? 'date'] ?? 't.created_at';
+    qb.orderBy(sortField, sortDir);
+
+    // Count total before pagination
+    const total = await qb.getCount();
+
+    // Paginate
+    qb.skip((page - 1) * pageSize).take(pageSize);
+
+    const data = await qb.getMany();
+
+    return {
+      data,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
   // ==================== ALLOCATION OPERATIONS ====================
 
   /**

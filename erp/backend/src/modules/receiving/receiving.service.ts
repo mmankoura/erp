@@ -1086,6 +1086,98 @@ export class ReceivingService {
     });
   }
 
+  // ==================== UNDO QUICK RECEIVE ====================
+
+  async undoQuickReceive(lotId: string, undoneBy?: string) {
+    const lot = await this.lotRepository.findOne({
+      where: { id: lotId },
+      relations: ['material'],
+    });
+    if (!lot) {
+      throw new NotFoundException(`Lot not found`);
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const lotQty = parseFloat(String(lot.quantity));
+
+      // Create reversal transaction
+      const reversalTx = manager.create(InventoryTransaction, {
+        material_id: lot.material_id,
+        transaction_type: TransactionType.ADJUSTMENT,
+        quantity: -lotQty,
+        reference_type: ReferenceType.MANUAL,
+        bucket: InventoryBucket.RAW,
+        lot_id: lot.id,
+        owner_type: lot.owner_type,
+        owner_id: lot.owner_id,
+        reason: `Undo receive: ${lotQty} pcs of ${lot.material?.internal_part_number ?? lot.uid} (lot ${lot.uid} deleted by ${undoneBy ?? 'system'})`,
+        created_by: undoneBy ?? null,
+      });
+      await manager.save(InventoryTransaction, reversalTx);
+
+      // If lot had a PO reference, try to decrement PO line quantity_received
+      if (lot.po_reference) {
+        const po = await this.poRepository.findOne({
+          where: { po_number: lot.po_reference },
+          relations: ['lines'],
+        });
+        if (po) {
+          const matchedLine = po.lines?.find(
+            (l) => l.material_id === lot.material_id,
+          );
+          if (matchedLine) {
+            const currentReceived = parseFloat(String(matchedLine.quantity_received));
+            const newReceived = Math.max(0, currentReceived - lotQty);
+            await manager.query(
+              `UPDATE "purchase_order_lines" SET "quantity_received" = $1, "updated_at" = NOW() WHERE "id" = $2`,
+              [newReceived, matchedLine.id],
+            );
+            // Recheck PO status
+            await this.updatePOStatusIfFullyReceived(po.id, manager);
+          }
+        }
+      }
+
+      // Log audit event before deletion (entity_id must not be null)
+      const lotIdForAudit = lot.id;
+      await this.auditService.emit({
+        event_type: AuditEventType.INVENTORY_ADJUSTED,
+        entity_type: AuditEntityType.INVENTORY_TRANSACTION,
+        entity_id: lotIdForAudit,
+        actor: undoneBy,
+        new_value: {
+          action: 'UNDO_RECEIVE',
+          uid: lot.uid,
+          material_ipn: lot.material?.internal_part_number,
+          quantity_reversed: lotQty,
+          po_reference: lot.po_reference,
+        },
+      });
+
+      // Delete the original receipt transaction
+      await manager.query(
+        `DELETE FROM "inventory_transactions" WHERE "lot_id" = $1 AND "transaction_type" = 'RECEIPT'`,
+        [lotIdForAudit],
+      );
+
+      // Delete the reversal transaction too (it references the lot)
+      await manager.query(
+        `DELETE FROM "inventory_transactions" WHERE "lot_id" = $1`,
+        [lotIdForAudit],
+      );
+
+      // Delete the lot
+      await manager.remove(InventoryLot, lot);
+
+      return {
+        undone: true,
+        uid: lot.uid,
+        material_ipn: lot.material?.internal_part_number,
+        quantity_reversed: lotQty,
+      };
+    });
+  }
+
   private async updatePOStatusIfFullyReceived(
     poId: string,
     manager: any,

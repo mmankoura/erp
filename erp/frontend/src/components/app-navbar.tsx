@@ -57,10 +57,6 @@ const navGroups: NavGroup[] = [
     label: "Warehouse",
     items: [
       { title: "Inventory", url: "/inventory", icon: Warehouse },
-      { title: "Receiving", url: "/receiving", icon: ClipboardCheck },
-      { title: "Customer Supplied", url: "/customer-supplied", icon: Package },
-      { title: "Kitting", url: "/kitting", icon: PackageCheck },
-      { title: "Return to Stock", url: "/return-to-stock", icon: RotateCcw },
     ],
   },
   {
@@ -130,39 +126,56 @@ export function AppNavbar() {
 
       {/* Nav groups */}
       <div className="flex items-center gap-0.5 flex-1">
-        {navGroups.map((group) => (
-          <DropdownMenu key={group.label}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "h-8 px-3 text-sm gap-1",
-                  isGroupActive(group) && "bg-accent text-accent-foreground"
-                )}
-              >
+        {navGroups.map((group) =>
+          group.items.length === 1 ? (
+            <Button
+              key={group.label}
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-8 px-3 text-sm",
+                isItemActive(group.items[0].url) && "bg-accent text-accent-foreground"
+              )}
+              asChild
+            >
+              <Link href={group.items[0].url}>
                 {group.label}
-                <ChevronDown className="h-3 w-3 opacity-50" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              {group.items.map((item) => (
-                <DropdownMenuItem key={item.url} asChild>
-                  <Link
-                    href={item.url}
-                    className={cn(
-                      "flex items-center gap-2 cursor-pointer",
-                      isItemActive(item.url) && "bg-accent"
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.title}
-                  </Link>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ))}
+              </Link>
+            </Button>
+          ) : (
+            <DropdownMenu key={group.label}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "h-8 px-3 text-sm gap-1",
+                    isGroupActive(group) && "bg-accent text-accent-foreground"
+                  )}
+                >
+                  {group.label}
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                {group.items.map((item) => (
+                  <DropdownMenuItem key={item.url} asChild>
+                    <Link
+                      href={item.url}
+                      className={cn(
+                        "flex items-center gap-2 cursor-pointer",
+                        isItemActive(item.url) && "bg-accent"
+                      )}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.title}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
+        )}
 
         {/* Settings dropdown — role-gated */}
         {(canManageUsers() || canAccessSettings()) && (

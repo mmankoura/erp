@@ -251,6 +251,7 @@ export class InventoryImportService {
     status?: string;
     materialId?: string;
     ownerType?: string;
+    limit?: number;
   }): Promise<InventoryLot[]> {
     const where: Record<string, unknown> = {};
 
@@ -268,6 +269,7 @@ export class InventoryImportService {
       where,
       relations: ['material', 'material.customer', 'supplier'],
       order: { created_at: 'DESC' },
+      ...(filters?.limit ? { take: filters.limit } : {}),
     });
   }
 

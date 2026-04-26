@@ -63,6 +63,21 @@ export class PurchaseOrder {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  terms: string | null;
+
+  @Column({ type: 'integer', default: 0 })
+  revision: number;
+
+  @Column({ type: 'text', nullable: true })
+  fob: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  ship_to: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  requested_by: string | null;
+
   @Column({ type: 'varchar', length: 100, nullable: true })
   created_by: string | null;
 
