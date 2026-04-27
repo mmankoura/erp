@@ -6,27 +6,45 @@
 
 ---
 
-## REV-005 — 2026-04-23
+## REV-005 — 2026-04-26
 
 **Released by**: Mark Mankoura
-**Migration required**: Yes — `CreateConsumableOrders` (creates consumable_orders and consumable_order_lines tables)
+**Migration required**: Yes — 3 migrations:
+1. `CreateConsumableOrders` — consumable orders and lines tables
+2. `AddSupplierAndPOFields` — supplier profile fields + PO terms/revision/fob/ship_to/requested_by
+
 **Backup taken**: [ ] (check before deploying)
 
 ### Changes
 
 | # | Type | Module | Description |
 |---|------|--------|-------------|
-| 1 | Feature | Purchasing | Consumable Orders module — separate entity for production consumables (solder paste, stencils). Auto-generated CON-YYYYMMDD-NNN order numbers. Create/edit/delete with line items (AT&A P/N, description, MFR, MFR P/N, qty, unit cost, customer, currency). Status: ORDERED/RECEIVED with undo receive. |
-| 2 | Fix | Warehouse | Return to Stock allows qty=0 — lot marked as CONSUMED when fully used |
+| 1 | Feature | Purchasing | Consumable Orders module — production consumables (solder paste, stencils). Auto-generated CON-YYYYMMDD-NNN. Create/edit/delete, mark received/undo. |
+| 2 | Feature | Purchasing | PO PDF generation — matching AT&A bilingual template with logo, supplier info, terms, line items, signature. Download button on PO detail. |
+| 3 | Feature | Purchasing | Supplier profile — attention, default_terms, default_fob, default_ship_to, currency fields |
+| 4 | Feature | Purchasing | PO fields — terms, revision, fob, ship_to, requested_by for PDF and tracking |
+| 5 | Feature | Inventory | VirtualGrid component — virtualized rows, sticky headers, Excel-style column filters. Applied to Stock Levels, Lots/Reels, Receiving Log, Low Stock, Recent Activity. |
+| 6 | Feature | Inventory | Receiving Log tab — all lots sorted by date with UID, customer, IPN, qty, package, PO ref, status, location |
+| 7 | Feature | Inventory | Recent Activity — UID column added, server-side search includes UID |
+| 8 | Enhancement | Inventory | Customer Supplied, Return to Stock, Kitting as buttons on inventory page. Warehouse nav links directly to Inventory. |
+| 9 | Feature | Receiving | Undo receive — delete button on receipt log, reverses transaction, deletes lot, updates PO, audit logged |
+| 10 | Enhancement | Receiving | Customer Supplied mode — optional PO # / Packing Slip # field |
+| 11 | Fix | Receiving | Receipt log is session-only (doesn't persist across page refresh) |
+| 12 | Fix | Inventory | Return to Stock qty=0 marks lot as CONSUMED |
+| 13 | Fix | Purchasing | PO detail Mfg/MPN falls back to material data when PO line fields are empty |
+| 14 | Fix | UI | Breadcrumbs show "Details" instead of UUID |
 
 ### Verification Steps
 
-- [ ] Purchasing > Consumable Orders: create a new order with line items — verify CON-YYYYMMDD-NNN number generated
-- [ ] Edit an existing consumable order — verify changes saved
-- [ ] Mark order as received — verify status changes to RECEIVED
-- [ ] Undo receive — verify status reverts to ORDERED
-- [ ] Delete a consumable order
-- [ ] Return to Stock: enter UID with qty=0 — verify lot marked as CONSUMED
+- [ ] Consumable Orders: create, edit, receive, undo receive, delete
+- [ ] PO detail: click PDF button — verify PDF downloads with correct layout
+- [ ] Inventory: verify VirtualGrid on all tabs (Stock, Lots, Receiving Log, Recent, Low Stock)
+- [ ] Inventory: verify Customer Supplied, Return to Stock, Kitting buttons work
+- [ ] Warehouse nav: verify links directly to Inventory (no dropdown)
+- [ ] Receiving: receive an item, then click delete — verify undo works
+- [ ] Receiving (Customer Supplied): verify PO/Packing Slip field appears
+- [ ] Return to Stock: qty=0 — verify lot marked CONSUMED
+- [ ] PO detail: verify Mfg/MPN shows material data when PO line is empty
 
 ---
 
