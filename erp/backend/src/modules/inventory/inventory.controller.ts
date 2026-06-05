@@ -180,6 +180,19 @@ export class InventoryController {
   }
 
   /**
+   * PATCH /inventory/lots/:id/bin
+   * Update bin (stock location) for a lot
+   */
+  @Patch('lots/:id/bin')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
+  async updateLotBin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { bin: string | null },
+  ) {
+    return this.inventoryImportService.updateLotBin(id, body.bin);
+  }
+
+  /**
    * POST /inventory/lots/bulk-delete
    * Delete multiple lots
    */

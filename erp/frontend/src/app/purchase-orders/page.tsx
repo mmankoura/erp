@@ -64,6 +64,7 @@ import {
   Loader2,
   History,
   FileDown,
+  FileSpreadsheet,
 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
@@ -804,6 +805,17 @@ function PurchaseOrderDetailDialog({
               >
                 <FileDown className="h-4 w-4 mr-1" />
                 PDF
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  const { exportPoToExcel } = await import("@/lib/po-excel")
+                  exportPoToExcel(po)
+                }}
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-1" />
+                Excel
               </Button>
               {canSubmit && (
                 <Button

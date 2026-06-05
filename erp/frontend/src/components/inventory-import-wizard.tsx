@@ -66,6 +66,7 @@ const INVENTORY_FIELDS: { value: InventoryImportField; label: string; required?:
   { value: "unit_cost", label: "Unit Cost" },
   { value: "expiration_date", label: "Expiration Date" },
   { value: "notes", label: "Notes" },
+  { value: "bin", label: "Bin (Stock Location)" },
   { value: "ignore", label: "-- Ignore --" },
 ]
 
@@ -188,6 +189,14 @@ export function InventoryImportWizard({
           targetField = "expiration_date"
         } else if (lowerHeader === "notes" || lowerHeader === "note") {
           targetField = "notes"
+        } else if (
+          lowerHeader === "bin" ||
+          lowerHeader === "bin location" ||
+          lowerHeader === "stock location" ||
+          lowerHeader === "shelf" ||
+          lowerHeader === "location"
+        ) {
+          targetField = "bin"
         }
 
         return { source_column: header, target_field: targetField }

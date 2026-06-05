@@ -99,6 +99,10 @@ export class InventoryLot {
   @Column({ type: 'varchar', length: 50, default: 'RECEIVING' })
   location: string;
 
+  @Index()
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  bin: string | null;
+
   @Column({
     type: 'enum',
     enum: OwnerType,

@@ -202,6 +202,7 @@ export class InventoryImportService {
             ? new Date(item.expiration_date)
             : null,
           notes: item.notes || null,
+          bin: item.bin?.trim() ? item.bin.trim() : null,
           received_date: new Date(),
           status: LotStatus.ACTIVE,
         });
@@ -297,6 +298,17 @@ export class InventoryImportService {
     }
 
     return lot;
+  }
+
+  async updateLotBin(id: string, bin: string | null): Promise<InventoryLot> {
+    const lot = await this.lotRepository.findOne({ where: { id } });
+    if (!lot) {
+      throw new NotFoundException(`Lot with ID "${id}" not found`);
+    }
+    const trimmed = bin?.trim();
+    lot.bin = trimmed && trimmed.length > 0 ? trimmed : null;
+    await this.lotRepository.save(lot);
+    return this.findLot(id);
   }
 
   async deleteLot(id: string): Promise<void> {
@@ -465,6 +477,7 @@ export class InventoryImportService {
         : undefined,
       expiration_date: getValue('expiration_date'),
       notes: getValue('notes'),
+      bin: getValue('bin'),
     };
   }
 

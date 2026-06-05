@@ -62,7 +62,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react"
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { toast } from "sonner"
 
 // Transaction type colors
@@ -520,6 +520,43 @@ type InventoryStockWithId = InventoryStock & { id: string }
 // Extended type for lots DataTable
 type InventoryLotWithId = InventoryLot & { id: string }
 
+function BinCell({ lot, onSaved }: { lot: InventoryLotWithId; onSaved: () => void }) {
+  const [value, setValue] = useState<string>(lot.bin ?? "")
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setValue(lot.bin ?? "") }, [lot.bin])
+
+  const commit = async () => {
+    const trimmed = value.trim()
+    const original = lot.bin ?? ""
+    if (trimmed === original) return
+    setSaving(true)
+    try {
+      await api.patch(`/inventory/lots/${lot.id}/bin`, { bin: trimmed || null })
+      onSaved()
+    } catch (err) {
+      setValue(original)
+      toast.error(err instanceof Error ? err.message : "Failed to update bin")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+        if (e.key === "Escape") { setValue(lot.bin ?? ""); (e.target as HTMLInputElement).blur() }
+      }}
+      placeholder="—"
+      disabled={saving}
+      className="h-7 text-xs font-mono"
+    />
+  )
+}
+
 export default function InventoryPage() {
   const router = useRouter()
   const { data: inventoryRaw, isLoading, refetch } = useApi<InventoryStock[]>("/inventory")
@@ -874,6 +911,7 @@ export default function InventoryPage() {
     { id: "quantity", header: "Quantity", size: 100, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
     { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Badge variant="outline">{l.package_type}</Badge> },
     { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-sm text-muted-foreground">{l.po_reference || "\u2014"}</span> },
+    { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} /> },
     { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"}>{l.status}</Badge> },
     { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", cell: (l) => <span className="text-xs text-muted-foreground">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
     { id: "actions", header: "", size: 60, accessorFn: () => "", cell: (l) => <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete lot ${l.uid}?`)) deleteLotMutation.mutate(l.id) }}><Trash2 className="h-4 w-4" /></Button> },
@@ -893,8 +931,9 @@ export default function InventoryPage() {
     { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
     { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Badge variant="outline" className="text-xs">{l.package_type}</Badge> },
     { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-sm text-muted-foreground">{l.po_reference || "\u2014"}</span> },
+    { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} /> },
     { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"} className="text-xs">{l.status}</Badge> },
-    { id: "location", header: "Location", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.location, accessorFn: (l) => l.location, cell: (l) => <span className="text-xs">{l.location}</span> },
+    { id: "location", header: "Stage", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.location, accessorFn: (l) => l.location, cell: (l) => <span className="text-xs">{l.location}</span> },
   ]
 
   return (
@@ -905,6 +944,10 @@ export default function InventoryPage() {
           <p className="text-muted-foreground">Track stock levels and transactions</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportWizardOpen(true)}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import Inventory
+          </Button>
           <Button variant="outline" onClick={() => router.push("/customer-supplied")}>
             Customer Supplied
           </Button>

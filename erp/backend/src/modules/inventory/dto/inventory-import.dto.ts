@@ -22,6 +22,7 @@ export type InventoryImportField =
   | 'unit_cost'
   | 'expiration_date'
   | 'notes'
+  | 'bin'
   | 'ignore';
 
 export class InventoryColumnMappingDto {
@@ -101,6 +102,10 @@ export class InventoryImportItemDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  bin?: string;
 
   @IsString()
   @IsOptional()

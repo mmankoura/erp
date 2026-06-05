@@ -12,7 +12,13 @@ async function bootstrap() {
   // Validate environment variables before starting (fail fast)
   const config = validateEnv();
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+
+  // Raise body-parser limits — inventory imports send Excel files as JSON
+  app.useBodyParser('json', { limit: '50mb' });
+  app.useBodyParser('urlencoded', { limit: '50mb', extended: true });
 
   // Enable CORS for frontend with credentials support
   app.enableCors({

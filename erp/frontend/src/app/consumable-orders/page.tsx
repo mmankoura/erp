@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Trash2, CheckCircle, ClipboardList, Pencil, Undo2 } from "lucide-react"
+import { Plus, Trash2, CheckCircle, ClipboardList, Pencil, Undo2, FileDown, FileSpreadsheet } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/auth-context"
 
@@ -201,30 +201,34 @@ export default function ConsumableOrdersPage() {
     setLines(lines.filter((_, i) => i !== index))
   }
 
-  const columns: Column<ConsumableOrder>[] = [
+  const columns: VirtualGridColumn<ConsumableOrder>[] = [
     {
-      key: "order_number",
+      id: "order_number",
       header: "Order #",
-      defaultWidth: 180,
+      size: 180,
       sortable: true,
       filterable: true,
-      sortAccessor: (o) => o.order_number,
+      accessorFn: (o) => o.order_number,
       filterAccessor: (o) => o.order_number,
       cell: (o) => <span className="font-mono font-medium">{o.order_number}</span>,
     },
     {
-      key: "supplier",
+      id: "supplier",
       header: "Supplier",
-      defaultWidth: 180,
+      size: 180,
       sortable: true,
       filterable: true,
-      sortAccessor: (o) => o.supplier,
+      accessorFn: (o) => o.supplier,
       filterAccessor: (o) => o.supplier,
+      cell: (o) => o.supplier,
     },
     {
-      key: "items",
+      id: "items",
       header: "Items",
-      defaultWidth: 300,
+      size: 300,
+      sortable: false,
+      filterable: false,
+      accessorFn: (o) => o.lines.map((l) => l.description).join(" "),
       cell: (o) => (
         <div className="text-sm space-y-0.5">
           {o.lines.slice(0, 3).map((l) => (
@@ -241,32 +245,34 @@ export default function ConsumableOrdersPage() {
       ),
     },
     {
-      key: "total",
+      id: "total",
       header: "Total",
-      defaultWidth: 100,
-      className: "text-right",
+      size: 100,
+      align: "right",
       sortable: true,
-      sortAccessor: (o) => o.lines.reduce((sum, l) => sum + (parseFloat(String(l.quantity)) * parseFloat(String(l.unit_cost ?? 0))), 0),
+      filterable: false,
+      accessorFn: (o) => o.lines.reduce((sum, l) => sum + (parseFloat(String(l.quantity)) * parseFloat(String(l.unit_cost ?? 0))), 0),
       cell: (o) => {
         const total = o.lines.reduce((sum, l) => sum + (parseFloat(String(l.quantity)) * parseFloat(String(l.unit_cost ?? 0))), 0)
         return <span className="font-mono">{total > 0 ? `${total.toFixed(2)} ${o.currency}` : "—"}</span>
       },
     },
     {
-      key: "order_date",
+      id: "order_date",
       header: "Order Date",
-      defaultWidth: 110,
+      size: 110,
       sortable: true,
-      sortAccessor: (o) => new Date(o.order_date).getTime(),
+      filterable: false,
+      accessorFn: (o) => new Date(o.order_date).getTime(),
       cell: (o) => new Date(o.order_date).toLocaleDateString(),
     },
     {
-      key: "status",
+      id: "status",
       header: "Status",
-      defaultWidth: 110,
+      size: 110,
       sortable: true,
       filterable: true,
-      sortAccessor: (o) => o.status,
+      accessorFn: (o) => o.status,
       filterAccessor: (o) => o.status,
       cell: (o) => (
         <Badge className={o.status === "RECEIVED"
@@ -278,11 +284,40 @@ export default function ConsumableOrdersPage() {
       ),
     },
     {
-      key: "actions",
+      id: "actions",
       header: "",
-      defaultWidth: 140,
+      size: 220,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
       cell: (o) => (
         <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title="Download PDF"
+            onClick={async (e) => {
+              e.stopPropagation()
+              const { generateConsumablePoPdf } = await import("@/lib/consumable-po-pdf")
+              await generateConsumablePoPdf(o)
+            }}
+          >
+            <FileDown className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title="Download Excel"
+            onClick={async (e) => {
+              e.stopPropagation()
+              const { exportConsumableOrderToExcel } = await import("@/lib/consumable-po-excel")
+              exportConsumableOrderToExcel(o)
+            }}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -474,25 +509,20 @@ export default function ConsumableOrdersPage() {
         </div>
       </div>
 
-      <DataTable
-        data={orders ?? []}
+      <VirtualGrid
+        data={orders ?? null}
         columns={columns}
         isLoading={isLoading}
-        searchFilter={(o, search) => {
-          const s = search.toLowerCase()
-          return (
-            o.order_number.toLowerCase().includes(s) ||
-            o.supplier.toLowerCase().includes(s) ||
-            o.lines.some((l) =>
-              l.description.toLowerCase().includes(s) ||
-              (l.ata_part_number ?? "").toLowerCase().includes(s) ||
-              (l.customer ?? "").toLowerCase().includes(s)
-            )
-          )
-        }}
         searchPlaceholder="Search by order #, supplier, description, part number..."
-        emptyMessage="No consumable orders found"
-        pageSize={25}
+        searchFn={(o, q) =>
+          o.order_number.toLowerCase().includes(q) ||
+          o.supplier.toLowerCase().includes(q) ||
+          o.lines.some((l) =>
+            l.description.toLowerCase().includes(q) ||
+            (l.ata_part_number ?? "").toLowerCase().includes(q) ||
+            (l.customer ?? "").toLowerCase().includes(q)
+          )
+        }
       />
 
       {/* Edit Dialog */}

@@ -87,7 +87,8 @@ export class PurchaseOrdersService {
       .createQueryBuilder('po')
       .leftJoinAndSelect('po.supplier', 'supplier')
       .leftJoinAndSelect('po.lines', 'lines')
-      .leftJoinAndSelect('lines.material', 'material');
+      .leftJoinAndSelect('lines.material', 'material')
+      .leftJoinAndSelect('material.customer', 'material_customer');
 
     if (filters?.status) {
       queryBuilder.andWhere('po.status = :status', { status: filters.status });

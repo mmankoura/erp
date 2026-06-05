@@ -10,6 +10,7 @@ import {
   type SortingState,
   type VisibilityState,
   type ColumnFiltersState,
+  type ColumnSizingState,
   flexRender,
 } from "@tanstack/react-table"
 import { useVirtualizer } from "@tanstack/react-virtual"
@@ -153,26 +154,34 @@ export function VirtualGrid<T>({
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
 
   // Convert VirtualGridColumn to TanStack ColumnDef
+  // Default: every column is sortable + filterable unless explicitly opted out.
   const tanstackColumns: ColumnDef<T>[] = useMemo(
     () =>
-      gridColumns.map((col) => ({
-        id: col.id,
-        header: col.header,
-        size: col.size ?? 150,
-        accessorFn: col.accessorFn,
-        cell: ({ row }) => col.cell(row.original),
-        enableSorting: col.sortable ?? false,
-        filterFn: col.filterable
-          ? (row: { original: T }, _id: string, filterValue: string[]) => {
-              if (!filterValue?.length) return true
-              const accessor = col.filterAccessor ?? ((r: T) => String(col.accessorFn(r)))
-              return filterValue.includes(accessor(row.original))
-            }
-          : undefined,
-        meta: { align: col.align },
-      })),
+      gridColumns.map((col) => {
+        const filterable = col.filterable ?? true
+        return {
+          id: col.id,
+          header: col.header,
+          size: col.size ?? 150,
+          minSize: 60,
+          maxSize: 800,
+          enableResizing: true,
+          accessorFn: col.accessorFn,
+          cell: ({ row }) => col.cell(row.original),
+          enableSorting: col.sortable ?? true,
+          filterFn: filterable
+            ? (row: { original: T }, _id: string, filterValue: string[]) => {
+                if (!filterValue?.length) return true
+                const accessor = col.filterAccessor ?? ((r: T) => String(col.accessorFn(r) ?? ""))
+                return filterValue.includes(accessor(row.original))
+              }
+            : undefined,
+          meta: { align: col.align },
+        }
+      }),
     [gridColumns]
   )
 
@@ -187,10 +196,13 @@ export function VirtualGrid<T>({
   const table = useReactTable({
     data: filteredData,
     columns: tanstackColumns,
-    state: { sorting, columnVisibility, columnFilters },
+    state: { sorting, columnVisibility, columnFilters, columnSizing },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
     onColumnFiltersChange: setColumnFilters,
+    onColumnSizingChange: setColumnSizing,
+    enableColumnResizing: true,
+    columnResizeMode: "onChange",
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -204,6 +216,12 @@ export function VirtualGrid<T>({
     getScrollElement: () => parentRef.current,
     estimateSize: () => rowHeight,
     overscan: 15,
+    // Dynamic row heights: measure each rendered row so cells with wrapping
+    // content (e.g. multi-line ref designators) aren't clipped.
+    measureElement:
+      typeof window !== "undefined"
+        ? (el) => el?.getBoundingClientRect().height ?? rowHeight
+        : undefined,
   })
 
   const activeFilterCount = columnFilters.length
@@ -257,19 +275,23 @@ export function VirtualGrid<T>({
         </div>
       </CardHeader>
       <CardContent className="p-0">
+        <div ref={parentRef} className="overflow-auto" style={{ height }}>
+          <div style={{ minWidth: `${table.getTotalSize()}px` }}>
         {/* Header */}
-        <div className="border-t border-b bg-muted/50 flex">
+        <div className="border-t border-b bg-muted flex sticky top-0 z-10">
           {table.getHeaderGroups()[0]?.headers.map((header) => {
             const col = gridColumns.find((c) => c.id === header.column.id)
             const align = col?.align
-            const canSort = col?.sortable
-            const canFilter = col?.filterable && col.filterAccessor
+            const canSort = header.column.getCanSort()
+            const canFilter = !!header.column.getFilterFn()
+            const filterAccessor = col?.filterAccessor ?? ((r: T) => String(col?.accessorFn(r) ?? ""))
+            const isResizing = header.column.getIsResizing()
 
             return (
               <div
                 key={header.id}
                 className={cn(
-                  "px-3 py-2 text-xs font-medium text-muted-foreground flex items-center gap-0.5 select-none shrink-0",
+                  "px-3 py-2 text-xs font-medium text-muted-foreground flex items-center gap-0.5 select-none shrink-0 relative",
                   canSort && "cursor-pointer hover:text-foreground",
                   align === "right" && "justify-end"
                 )}
@@ -286,7 +308,7 @@ export function VirtualGrid<T>({
                         <ColumnFilterPopover
                           column={header.column}
                           data={filteredData}
-                          accessor={col!.filterAccessor!}
+                          accessor={filterAccessor}
                         />
                       </span>
                     )}
@@ -299,26 +321,43 @@ export function VirtualGrid<T>({
                     {flexRender(header.column.columnDef.header, header.getContext())}
                   </>
                 )}
+                {/* Resize handle */}
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    header.getResizeHandler()(e)
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation()
+                    header.getResizeHandler()(e)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className={cn(
+                    "absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none hover:bg-primary/60 transition-colors",
+                    isResizing && "bg-primary"
+                  )}
+                />
               </div>
             )
           })}
         </div>
 
         {/* Virtualized rows */}
-        <div ref={parentRef} className="overflow-auto" style={{ height }}>
-          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
+        <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index]
               return (
                 <div
                   key={row.id}
-                  className="flex border-b hover:bg-muted/30 transition-colors items-center"
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  className="flex border-b hover:bg-muted/30 transition-colors items-stretch"
                   style={{
                     position: "absolute",
                     top: 0,
                     left: 0,
                     width: "100%",
-                    height: `${virtualRow.size}px`,
+                    minHeight: `${rowHeight}px`,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
@@ -327,7 +366,10 @@ export function VirtualGrid<T>({
                     return (
                       <div
                         key={cell.id}
-                        className={cn("px-3 py-1.5 shrink-0 overflow-hidden", colDef?.align === "right" && "text-right")}
+                        className={cn(
+                          "px-3 py-2 shrink-0 self-center",
+                          colDef?.align === "right" && "text-right"
+                        )}
                         style={{ width: cell.column.getSize(), minWidth: cell.column.getSize() }}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -345,6 +387,7 @@ export function VirtualGrid<T>({
           {!isLoading && rows.length === 0 && (
             <div className="flex items-center justify-center h-40 text-muted-foreground">No data found</div>
           )}
+          </div>
         </div>
 
         {/* Footer */}

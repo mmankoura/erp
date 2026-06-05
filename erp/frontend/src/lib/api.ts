@@ -965,6 +965,7 @@ export interface InventoryLot {
   status: LotStatus
   disposition: string | null
   location: string
+  bin: string | null
   owner_type: OwnerType
   owner_id: string | null
   receiving_session_line_id: string | null
@@ -983,6 +984,7 @@ export type InventoryImportField =
   | "unit_cost"
   | "expiration_date"
   | "notes"
+  | "bin"
   | "ignore"
 
 export interface InventoryColumnMapping {
@@ -1006,6 +1008,7 @@ export interface InventoryImportItemDto {
   unit_cost?: number
   expiration_date?: string
   notes?: string
+  bin?: string
   material_id?: string
   material_matched?: boolean
 }
