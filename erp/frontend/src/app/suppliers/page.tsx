@@ -2,7 +2,7 @@
 
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type Supplier } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -16,19 +16,9 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Pencil, Trash2, X } from "lucide-react"
+import { Plus, Pencil, Trash2 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 
 interface SupplierFormData {
   name: string
@@ -222,8 +212,6 @@ function SupplierDialog({
 
 export default function SuppliersPage() {
   const { data: suppliers, isLoading, refetch } = useApi<Supplier[]>("/suppliers")
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/suppliers/${id}`),
@@ -238,71 +226,52 @@ export default function SuppliersPage() {
     }
   )
 
-  const bulkDeleteMutation = useMutation(
-    async (ids: string[]) => {
-      for (const id of ids) {
-        await api.delete(`/suppliers/${id}`)
-      }
-    },
+  const columns: VirtualGridColumn<Supplier>[] = [
     {
-      onSuccess: () => {
-        toast.success(`${selectedIds.length} supplier(s) deleted successfully`)
-        setSelectedIds([])
-        setShowDeleteDialog(false)
-        refetch()
-      },
-      onError: (error) => {
-        toast.error(error.message || "Failed to delete suppliers")
-        setShowDeleteDialog(false)
-        refetch()
-      },
-    }
-  )
-
-  const handleBulkDelete = () => {
-    if (selectedIds.length === 0) return
-    setShowDeleteDialog(true)
-  }
-
-  const confirmBulkDelete = () => {
-    bulkDeleteMutation.mutate(selectedIds)
-  }
-
-  const columns: Column<Supplier>[] = [
-    {
-      key: "code",
+      id: "code",
       header: "Code",
-      defaultWidth: 100,
-      cell: (supplier) => <span className="font-medium">{supplier.code}</span>,
+      size: 100,
+      sortable: true,
+      filterable: true,
+      accessorFn: (s) => s.code,
+      filterAccessor: (s) => s.code,
+      cell: (s) => <span className="font-medium">{s.code}</span>,
     },
     {
-      key: "name",
+      id: "name",
       header: "Name",
-      defaultWidth: 200,
-      cell: (supplier) => supplier.name,
+      size: 220,
+      sortable: true,
+      accessorFn: (s) => s.name,
+      cell: (s) => s.name,
     },
     {
-      key: "email",
+      id: "email",
       header: "Email",
-      defaultWidth: 200,
-      cell: (supplier) => supplier.email || "-",
+      size: 220,
+      sortable: true,
+      accessorFn: (s) => s.email || "",
+      cell: (s) => s.email || "-",
     },
     {
-      key: "phone",
+      id: "phone",
       header: "Phone",
-      defaultWidth: 150,
-      cell: (supplier) => supplier.phone || "-",
+      size: 160,
+      sortable: true,
+      accessorFn: (s) => s.phone || "",
+      cell: (s) => s.phone || "-",
     },
     {
-      key: "actions",
+      id: "actions",
       header: "",
-      defaultWidth: 100,
-      resizable: false,
-      className: "w-[100px]",
-      cell: (supplier) => (
+      size: 100,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
+      cell: (s) => (
         <div className="flex items-center gap-1">
           <SupplierDialog
-            supplier={supplier}
+            supplier={s}
             onSuccess={refetch}
             trigger={
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -317,7 +286,7 @@ export default function SuppliersPage() {
             onClick={(e) => {
               e.stopPropagation()
               if (confirm("Are you sure you want to delete this supplier?")) {
-                deleteMutation.mutate(supplier.id)
+                deleteMutation.mutate(s.id)
               }
             }}
           >
@@ -348,63 +317,18 @@ export default function SuppliersPage() {
         />
       </div>
 
-      {selectedIds.length > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
-          <span className="text-sm font-medium">
-            {selectedIds.length} selected
-          </span>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleBulkDelete}
-            disabled={bulkDeleteMutation.isLoading}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete Selected"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelectedIds([])}
-          >
-            <X className="h-4 w-4 mr-2" />
-            Clear Selection
-          </Button>
-        </div>
-      )}
-
-      <DataTable
+      <VirtualGrid
         data={suppliers}
         columns={columns}
         isLoading={isLoading}
-        searchKey="name"
-        searchPlaceholder="Search by name..."
-        emptyMessage="No suppliers found. Add your first supplier to get started."
-        selectable
-        selectedIds={selectedIds}
-        onSelectionChange={setSelectedIds}
-        storageKey="suppliers"
+        searchPlaceholder="Search by code, name, email, or phone..."
+        searchFn={(s, q) =>
+          s.code.toLowerCase().includes(q) ||
+          s.name.toLowerCase().includes(q) ||
+          (s.email?.toLowerCase().includes(q) ?? false) ||
+          (s.phone?.toLowerCase().includes(q) ?? false)
+        }
       />
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedIds.length} supplier(s)?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. The selected suppliers will be permanently deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmBulkDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

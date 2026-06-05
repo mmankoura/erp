@@ -6,6 +6,63 @@
 
 ---
 
+## REV-006 — 2026-06-05
+
+**Released by**: Mark Mankoura
+**Migration required**: Yes — 2 migrations:
+1. `AddCustomerIdToProducts` — **recovery**: the column was manually applied to prod earlier and its row is already present in the `migrations` table. `migration:run` will skip it. The migration file is committed so a fresh DB rebuild stays consistent.
+2. `AddBinToInventoryLots` — adds `bin varchar(50) NULL` + index on `inventory_lots` for user-assigned stock locations.
+
+**Backup taken**: [ ] (check before deploying)
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | Inventory | BIN column on `inventory_lots` — inline-editable per lot on Lots/Reels and Receiving Log tabs. Saves on blur/Enter via `PATCH /inventory/lots/:id/bin` (ADMIN/MANAGER/WAREHOUSE_CLERK). |
+| 2 | Feature | Inventory | Import wizard now supports a BIN mapping field (auto-detects headers: `bin`, `bin location`, `stock location`, `shelf`, `location`). |
+| 3 | Enhancement | Inventory | Import Inventory button restored on `/inventory` header (was lost in the warehouse-nav consolidation). |
+| 4 | Enhancement | Inventory | Receiving Log column "Location" → "Stage" (the workflow indicator) to make room for the new user-assigned BIN. |
+| 5 | Feature | Purchasing | Per-PO Excel export — flat-row format: PO# / DATE / SUPPLIER / AT&A# / MFR / MPN / Description / QTY / Mounting Type / Packaging / Customer / Unit Price / CDN-US / COMMENTS. Button next to existing PDF in the PO detail dialog. |
+| 6 | Feature | Purchasing | Per-consumable-PO Excel + PDF exports. PDF mirrors the AT&A supplier bilingual template. Buttons in the consumable orders row actions. |
+| 7 | Feature | Purchasing | Manual PO # entry on PO creation. Optional field in the create dialog (leave blank for auto-generation via the 8833xxx sequence). Backend throws `ConflictException` on duplicate, surfaced as a toast. |
+| 8 | Feature | Purchasing | Delete PO available from any status (was DRAFT-only). Confirmation message warns about soft-delete and orphaned receipts for non-DRAFT POs. Available from the row dropdown and the detail dialog header. |
+| 9 | Feature | Purchasing | PO list rewritten as a flat per-line VirtualGrid (`PoLineRow`). One row per PO line with line number / IPN / MFR / MPN / qty ordered / qty received / unit cost / line total. POs with zero lines render a placeholder row so they remain visible/searchable. |
+| 10 | Feature | Purchasing | "Generate PDF by PO #" dialog — search by PO number and download the PDF without opening the PO detail. |
+| 11 | Feature | Tables | All major tables migrated from `DataTable` to `VirtualGrid` — AML, Customers, Suppliers, Materials, Products, Product BOM detail, Orders, Production WIP, Consumable Orders, Purchase Orders, PO History. Search bar moved into the grid header on each. |
+| 12 | Fix | UI | VirtualGrid: single horizontal-scroll container + sticky opaque header. Eliminates the double scrollbar and the header/row misalignment when scrolling horizontally on wide tables (PO list, materials, inventory). |
+| 13 | Fix | Production | WIP table cells (Customer, Product, Total Qty) now render values — they were previously empty (`cell` not defined). |
+| 14 | Enhancement | Search | Search broadened on Customers, Suppliers (code / name / email / phone), Materials (+ manufacturer + customer name), Products (+ customer name), Orders (order # / PO # / WO # / customer / product), Product BOM (+ manufacturer / MPN / notes / alternates). |
+| 15 | Removal | UI | Bulk-select + bulk-delete toolbar removed across Customers, Materials, Orders, Products, Suppliers. Single-row delete preserved. |
+| 16 | Backend | API | `material.customer` joined on `GET /purchase-orders` so the Customer column in the Excel export populates. |
+| 17 | Backend | API | Body-parser limit raised to 50 MB (was Express default 100 KB) — was blocking Excel uploads through the inventory import wizard. |
+| 18 | Infra | Tests | Vitest + Testing Library devDeps added (`vitest`, `@vitest/ui`, `jsdom`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`) plus `test`/`test:watch`/`test:ui` scripts. No runtime impact. |
+
+### Known behavior changes (worth communicating to users)
+
+- Persisted column widths/visibility (per-table `storageKey`) no longer survive a refresh on the migrated tables. Power users who customized columns will see defaults.
+- Pagination is gone on the migrated tables — virtualized rendering instead. Large datasets scroll smoothly.
+- Row-click navigation removed on Materials, Products, Orders. Per-row Eye / Pencil / BOM icons preserved as the drill-in path.
+- Product BOM detail: `Type` and `Notes` columns are now visible by default (previously hidden behind the column toggle).
+
+### Verification Steps
+
+- [ ] Inventory → Lots/Reels: click a BIN cell, type a value, press Enter → saves; reload page → value persists
+- [ ] Inventory → Receiving Log: BIN column present, "Stage" column shows RECEIVING/STOCK/WIP/CONSUMED
+- [ ] Inventory → Import Inventory: button visible on header; upload a CSV with a `bin` column → it auto-maps; commit → lots created with BIN populated
+- [ ] Inventory → Import Inventory: upload a > 100 KB Excel file → no "request entity too large" error
+- [ ] Purchase Orders → open any PO → Excel button → downloads `PO# <number>.xlsx` with flat-row format and Customer column populated where the material has a customer
+- [ ] Purchase Orders → New PO: leave PO # blank → auto-generated; enter a value → saves; enter a duplicate → toast "PO number "X" already exists"
+- [ ] Purchase Orders → open any PO → Delete button visible regardless of status; CANCELLED / RECEIVED POs show stronger confirm message
+- [ ] Purchase Orders list: flat per-line view; sort + filter columns work; column widths resize and reset on refresh
+- [ ] Purchase Orders → "Generate PDF" header button: enter a PO# → PDF downloads
+- [ ] Consumable Orders → row actions: PDF icon + Excel icon both download
+- [ ] Wide tables (PO list, materials): horizontal scroll → header scrolls with rows, single scrollbar at bottom
+- [ ] AML / Customers / Suppliers / Materials / Products / Orders / Production WIP: VirtualGrid renders, columns sortable/filterable, search works
+- [ ] Production WIP: Customer, Product, Total Qty columns now show values
+
+---
+
 ## REV-005 — 2026-04-26
 
 **Released by**: Mark Mankoura

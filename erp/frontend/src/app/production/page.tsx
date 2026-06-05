@@ -10,7 +10,7 @@ import {
   type ProductionStage,
   type ProductionLog,
 } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -210,14 +210,14 @@ export default function ProductionPage() {
     })
   }, [activeWip, selectedStage])
 
-  const columns: Column<WipSummary>[] = [
+  const columns: VirtualGridColumn<WipSummary>[] = [
     {
-      key: "order_number",
+      id: "order_number",
       header: "Order",
-      defaultWidth: 180,
+      size: 180,
       sortable: true,
       filterable: true,
-      sortAccessor: (row) => row.order_number,
+      accessorFn: (row) => row.order_number,
       filterAccessor: (row) => row.order_number,
       cell: (row) => (
         <Link href={`/orders/${row.order_id}`} className="text-primary hover:underline font-medium">
@@ -226,39 +226,42 @@ export default function ProductionPage() {
       ),
     },
     {
-      key: "customer_name",
+      id: "customer_name",
       header: "Customer",
-      defaultWidth: 140,
+      size: 140,
       sortable: true,
       filterable: true,
-      sortAccessor: (row) => row.customer_name,
+      accessorFn: (row) => row.customer_name,
       filterAccessor: (row) => row.customer_name,
+      cell: (row) => row.customer_name,
     },
     {
-      key: "product_name",
+      id: "product_name",
       header: "Product",
-      defaultWidth: 160,
+      size: 160,
       sortable: true,
       filterable: true,
-      sortAccessor: (row) => row.product_name,
+      accessorFn: (row) => row.product_name,
       filterAccessor: (row) => row.product_name,
+      cell: (row) => row.product_name,
     },
     {
-      key: "total_quantity",
+      id: "total_quantity",
       header: "Total Qty",
-      defaultWidth: 90,
+      size: 90,
+      align: "right",
       sortable: true,
-      sortAccessor: (row) => row.total_quantity,
-      className: "text-right",
+      accessorFn: (row) => row.total_quantity,
+      cell: (row) => row.total_quantity.toLocaleString(),
     },
     {
-      key: "status",
+      id: "status",
       header: "Status",
-      defaultWidth: 120,
+      size: 120,
       sortable: true,
       filterable: true,
-      sortAccessor: (row) => row.status,
-      filterAccessor: (row) => row.status,
+      accessorFn: (row) => row.status,
+      filterAccessor: (row) => row.status.replace("_", " "),
       cell: (row) => (
         <Badge variant="outline" className="text-xs">
           {row.status.replace("_", " ")}
@@ -266,9 +269,11 @@ export default function ProductionPage() {
       ),
     },
     {
-      key: "stages",
+      id: "stages",
       header: "Production Stages",
-      defaultWidth: 300,
+      size: 300,
+      accessorFn: (row) =>
+        `${row.quantity_not_started}|${row.quantity_in_kitting}|${row.quantity_in_smt}|${row.quantity_in_th}|${row.quantity_completed}|${row.quantity_shipped}`,
       cell: (row) => (
         <div className="flex flex-wrap gap-1">
           <StageBadge stage="NOT_STARTED" quantity={row.quantity_not_started} />
@@ -281,12 +286,12 @@ export default function ProductionPage() {
       ),
     },
     {
-      key: "due_date",
+      id: "due_date",
       header: "Due Date",
-      defaultWidth: 120,
+      size: 120,
       sortable: true,
       filterable: true,
-      sortAccessor: (row) => new Date(row.due_date).getTime(),
+      accessorFn: (row) => new Date(row.due_date).getTime(),
       filterAccessor: (row) => new Date(row.due_date).toLocaleDateString(),
       cell: (row) => {
         const dueDate = new Date(row.due_date)
@@ -299,8 +304,12 @@ export default function ProductionPage() {
       },
     },
     {
-      key: "actions",
+      id: "actions",
       header: "Actions",
+      size: 240,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
       cell: (row) => (
         <div className="flex gap-1">
           {row.quantity_not_started > 0 && (
@@ -415,21 +424,17 @@ export default function ProductionPage() {
             </div>
           )}
 
-          <DataTable
-            data={filteredWip || []}
+          <VirtualGrid
+            data={filteredWip}
             columns={columns}
-            searchPlaceholder="Search orders..."
-            searchFilter={(row, search) => {
-              const s = search.toLowerCase()
-              return (
-                row.order_number.toLowerCase().includes(s) ||
-                row.customer_name.toLowerCase().includes(s) ||
-                row.product_name.toLowerCase().includes(s) ||
-                row.status.toLowerCase().includes(s)
-              )
-            }}
             isLoading={wipLoading}
-            pageSize={50}
+            searchPlaceholder="Search by order, customer, product, or status..."
+            searchFn={(row, q) =>
+              row.order_number.toLowerCase().includes(q) ||
+              row.customer_name.toLowerCase().includes(q) ||
+              row.product_name.toLowerCase().includes(q) ||
+              row.status.toLowerCase().includes(q)
+            }
           />
         </TabsContent>
 

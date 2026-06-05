@@ -85,7 +85,7 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { BomImportWizard } from "@/components/bom-import-wizard"
 import { useAuth, UserRole } from "@/contexts/auth-context"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 
 const resourceTypeLabels: Record<ResourceType, string> = {
   SMT: "SMT",
@@ -150,7 +150,7 @@ export default function ProductDetailPage() {
     }
   }, [selectedRevisionId, refetchSelectedRevision])
 
-  // Sorted BOM items for DataTable
+  // Sorted BOM items for the BOM grid
   const sortedBomItems = useMemo(() => {
     if (!selectedRevision?.items) return null
     return [...selectedRevision.items].sort((a, b) => (a.line_number || 0) - (b.line_number || 0))
@@ -239,32 +239,40 @@ export default function ProductDetailPage() {
     }
   }
 
-  // BOM item columns for DataTable
-  const bomItemColumns = useMemo((): Column<BomItem>[] => {
-    const cols: Column<BomItem>[] = [
+  // BOM item columns for VirtualGrid
+  const bomItemColumns = useMemo((): VirtualGridColumn<BomItem>[] => {
+    const altText = (item: BomItem): string => {
+      const alts = item.alternates ?? []
+      if (alts.length > 0) {
+        return alts.map((a) => a.material?.internal_part_number ?? a.material_id).join(", ")
+      }
+      return item.alternate_ipn ?? ""
+    }
+
+    const cols: VirtualGridColumn<BomItem>[] = [
       {
-        key: "line_number",
+        id: "line_number",
         header: "Line",
-        defaultWidth: 60,
-        sortable: true,
+        size: 70,
+        accessorFn: (item) => item.line_number ?? 0,
         cell: (item) => <span className="font-mono text-sm">{item.line_number || "-"}</span>,
       },
       {
-        key: "ipn",
+        id: "ipn",
         header: "Internal P/N",
-        defaultWidth: 140,
-        sortable: true,
-        sortAccessor: (item) => item.material?.internal_part_number || "",
+        size: 140,
+        accessorFn: (item) => item.material?.internal_part_number || "",
         cell: (item) => <span className="font-medium">{item.material?.internal_part_number || "-"}</span>,
       },
       {
-        key: "alternate_ipn",
+        id: "alternate_ipn",
         header: "Alternates",
-        defaultWidth: 180,
+        size: 180,
+        accessorFn: (item) => altText(item),
+        filterAccessor: (item) => altText(item) || "—",
         cell: (item) => {
           const alts = item.alternates ?? []
           if (alts.length === 0 && !item.alternate_ipn) return <span className="text-muted-foreground">—</span>
-          // Show from new table if available, fallback to legacy field
           if (alts.length > 0) {
             return (
               <div className="space-y-0.5">
@@ -280,42 +288,51 @@ export default function ProductDetailPage() {
         },
       },
       {
-        key: "manufacturer",
+        id: "manufacturer",
         header: "Manufacturer",
-        defaultWidth: 140,
+        size: 140,
+        accessorFn: (item) => item.material?.manufacturer || "",
+        filterAccessor: (item) => item.material?.manufacturer || "-",
         cell: (item) => <span className="text-sm">{item.material?.manufacturer || "-"}</span>,
       },
       {
-        key: "manufacturer_pn",
+        id: "manufacturer_pn",
         header: "Manufacturer P/N",
-        defaultWidth: 150,
+        size: 150,
+        accessorFn: (item) => item.material?.manufacturer_pn || "",
         cell: (item) => <span className="text-sm">{item.material?.manufacturer_pn || "-"}</span>,
       },
       {
-        key: "quantity_required",
+        id: "quantity_required",
         header: "Qty Per",
-        defaultWidth: 80,
-        sortable: true,
+        size: 90,
+        align: "right",
+        accessorFn: (item) => item.quantity_required,
         cell: (item) => <span className="font-mono">{item.quantity_required}</span>,
       },
       {
-        key: "resource_type",
+        id: "resource_type",
         header: "Type",
-        defaultWidth: 100,
-        defaultVisible: false,
+        size: 100,
+        accessorFn: (item) => item.material?.resource_type || "",
+        filterAccessor: (item) => {
+          const rt = item.material?.resource_type
+          return rt ? resourceTypeLabels[rt] || rt : "-"
+        },
         cell: (item) => {
-          const rt = item.material?.resource_type;
+          const rt = item.material?.resource_type
           return (
             <span className="text-sm">
               {rt ? resourceTypeLabels[rt] || rt : "-"}
             </span>
-          );
+          )
         },
       },
       {
-        key: "reference_designators",
+        id: "reference_designators",
         header: "Ref Des",
-        defaultWidth: 200,
+        size: 220,
+        accessorFn: (item) => item.reference_designators || "",
         cell: (item) => (
           <span className="text-sm font-mono whitespace-normal break-all" title={item.reference_designators || ""}>
             {item.reference_designators || "-"}
@@ -323,20 +340,22 @@ export default function ProductDetailPage() {
         ),
       },
       {
-        key: "notes",
+        id: "notes",
         header: "Notes",
-        defaultVisible: false,
-        defaultWidth: 150,
+        size: 160,
+        accessorFn: (item) => item.notes || "",
         cell: (item) => <span className="text-sm">{item.notes || "-"}</span>,
       },
     ]
 
     if (canEditBom) {
       cols.push({
-        key: "actions",
+        id: "actions",
         header: "",
-        defaultWidth: 80,
-        resizable: false,
+        size: 90,
+        sortable: false,
+        filterable: false,
+        accessorFn: () => "",
         cell: (item) => (
           <div className="flex items-center gap-1">
             <Button
@@ -730,20 +749,20 @@ export default function ProductDetailPage() {
             />
           </CardHeader>
           <CardContent>
-            <DataTable
+            <VirtualGrid
               data={sortedBomItems}
               columns={bomItemColumns}
-              searchPlaceholder="Search by IPN or Ref Des..."
-              searchFilter={(item, search) => {
-                const query = search.toLowerCase()
+              searchPlaceholder="Search by IPN, Ref Des, manufacturer, or notes..."
+              searchFn={(item, q) => {
                 const ipn = item.material?.internal_part_number?.toLowerCase() || ""
                 const altIpn = item.alternate_ipn?.toLowerCase() || ""
+                const altList = (item.alternates ?? []).map((a) => a.material?.internal_part_number?.toLowerCase() || "").join(" ")
                 const refDes = item.reference_designators?.toLowerCase() || ""
-                return ipn.includes(query) || altIpn.includes(query) || refDes.includes(query)
+                const mfr = item.material?.manufacturer?.toLowerCase() || ""
+                const mpn = item.material?.manufacturer_pn?.toLowerCase() || ""
+                const notes = item.notes?.toLowerCase() || ""
+                return ipn.includes(q) || altIpn.includes(q) || altList.includes(q) || refDes.includes(q) || mfr.includes(q) || mpn.includes(q) || notes.includes(q)
               }}
-              storageKey="bom-items"
-              pageSize={50}
-              emptyMessage="No items in this BOM revision"
             />
           </CardContent>
         </Card>

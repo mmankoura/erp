@@ -900,7 +900,7 @@ export default function InventoryPage() {
     { id: "allocated", header: "Allocated", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_allocated, cell: (s) => <AllocationPopover materialId={s.material_id} quantity={s.quantity_allocated} /> },
     { id: "available", header: "Available", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_available, cell: (s) => <span className={`font-mono text-sm font-medium ${s.quantity_available <= 0 ? "text-red-600" : s.quantity_available < 10 ? "text-yellow-600" : "text-green-600"}`}>{s.quantity_available.toLocaleString()}</span> },
     { id: "on_order", header: "On Order", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_order, cell: (s) => <span className={`font-mono text-sm ${s.quantity_on_order > 0 ? "text-blue-600" : ""}`}>{s.quantity_on_order.toLocaleString()}</span> },
-    { id: "actions", header: "", size: 120, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /><AdjustStockDialog stock={s} onSuccess={refetch} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><ArrowUpDown className="h-4 w-4" /></Button>} /></div>) },
+    { id: "actions", header: "", size: 120, sortable: false, filterable: false, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /><AdjustStockDialog stock={s} onSuccess={refetch} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><ArrowUpDown className="h-4 w-4" /></Button>} /></div>) },
   ]
 
   // VirtualGrid columns for Lots/Reels
@@ -914,7 +914,7 @@ export default function InventoryPage() {
     { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} /> },
     { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"}>{l.status}</Badge> },
     { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", cell: (l) => <span className="text-xs text-muted-foreground">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
-    { id: "actions", header: "", size: 60, accessorFn: () => "", cell: (l) => <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete lot ${l.uid}?`)) deleteLotMutation.mutate(l.id) }}><Trash2 className="h-4 w-4" /></Button> },
+    { id: "actions", header: "", size: 60, sortable: false, filterable: false, accessorFn: () => "", cell: (l) => <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete lot ${l.uid}?`)) deleteLotMutation.mutate(l.id) }}><Trash2 className="h-4 w-4" /></Button> },
   ]
 
   // Receiving Log: lots sorted by created_at desc

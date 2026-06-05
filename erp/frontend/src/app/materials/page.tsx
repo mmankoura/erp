@@ -2,7 +2,7 @@
 
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type Material, type Customer } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { RelationalFilterBuilder, type FilterGroup } from "@/components/relational-filter-builder"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -25,20 +25,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Pencil, Trash2, X, Search, Filter, Eye, ChevronDown, ChevronUp } from "lucide-react"
+import { Plus, Pencil, Trash2, X, Filter, Eye, ChevronDown, ChevronUp } from "lucide-react"
 import { useState, useMemo, useEffect } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { useAuth } from "@/contexts/auth-context"
 
 const uomOptions = ["EA", "FT", "IN", "M", "CM", "MM", "KG", "G", "LB", "OZ", "L", "ML", "GAL"]
@@ -310,11 +300,7 @@ export default function MaterialsPage() {
   const { canEdit } = useAuth()
   const { data: materials, isLoading, refetch } = useApi<Material[]>("/materials")
   const { data: customers } = useApi<Customer[]>("/customers")
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
-  // Search and filter state
-  const [search, setSearch] = useState("")
   const [customerFilter, setCustomerFilter] = useState<string>("all")
   const [ipnFilter, setIpnFilter] = useState("")
   const [mpnFilter, setMpnFilter] = useState("")
@@ -326,7 +312,6 @@ export default function MaterialsPage() {
   const [relationalFilterIds, setRelationalFilterIds] = useState<Set<string> | null>(null)
   const [activeRelationalFilterCount, setActiveRelationalFilterCount] = useState(0)
 
-  // Relational filter handlers
   const handleRelationalApply = async (filters: FilterGroup[], logic: "AND" | "OR") => {
     try {
       const result = await api.post<Material[]>("/materials/filter", { filters, logic })
@@ -334,7 +319,6 @@ export default function MaterialsPage() {
       setRelationalFilterIds(ids)
       setActiveRelationalFilterCount(filters.length)
     } catch {
-      // On error, clear relational filters
       setRelationalFilterIds(null)
       setActiveRelationalFilterCount(0)
     }
@@ -345,49 +329,28 @@ export default function MaterialsPage() {
     setActiveRelationalFilterCount(0)
   }
 
-  // Filter materials based on search and filters
   const filteredMaterials = useMemo(() => {
     if (!materials) return null
 
     return materials.filter((material) => {
-      // Relational filter
       if (relationalFilterIds !== null && !relationalFilterIds.has(material.id)) {
         return false
       }
-
-      // Search across IPN, MPN, and description
-      if (search) {
-        const searchLower = search.toLowerCase()
-        const matchesSearch =
-          material.internal_part_number.toLowerCase().includes(searchLower) ||
-          (material.manufacturer_pn?.toLowerCase().includes(searchLower) ?? false) ||
-          (material.description?.toLowerCase().includes(searchLower) ?? false)
-        if (!matchesSearch) return false
-      }
-
-      // Filter by customer
       if (customerFilter !== "all" && material.customer_id !== customerFilter) {
         return false
       }
-
-      // Filter by IPN
       if (ipnFilter && !material.internal_part_number.toLowerCase().includes(ipnFilter.toLowerCase())) {
         return false
       }
-
-      // Filter by MPN
       if (mpnFilter && !(material.manufacturer_pn?.toLowerCase().includes(mpnFilter.toLowerCase()) ?? false)) {
         return false
       }
-
-      // Filter by description
       if (descriptionFilter && !(material.description?.toLowerCase().includes(descriptionFilter.toLowerCase()) ?? false)) {
         return false
       }
-
       return true
     })
-  }, [materials, search, customerFilter, ipnFilter, mpnFilter, descriptionFilter, relationalFilterIds])
+  }, [materials, customerFilter, ipnFilter, mpnFilter, descriptionFilter, relationalFilterIds])
 
   const hasActiveFilters = customerFilter !== "all" || ipnFilter || mpnFilter || descriptionFilter
 
@@ -411,123 +374,112 @@ export default function MaterialsPage() {
     }
   )
 
-  const bulkDeleteMutation = useMutation(
-    async (ids: string[]) => {
-      // Delete sequentially to avoid overwhelming the server
-      for (const id of ids) {
-        await api.delete(`/materials/${id}`)
-      }
-    },
+  const columns: VirtualGridColumn<Material>[] = [
     {
-      onSuccess: () => {
-        toast.success(`${selectedIds.length} material(s) deleted successfully`)
-        setSelectedIds([])
-        setShowDeleteDialog(false)
-        refetch()
-      },
-      onError: (error) => {
-        toast.error(error.message || "Failed to delete materials")
-        setShowDeleteDialog(false)
-        refetch() // Refetch to show current state after partial failure
-      },
-    }
-  )
-
-  const handleBulkDelete = () => {
-    if (selectedIds.length === 0) return
-    setShowDeleteDialog(true)
-  }
-
-  const confirmBulkDelete = () => {
-    bulkDeleteMutation.mutate(selectedIds)
-  }
-
-  const columns: Column<Material>[] = [
-    {
-      key: "customer",
+      id: "customer",
       header: "Customer",
-      defaultWidth: 140,
+      size: 140,
       sortable: true,
-      sortAccessor: (m) => m.customer?.name || "",
-      cell: (material) => material.customer?.name || "-",
+      filterable: true,
+      accessorFn: (m) => m.customer?.name || "",
+      filterAccessor: (m) => m.customer?.name || "-",
+      cell: (m) => m.customer?.name || "-",
     },
     {
-      key: "internal_part_number",
+      id: "internal_part_number",
       header: "IPN",
-      defaultWidth: 150,
+      size: 150,
       sortable: true,
-      cell: (material) => (
-        <span className="font-medium">{material.internal_part_number}</span>
-      ),
+      accessorFn: (m) => m.internal_part_number,
+      cell: (m) => <span className="font-medium">{m.internal_part_number}</span>,
     },
     {
-      key: "manufacturer_pn",
+      id: "manufacturer_pn",
       header: "Manufacturer P/N",
-      defaultWidth: 160,
+      size: 160,
       sortable: true,
-      cell: (material) => material.manufacturer_pn || "-",
+      accessorFn: (m) => m.manufacturer_pn || "",
+      cell: (m) => m.manufacturer_pn || "-",
     },
     {
-      key: "manufacturer",
+      id: "manufacturer",
       header: "Manufacturer",
-      defaultWidth: 140,
+      size: 140,
       sortable: true,
-      cell: (material) => material.manufacturer || "-",
+      filterable: true,
+      accessorFn: (m) => m.manufacturer || "",
+      filterAccessor: (m) => m.manufacturer || "-",
+      cell: (m) => m.manufacturer || "-",
     },
     {
-      key: "description",
+      id: "description",
       header: "Description",
-      defaultWidth: 250,
+      size: 250,
       sortable: true,
-      cell: (material) => (
-        <span className="truncate block" title={material.description || ""}>
-          {material.description || "-"}
+      accessorFn: (m) => m.description || "",
+      cell: (m) => (
+        <span className="truncate block" title={m.description || ""}>
+          {m.description || "-"}
         </span>
       ),
     },
     {
-      key: "resource_type",
+      id: "resource_type",
       header: "Type",
-      defaultWidth: 80,
+      size: 80,
       sortable: true,
-      cell: (material) =>
-        material.resource_type ? (
-          <Badge variant="outline">{material.resource_type}</Badge>
-        ) : (
-          "-"
-        ),
+      filterable: true,
+      accessorFn: (m) => m.resource_type || "",
+      filterAccessor: (m) => m.resource_type || "-",
+      cell: (m) =>
+        m.resource_type ? <Badge variant="outline">{m.resource_type}</Badge> : "-",
     },
     {
-      key: "category",
+      id: "category",
       header: "Category",
-      defaultWidth: 100,
+      size: 100,
       sortable: true,
-      cell: (material) =>
-        material.category ? (
-          <Badge variant="secondary">{material.category}</Badge>
-        ) : (
-          "-"
-        ),
+      filterable: true,
+      accessorFn: (m) => m.category || "",
+      filterAccessor: (m) => m.category || "-",
+      cell: (m) =>
+        m.category ? <Badge variant="secondary">{m.category}</Badge> : "-",
     },
     {
-      key: "uom",
+      id: "uom",
       header: "UOM",
-      defaultWidth: 80,
+      size: 80,
       sortable: true,
-      cell: (material) => material.uom,
+      filterable: true,
+      accessorFn: (m) => m.uom,
+      filterAccessor: (m) => m.uom,
+      cell: (m) => m.uom,
     },
     {
-      key: "actions",
+      id: "actions",
       header: "",
-      defaultWidth: 100,
-      resizable: false,
-      className: "w-[100px]",
-      cell: (material) => (
+      size: 130,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
+      cell: (m) => (
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={(e) => {
+              e.stopPropagation()
+              router.push(`/materials/${m.id}`)
+            }}
+            title="View details"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
           {canEdit() && (
             <>
               <MaterialDialog
-                material={material}
+                material={m}
                 customers={customers || []}
                 onSuccess={refetch}
                 trigger={
@@ -548,7 +500,7 @@ export default function MaterialsPage() {
                 onClick={(e) => {
                   e.stopPropagation()
                   if (confirm("Are you sure you want to delete this material?")) {
-                    deleteMutation.mutate(material.id)
+                    deleteMutation.mutate(m.id)
                   }
                 }}
               >
@@ -584,21 +536,9 @@ export default function MaterialsPage() {
         )}
       </div>
 
-      {/* Search and Filters */}
+      {/* Filters */}
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          {/* Search box */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by IPN, MPN, or description..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-
-          {/* Filter toggle button */}
           <Button
             variant={showFilters || hasActiveFilters ? "secondary" : "outline"}
             size="sm"
@@ -613,19 +553,11 @@ export default function MaterialsPage() {
             )}
           </Button>
 
-          {/* Clear filters */}
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" onClick={clearFilters}>
               <X className="h-4 w-4 mr-1" />
               Clear filters
             </Button>
-          )}
-
-          {/* Results count */}
-          {(search || hasActiveFilters) && filteredMaterials && (
-            <span className="text-sm text-muted-foreground">
-              {filteredMaterials.length} result{filteredMaterials.length !== 1 ? "s" : ""}
-            </span>
           )}
         </div>
 
@@ -705,64 +637,19 @@ export default function MaterialsPage() {
         </div>
       </div>
 
-      {/* Selection toolbar */}
-      {selectedIds.length > 0 && canEdit() && (
-        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
-          <span className="text-sm font-medium">
-            {selectedIds.length} selected
-          </span>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleBulkDelete}
-            disabled={bulkDeleteMutation.isLoading}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete Selected"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelectedIds([])}
-          >
-            <X className="h-4 w-4 mr-2" />
-            Clear Selection
-          </Button>
-        </div>
-      )}
-
-      <DataTable
+      <VirtualGrid
         data={filteredMaterials}
         columns={columns}
         isLoading={isLoading}
-        emptyMessage="No materials found. Add your first material to get started."
-        selectable
-        selectedIds={selectedIds}
-        onSelectionChange={setSelectedIds}
-        onRowClick={(material) => router.push(`/materials/${material.id}`)}
-        storageKey="materials"
+        searchPlaceholder="Search by IPN, MPN, manufacturer, or description..."
+        searchFn={(m, q) =>
+          m.internal_part_number.toLowerCase().includes(q) ||
+          (m.manufacturer_pn?.toLowerCase().includes(q) ?? false) ||
+          (m.manufacturer?.toLowerCase().includes(q) ?? false) ||
+          (m.description?.toLowerCase().includes(q) ?? false) ||
+          (m.customer?.name?.toLowerCase().includes(q) ?? false)
+        }
       />
-
-      {/* Bulk delete confirmation dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedIds.length} material(s)?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. The selected materials will be permanently deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmBulkDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

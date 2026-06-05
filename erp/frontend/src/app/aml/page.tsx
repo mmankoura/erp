@@ -2,7 +2,7 @@
 
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type ApprovedManufacturer, type AmlStatus, type Material, type Attachment } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -568,73 +568,93 @@ export default function AMLPage() {
   const suspendedCount = amlEntries?.filter((e) => e.status === "SUSPENDED").length || 0
   const totalCount = amlEntries?.length || 0
 
-  const columns: Column<ApprovedManufacturer>[] = useMemo(() => [
+  const columns: VirtualGridColumn<ApprovedManufacturer>[] = useMemo(() => [
     {
-      key: "ipn",
+      id: "ipn",
       header: "Material IPN",
+      size: 160,
       sortable: true,
-      sortAccessor: (entry) => entry.material?.internal_part_number || "",
+      filterable: true,
+      accessorFn: (entry) => entry.material?.internal_part_number || "",
+      filterAccessor: (entry) => entry.material?.internal_part_number || "-",
       cell: (entry) => (
         <span className="font-medium">{entry.material?.internal_part_number || "-"}</span>
       ),
-      defaultWidth: 160,
     },
     {
-      key: "manufacturer",
+      id: "manufacturer",
       header: "Manufacturer",
+      size: 180,
       sortable: true,
+      filterable: true,
+      accessorFn: (entry) => entry.manufacturer,
+      filterAccessor: (entry) => entry.manufacturer,
       cell: (entry) => entry.manufacturer,
-      defaultWidth: 180,
     },
     {
-      key: "manufacturer_part_number",
+      id: "manufacturer_part_number",
       header: "MPN",
+      size: 180,
       sortable: true,
+      accessorFn: (entry) => entry.manufacturer_part_number,
       cell: (entry) => <span className="font-mono">{entry.manufacturer_part_number}</span>,
-      defaultWidth: 180,
     },
     {
-      key: "approved_by",
+      id: "approved_by",
       header: "Approved By",
+      size: 130,
       sortable: true,
-      sortAccessor: (entry) => entry.approved_by || "",
+      filterable: true,
+      accessorFn: (entry) => entry.approved_by || "",
+      filterAccessor: (entry) => entry.approved_by || "-",
       cell: (entry) => entry.approved_by || "-",
-      defaultWidth: 130,
     },
     {
-      key: "source",
+      id: "source",
       header: "Source",
+      size: 110,
       sortable: true,
+      filterable: true,
+      accessorFn: (entry) => entry.source,
+      filterAccessor: (entry) => (entry.source === "BOM_IMPORT" ? "BOM Import" : "Manual"),
       cell: (entry) => (
         <Badge variant={entry.source === "BOM_IMPORT" ? "secondary" : "outline"} className="text-xs">
           {entry.source === "BOM_IMPORT" ? "BOM Import" : "Manual"}
         </Badge>
       ),
-      defaultWidth: 110,
     },
     {
-      key: "customer",
+      id: "customer",
       header: "Customer",
+      size: 130,
       sortable: true,
-      sortAccessor: (entry) => entry.customer?.name || "Global",
+      filterable: true,
+      accessorFn: (entry) => entry.customer?.name || "Global",
+      filterAccessor: (entry) => entry.customer?.name || "Global",
       cell: (entry) => entry.customer?.name || "Global",
-      defaultWidth: 130,
     },
     {
-      key: "status",
+      id: "status",
       header: "Status",
+      size: 120,
       sortable: true,
+      filterable: true,
+      accessorFn: (entry) => entry.status,
+      filterAccessor: (entry) => statusConfig[entry.status].label,
       cell: (entry) => (
         <Badge variant={statusConfig[entry.status].variant}>
           {statusConfig[entry.status].icon}
           <span className="ml-1">{statusConfig[entry.status].label}</span>
         </Badge>
       ),
-      defaultWidth: 120,
     },
     {
-      key: "actions",
+      id: "actions",
       header: "",
+      size: 90,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
       cell: (entry) => (
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
           <AmlDetailDialog
@@ -657,8 +677,6 @@ export default function AMLPage() {
           />
         </div>
       ),
-      defaultWidth: 80,
-      resizable: false,
     },
   ], [refetch])
 
@@ -759,25 +777,19 @@ export default function AMLPage() {
       </div>
 
       {/* AML Table */}
-      <DataTable
+      <VirtualGrid
         data={filteredEntries}
         columns={columns}
         isLoading={isLoading}
         searchPlaceholder="Search IPN, manufacturer, MPN, customer..."
-        searchFilter={(item, search) => {
-          const q = search.toLowerCase()
-          return (
-            (item.material?.internal_part_number || "").toLowerCase().includes(q) ||
-            item.manufacturer.toLowerCase().includes(q) ||
-            item.manufacturer_part_number.toLowerCase().includes(q) ||
-            (item.approved_by || "").toLowerCase().includes(q) ||
-            (item.customer?.name || "").toLowerCase().includes(q) ||
-            (item.notes || "").toLowerCase().includes(q)
-          )
-        }}
-        emptyMessage="No AML entries found. Add your first approved manufacturer."
-        storageKey="aml"
-        pageSize={50}
+        searchFn={(item, q) =>
+          (item.material?.internal_part_number || "").toLowerCase().includes(q) ||
+          item.manufacturer.toLowerCase().includes(q) ||
+          item.manufacturer_part_number.toLowerCase().includes(q) ||
+          (item.approved_by || "").toLowerCase().includes(q) ||
+          (item.customer?.name || "").toLowerCase().includes(q) ||
+          (item.notes || "").toLowerCase().includes(q)
+        }
       />
     </div>
   )

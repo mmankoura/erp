@@ -5,6 +5,7 @@ import { useApi, useMutation } from "@/hooks/use-api"
 import {
   api,
   type PurchaseOrder,
+  type PurchaseOrderLine,
   type PurchaseOrderStatus,
   type Supplier,
   type Material,
@@ -12,7 +13,7 @@ import {
   type CreatePurchaseOrderLineDto,
   type PoHistory,
 } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -66,7 +67,7 @@ import {
   FileDown,
   FileSpreadsheet,
 } from "lucide-react"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { toast } from "sonner"
 
 // Calculate date + N business days (skips weekends)
@@ -121,6 +122,7 @@ function PurchaseOrderDialog({
   trigger: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const [poNumber, setPoNumber] = useState(purchaseOrder?.po_number || "")
   const [supplierId, setSupplierId] = useState(purchaseOrder?.supplier_id || "")
   const [orderDate, setOrderDate] = useState(
     purchaseOrder?.order_date?.split("T")[0] || new Date().toISOString().split("T")[0]
@@ -141,6 +143,7 @@ function PurchaseOrderDialog({
 
   useEffect(() => {
     if (open && !purchaseOrder) {
+      setPoNumber("")
       setSupplierId("")
       setOrderDate(new Date().toISOString().split("T")[0])
       setExpectedDate(addBusinessDays(new Date(), 2).toISOString().split("T")[0])
@@ -333,6 +336,7 @@ function PurchaseOrderDialog({
       })
     } else {
       createMutation.mutate({
+        po_number: poNumber.trim() || undefined,
         supplier_id: supplierId,
         order_date: orderDate,
         expected_date: expectedDate || undefined,
@@ -379,7 +383,17 @@ function PurchaseOrderDialog({
 
           {/* PO header fields */}
           <div className="px-6 py-3 border-b shrink-0 bg-muted/30">
-            <div className="grid grid-cols-5 gap-4">
+            <div className="grid grid-cols-6 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs">PO #</Label>
+                <Input
+                  value={poNumber}
+                  onChange={(e) => setPoNumber(e.target.value)}
+                  placeholder="Auto-generated"
+                  className="h-8 font-mono"
+                  disabled={!!purchaseOrder}
+                />
+              </div>
               <div className="space-y-1">
                 <Label className="text-xs">Supplier *</Label>
                 <Select value={supplierId} onValueChange={setSupplierId}>
@@ -723,6 +737,18 @@ function PurchaseOrderDetailDialog({
     }
   )
 
+  const deletePoMutation = useMutation(
+    () => api.delete(`/purchase-orders/${purchaseOrder.id}`),
+    {
+      onSuccess: () => {
+        toast.success("PO deleted")
+        setOpen(false)
+        onSuccess()
+      },
+      onError: (error) => toast.error(error.message),
+    }
+  )
+
   const [newLineIpnSearch, setNewLineIpnSearch] = useState("")
   const [newLineMaterial, setNewLineMaterial] = useState("")
   const [newLineQty, setNewLineQty] = useState(1)
@@ -863,6 +889,23 @@ function PurchaseOrderDetailDialog({
                   Cancel
                 </Button>
               )}
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  const msg =
+                    po.status === "DRAFT"
+                      ? `Delete PO ${po.po_number}?`
+                      : `Delete PO ${po.po_number} (status: ${po.status})? This is a soft delete — the PO will be hidden but receipts already posted against it stay in inventory.`
+                  if (confirm(msg)) {
+                    deletePoMutation.mutate(undefined)
+                  }
+                }}
+                disabled={deletePoMutation.isLoading}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
+              </Button>
             </div>
           </div>
         </DialogHeader>
@@ -1090,6 +1133,93 @@ function PurchaseOrderDetailDialog({
   )
 }
 
+// One row per PO line. POs with no lines get a single placeholder row so they
+// remain visible.
+type PoLineRow = {
+  po: PurchaseOrder
+  line: PurchaseOrderLine | null
+  rowKey: string
+}
+
+function GeneratePoPdfDialog() {
+  const [open, setOpen] = useState(false)
+  const [poNumber, setPoNumber] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  const handleGenerate = async () => {
+    const trimmed = poNumber.trim()
+    if (!trimmed) {
+      toast.error("Enter a PO number")
+      return
+    }
+    setLoading(true)
+    try {
+      const po = await api.get<PurchaseOrder>(
+        `/purchase-orders/number/${encodeURIComponent(trimmed)}`,
+      )
+      const { generatePoPdf } = await import("@/lib/po-pdf")
+      await generatePoPdf(po)
+      setOpen(false)
+      setPoNumber("")
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to generate PDF"
+      toast.error(msg.includes("404") ? `PO "${trimmed}" not found` : msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <FileDown className="h-4 w-4 mr-2" />
+          Generate PDF
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle>Generate PO PDF</DialogTitle>
+          <DialogDescription>
+            Enter a PO number to download its PDF.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-2">
+          <Label htmlFor="pdf-po-number">PO Number</Label>
+          <Input
+            id="pdf-po-number"
+            value={poNumber}
+            onChange={(e) => setPoNumber(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleGenerate()
+            }}
+            placeholder="e.g., 8833123"
+            autoFocus
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleGenerate} disabled={loading}>
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <FileDown className="h-4 w-4 mr-2" />
+                Generate PDF
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function PurchaseOrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
@@ -1108,41 +1238,68 @@ export default function PurchaseOrdersPage() {
     },
   })
 
-  const columns: Column<PurchaseOrder>[] = [
+  // Flatten POs into per-line rows. POs with no lines get a single placeholder
+  // row keyed by the PO id so they're still visible/searchable.
+  const flatLines = useMemo<PoLineRow[] | null>(() => {
+    if (!purchaseOrders) return null
+    const rows: PoLineRow[] = []
+    for (const po of purchaseOrders) {
+      if (!po.lines || po.lines.length === 0) {
+        rows.push({ po, line: null, rowKey: `po-${po.id}` })
+      } else {
+        for (const line of po.lines) {
+          rows.push({ po, line, rowKey: `line-${line.id}` })
+        }
+      }
+    }
+    return rows
+  }, [purchaseOrders])
+
+  const columns: VirtualGridColumn<PoLineRow>[] = [
     {
-      key: "po_number",
+      id: "po_number",
       header: "PO #",
-      defaultWidth: 120,
-      cell: (po) => <span className="font-medium">{po.po_number}</span>,
+      size: 110,
+      accessorFn: (r) => r.po.po_number,
+      cell: (r) => <span className="font-medium">{r.po.po_number}</span>,
     },
     {
-      key: "supplier",
+      id: "supplier",
       header: "Supplier",
-      defaultWidth: 180,
-      cell: (po) => po.supplier?.name || "-",
+      size: 160,
+      accessorFn: (r) => r.po.supplier?.name || "",
+      filterAccessor: (r) => r.po.supplier?.name || "-",
+      cell: (r) => r.po.supplier?.name || "-",
     },
     {
-      key: "status",
+      id: "status",
       header: "Status",
-      defaultWidth: 130,
-      cell: (po) => (
-        <Badge variant={statusConfig[po.status].variant}>{statusConfig[po.status].label}</Badge>
+      size: 130,
+      accessorFn: (r) => r.po.status,
+      filterAccessor: (r) => statusConfig[r.po.status].label,
+      cell: (r) => (
+        <Badge variant={statusConfig[r.po.status].variant}>{statusConfig[r.po.status].label}</Badge>
       ),
     },
     {
-      key: "order_date",
+      id: "order_date",
       header: "Order Date",
-      defaultWidth: 120,
-      cell: (po) => new Date(po.order_date).toLocaleDateString(),
+      size: 110,
+      accessorFn: (r) => new Date(r.po.order_date).getTime(),
+      cell: (r) => new Date(r.po.order_date).toLocaleDateString(),
     },
     {
-      key: "expected_date",
+      id: "expected_date",
       header: "Expected",
-      defaultWidth: 120,
-      cell: (po) => {
-        if (!po.expected_date) return "-"
-        const date = new Date(po.expected_date)
-        const isOverdue = date < new Date() && !["RECEIVED", "CLOSED", "CANCELLED"].includes(po.status)
+      size: 110,
+      accessorFn: (r) =>
+        r.po.expected_date ? new Date(r.po.expected_date).getTime() : 0,
+      cell: (r) => {
+        if (!r.po.expected_date) return "-"
+        const date = new Date(r.po.expected_date)
+        const isOverdue =
+          date < new Date() &&
+          !["RECEIVED", "CLOSED", "CANCELLED"].includes(r.po.status)
         return (
           <span className={isOverdue ? "text-destructive font-medium" : ""}>
             {date.toLocaleDateString()}
@@ -1151,23 +1308,148 @@ export default function PurchaseOrdersPage() {
       },
     },
     {
-      key: "total_amount",
-      header: "Total",
-      defaultWidth: 120,
-      className: "text-right",
-      cell: (po) =>
-        po.total_amount ? `${po.currency} ${parseFloat(String(po.total_amount)).toFixed(2)}` : "-",
+      id: "line_number",
+      header: "Line",
+      size: 60,
+      align: "right",
+      accessorFn: (r) => r.line?.line_number ?? 0,
+      cell: (r) =>
+        r.line ? (
+          <span className="font-mono text-sm">{r.line.line_number}</span>
+        ) : (
+          <span className="text-muted-foreground text-xs">—</span>
+        ),
     },
     {
-      key: "actions",
+      id: "ipn",
+      header: "IPN",
+      size: 140,
+      accessorFn: (r) => r.line?.material?.internal_part_number || "",
+      filterAccessor: (r) => r.line?.material?.internal_part_number || "—",
+      cell: (r) =>
+        r.line?.material?.internal_part_number ? (
+          <span className="font-mono text-sm">
+            {r.line.material.internal_part_number}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs italic">no lines</span>
+        ),
+    },
+    {
+      id: "manufacturer",
+      header: "MFR",
+      size: 130,
+      accessorFn: (r) =>
+        r.line?.manufacturer || r.line?.material?.manufacturer || "",
+      filterAccessor: (r) =>
+        r.line?.manufacturer || r.line?.material?.manufacturer || "-",
+      cell: (r) =>
+        r.line ? (
+          <span className="text-sm">
+            {r.line.manufacturer || r.line.material?.manufacturer || "-"}
+          </span>
+        ) : (
+          "-"
+        ),
+    },
+    {
+      id: "manufacturer_pn",
+      header: "MPN",
+      size: 150,
+      accessorFn: (r) =>
+        r.line?.manufacturer_pn || r.line?.material?.manufacturer_pn || "",
+      cell: (r) =>
+        r.line ? (
+          <span className="font-mono text-sm">
+            {r.line.manufacturer_pn || r.line.material?.manufacturer_pn || "-"}
+          </span>
+        ) : (
+          "-"
+        ),
+    },
+    {
+      id: "qty_ordered",
+      header: "Qty Ord",
+      size: 90,
+      align: "right",
+      accessorFn: (r) =>
+        r.line ? parseFloat(String(r.line.quantity_ordered)) : 0,
+      cell: (r) =>
+        r.line ? (
+          <span className="font-mono">
+            {parseFloat(String(r.line.quantity_ordered)).toLocaleString()}
+          </span>
+        ) : (
+          "-"
+        ),
+    },
+    {
+      id: "qty_received",
+      header: "Qty Rcv",
+      size: 90,
+      align: "right",
+      accessorFn: (r) =>
+        r.line ? parseFloat(String(r.line.quantity_received)) : 0,
+      cell: (r) =>
+        r.line ? (
+          <span className="font-mono">
+            {parseFloat(String(r.line.quantity_received)).toLocaleString()}
+          </span>
+        ) : (
+          "-"
+        ),
+    },
+    {
+      id: "unit_cost",
+      header: "Unit Cost",
+      size: 110,
+      align: "right",
+      accessorFn: (r) =>
+        r.line?.unit_cost != null ? parseFloat(String(r.line.unit_cost)) : 0,
+      cell: (r) => {
+        if (!r.line || r.line.unit_cost == null) return "-"
+        return (
+          <span className="font-mono text-sm">
+            {r.po.currency} {parseFloat(String(r.line.unit_cost)).toFixed(4)}
+          </span>
+        )
+      },
+    },
+    {
+      id: "line_total",
+      header: "Line Total",
+      size: 120,
+      align: "right",
+      accessorFn: (r) => {
+        if (!r.line || r.line.unit_cost == null) return 0
+        return (
+          parseFloat(String(r.line.unit_cost)) *
+          parseFloat(String(r.line.quantity_ordered))
+        )
+      },
+      cell: (r) => {
+        if (!r.line || r.line.unit_cost == null) return "-"
+        const total =
+          parseFloat(String(r.line.unit_cost)) *
+          parseFloat(String(r.line.quantity_ordered))
+        return (
+          <span className="font-mono text-sm">
+            {r.po.currency} {total.toFixed(2)}
+          </span>
+        )
+      },
+    },
+    {
+      id: "actions",
       header: "",
-      defaultWidth: 100,
-      resizable: false,
-      className: "w-[100px]",
-      cell: (po) => (
+      size: 100,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
+      cell: (r) => (
         <div className="flex items-center gap-1">
           <PurchaseOrderDetailDialog
-            purchaseOrder={po}
+            purchaseOrder={r.po}
             onSuccess={refetch}
             trigger={
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -1182,10 +1464,10 @@ export default function PurchaseOrdersPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {po.status === "DRAFT" && (
+              {r.po.status === "DRAFT" && (
                 <>
                   <PurchaseOrderDialog
-                    purchaseOrder={po}
+                    purchaseOrder={r.po}
                     onSuccess={refetch}
                     trigger={
                       <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
@@ -1197,19 +1479,21 @@ export default function PurchaseOrdersPage() {
                   <DropdownMenuSeparator />
                 </>
               )}
-              {po.status === "DRAFT" && (
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => {
-                    if (confirm("Are you sure you want to delete this purchase order?")) {
-                      deleteMutation.mutate(po.id)
-                    }
-                  }}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={() => {
+                  const msg =
+                    r.po.status === "DRAFT"
+                      ? `Delete PO ${r.po.po_number}?`
+                      : `Delete PO ${r.po.po_number} (status: ${r.po.status})? This is a soft delete — the PO will be hidden but receipts already posted against it stay in inventory.`
+                  if (confirm(msg)) {
+                    deleteMutation.mutate(r.po.id)
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -1224,15 +1508,18 @@ export default function PurchaseOrdersPage() {
           <h1 className="text-3xl font-bold tracking-tight">Purchase Orders</h1>
           <p className="text-muted-foreground">Manage purchase orders to suppliers</p>
         </div>
-        <PurchaseOrderDialog
-          onSuccess={refetch}
-          trigger={
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Create PO
-            </Button>
-          }
-        />
+        <div className="flex items-center gap-2">
+          <GeneratePoPdfDialog />
+          <PurchaseOrderDialog
+            onSuccess={refetch}
+            trigger={
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Create PO
+              </Button>
+            }
+          />
+        </div>
       </div>
 
       <Tabs defaultValue="active">
@@ -1269,14 +1556,20 @@ export default function PurchaseOrdersPage() {
             </div>
           </div>
 
-          <DataTable
-            data={purchaseOrders}
+          <VirtualGrid
+            data={flatLines}
             columns={columns}
             isLoading={isLoading}
-            searchKey="po_number"
-            searchPlaceholder="Search by PO number..."
-            emptyMessage="No purchase orders found. Create your first PO to get started."
-            storageKey="purchase-orders"
+            searchPlaceholder="Search by PO #, supplier, IPN, MFR, or MPN..."
+            searchFn={(r, q) =>
+              r.po.po_number.toLowerCase().includes(q) ||
+              (r.po.supplier?.name?.toLowerCase().includes(q) ?? false) ||
+              (r.line?.material?.internal_part_number?.toLowerCase().includes(q) ?? false) ||
+              (r.line?.manufacturer?.toLowerCase().includes(q) ?? false) ||
+              (r.line?.manufacturer_pn?.toLowerCase().includes(q) ?? false) ||
+              (r.line?.material?.manufacturer?.toLowerCase().includes(q) ?? false) ||
+              (r.line?.material?.manufacturer_pn?.toLowerCase().includes(q) ?? false)
+            }
           />
         </TabsContent>
 
@@ -1328,103 +1621,116 @@ function PoHistoryTab() {
     }
   }
 
-  const columns: Column<PoHistory>[] = [
+  const columns: VirtualGridColumn<PoHistory>[] = [
     {
-      key: "po_number",
+      id: "po_number",
       header: "PO #",
-      defaultWidth: 120,
+      size: 120,
+      sortable: true,
+      accessorFn: (item) => item.po_number,
       cell: (item) => <span className="font-mono font-medium">{item.po_number}</span>,
-      sortable: true,
     },
     {
-      key: "order_date",
+      id: "order_date",
       header: "Date",
-      defaultWidth: 100,
+      size: 100,
+      sortable: true,
+      accessorFn: (item) => item.order_date ?? "",
       cell: (item) => item.order_date ? new Date(item.order_date).toLocaleDateString() : "-",
-      sortable: true,
-      sortAccessor: (item) => item.order_date ?? "",
     },
     {
-      key: "supplier",
+      id: "supplier",
       header: "Supplier",
-      defaultWidth: 130,
+      size: 130,
+      sortable: true,
+      filterable: true,
+      accessorFn: (item) => item.supplier ?? "",
+      filterAccessor: (item) => item.supplier ?? "-",
       cell: (item) => item.supplier ?? "-",
-      sortable: true,
-      sortAccessor: (item) => item.supplier ?? "",
     },
     {
-      key: "ipn",
+      id: "ipn",
       header: "IPN (AT&A#)",
-      defaultWidth: 120,
+      size: 120,
+      sortable: true,
+      accessorFn: (item) => item.ipn ?? "",
       cell: (item) => <span className="font-mono text-sm">{item.ipn ?? "-"}</span>,
-      sortable: true,
-      sortAccessor: (item) => item.ipn ?? "",
     },
     {
-      key: "manufacturer",
+      id: "manufacturer",
       header: "MFR",
-      defaultWidth: 130,
+      size: 130,
+      sortable: true,
+      filterable: true,
+      accessorFn: (item) => item.manufacturer ?? "",
+      filterAccessor: (item) => item.manufacturer ?? "-",
       cell: (item) => item.manufacturer ?? "-",
-      sortable: true,
-      sortAccessor: (item) => item.manufacturer ?? "",
     },
     {
-      key: "mpn",
+      id: "mpn",
       header: "MPN",
-      defaultWidth: 150,
-      cell: (item) => <span className="font-mono text-sm">{item.mpn ?? "-"}</span>,
+      size: 150,
       sortable: true,
-      sortAccessor: (item) => item.mpn ?? "",
+      accessorFn: (item) => item.mpn ?? "",
+      cell: (item) => <span className="font-mono text-sm">{item.mpn ?? "-"}</span>,
     },
     {
-      key: "description",
+      id: "description",
       header: "Description",
-      defaultWidth: 200,
+      size: 200,
+      accessorFn: (item) => item.description ?? "",
       cell: (item) => (
         <span className="text-sm truncate max-w-[200px] block">{item.description ?? "-"}</span>
       ),
     },
     {
-      key: "quantity",
+      id: "quantity",
       header: "Qty",
-      defaultWidth: 80,
-      className: "text-right",
-      cell: (item) => item.quantity != null ? parseFloat(String(item.quantity)).toLocaleString() : "-",
+      size: 80,
+      align: "right",
       sortable: true,
-      sortAccessor: (item) => item.quantity ?? 0,
+      accessorFn: (item) => item.quantity ?? 0,
+      cell: (item) => item.quantity != null ? parseFloat(String(item.quantity)).toLocaleString() : "-",
     },
     {
-      key: "mounting_type",
+      id: "mounting_type",
       header: "Mount",
-      defaultWidth: 70,
+      size: 80,
+      sortable: true,
+      filterable: true,
+      accessorFn: (item) => item.mounting_type ?? "",
+      filterAccessor: (item) => item.mounting_type ?? "-",
       cell: (item) => item.mounting_type ? <Badge variant="outline">{item.mounting_type}</Badge> : "-",
     },
     {
-      key: "customer",
+      id: "customer",
       header: "Customer",
-      defaultWidth: 100,
-      cell: (item) => item.customer ?? "-",
+      size: 110,
       sortable: true,
-      sortAccessor: (item) => item.customer ?? "",
+      filterable: true,
+      accessorFn: (item) => item.customer ?? "",
+      filterAccessor: (item) => item.customer ?? "-",
+      cell: (item) => item.customer ?? "-",
     },
     {
-      key: "unit_price",
+      id: "unit_price",
       header: "Unit Price",
-      defaultWidth: 100,
-      className: "text-right",
+      size: 110,
+      align: "right",
+      sortable: true,
+      accessorFn: (item) => item.unit_price ?? 0,
       cell: (item) => {
         if (item.unit_price == null) return "-"
         return `${item.currency ?? ""} ${parseFloat(String(item.unit_price)).toFixed(4)}`
       },
-      sortable: true,
-      sortAccessor: (item) => item.unit_price ?? 0,
     },
     {
-      key: "comments",
+      id: "comments",
       header: "Comments",
-      defaultWidth: 120,
+      size: 140,
+      accessorFn: (item) => item.comments ?? "",
       cell: (item) => (
-        <span className="text-sm truncate max-w-[120px] block">{item.comments ?? "-"}</span>
+        <span className="text-sm truncate max-w-[140px] block">{item.comments ?? "-"}</span>
       ),
     },
   ]
@@ -1468,26 +1774,21 @@ function PoHistoryTab() {
           <p className="text-sm">Import your vendor PO record Excel file to view historical data here.</p>
         </div>
       ) : (
-        <DataTable
+        <VirtualGrid
           data={history ?? []}
           columns={columns}
           isLoading={isLoading}
-          searchFilter={(item, query) => {
-            const q = query.toLowerCase()
-            return (
-              (item.po_number ?? "").toLowerCase().includes(q) ||
-              (item.supplier ?? "").toLowerCase().includes(q) ||
-              (item.ipn ?? "").toLowerCase().includes(q) ||
-              (item.mpn ?? "").toLowerCase().includes(q) ||
-              (item.description ?? "").toLowerCase().includes(q) ||
-              (item.manufacturer ?? "").toLowerCase().includes(q) ||
-              (item.customer ?? "").toLowerCase().includes(q) ||
-              (item.comments ?? "").toLowerCase().includes(q)
-            )
-          }}
           searchPlaceholder="Search by PO#, supplier, IPN, MPN, customer..."
-          emptyMessage="No records match your search."
-          storageKey="po-history"
+          searchFn={(item, q) =>
+            (item.po_number ?? "").toLowerCase().includes(q) ||
+            (item.supplier ?? "").toLowerCase().includes(q) ||
+            (item.ipn ?? "").toLowerCase().includes(q) ||
+            (item.mpn ?? "").toLowerCase().includes(q) ||
+            (item.description ?? "").toLowerCase().includes(q) ||
+            (item.manufacturer ?? "").toLowerCase().includes(q) ||
+            (item.customer ?? "").toLowerCase().includes(q) ||
+            (item.comments ?? "").toLowerCase().includes(q)
+          }
         />
       )}
     </div>

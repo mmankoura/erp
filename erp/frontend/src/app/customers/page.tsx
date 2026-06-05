@@ -2,7 +2,7 @@
 
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type Customer } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -16,19 +16,9 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Pencil, Trash2, X } from "lucide-react"
+import { Plus, Pencil, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 
 interface CustomerFormData {
   name: string
@@ -205,8 +195,6 @@ function CustomerDialog({
 
 export default function CustomersPage() {
   const { data: customers, isLoading, refetch } = useApi<Customer[]>("/customers")
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/customers/${id}`),
@@ -221,71 +209,52 @@ export default function CustomersPage() {
     }
   )
 
-  const bulkDeleteMutation = useMutation(
-    async (ids: string[]) => {
-      for (const id of ids) {
-        await api.delete(`/customers/${id}`)
-      }
-    },
+  const columns: VirtualGridColumn<Customer>[] = [
     {
-      onSuccess: () => {
-        toast.success(`${selectedIds.length} customer(s) deleted successfully`)
-        setSelectedIds([])
-        setShowDeleteDialog(false)
-        refetch()
-      },
-      onError: (error) => {
-        toast.error(error.message || "Failed to delete customers")
-        setShowDeleteDialog(false)
-        refetch()
-      },
-    }
-  )
-
-  const handleBulkDelete = () => {
-    if (selectedIds.length === 0) return
-    setShowDeleteDialog(true)
-  }
-
-  const confirmBulkDelete = () => {
-    bulkDeleteMutation.mutate(selectedIds)
-  }
-
-  const columns: Column<Customer>[] = [
-    {
-      key: "code",
+      id: "code",
       header: "Code",
-      defaultWidth: 100,
-      cell: (customer) => <span className="font-medium">{customer.code}</span>,
+      size: 100,
+      sortable: true,
+      filterable: true,
+      accessorFn: (c) => c.code,
+      filterAccessor: (c) => c.code,
+      cell: (c) => <span className="font-medium">{c.code}</span>,
     },
     {
-      key: "name",
+      id: "name",
       header: "Name",
-      defaultWidth: 200,
-      cell: (customer) => customer.name,
+      size: 220,
+      sortable: true,
+      accessorFn: (c) => c.name,
+      cell: (c) => c.name,
     },
     {
-      key: "email",
+      id: "email",
       header: "Email",
-      defaultWidth: 200,
-      cell: (customer) => customer.email || "-",
+      size: 220,
+      sortable: true,
+      accessorFn: (c) => c.email || "",
+      cell: (c) => c.email || "-",
     },
     {
-      key: "phone",
+      id: "phone",
       header: "Phone",
-      defaultWidth: 150,
-      cell: (customer) => customer.phone || "-",
+      size: 160,
+      sortable: true,
+      accessorFn: (c) => c.phone || "",
+      cell: (c) => c.phone || "-",
     },
     {
-      key: "actions",
+      id: "actions",
       header: "",
-      defaultWidth: 100,
-      resizable: false,
-      className: "w-[100px]",
-      cell: (customer) => (
+      size: 100,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
+      cell: (c) => (
         <div className="flex items-center gap-1">
           <CustomerDialog
-            customer={customer}
+            customer={c}
             onSuccess={refetch}
             trigger={
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -300,7 +269,7 @@ export default function CustomersPage() {
             onClick={(e) => {
               e.stopPropagation()
               if (confirm("Are you sure you want to delete this customer?")) {
-                deleteMutation.mutate(customer.id)
+                deleteMutation.mutate(c.id)
               }
             }}
           >
@@ -331,63 +300,18 @@ export default function CustomersPage() {
         />
       </div>
 
-      {selectedIds.length > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
-          <span className="text-sm font-medium">
-            {selectedIds.length} selected
-          </span>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleBulkDelete}
-            disabled={bulkDeleteMutation.isLoading}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete Selected"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelectedIds([])}
-          >
-            <X className="h-4 w-4 mr-2" />
-            Clear Selection
-          </Button>
-        </div>
-      )}
-
-      <DataTable
+      <VirtualGrid
         data={customers}
         columns={columns}
         isLoading={isLoading}
-        searchKey="name"
-        searchPlaceholder="Search by name..."
-        emptyMessage="No customers found. Add your first customer to get started."
-        selectable
-        selectedIds={selectedIds}
-        onSelectionChange={setSelectedIds}
-        storageKey="customers"
+        searchPlaceholder="Search by code, name, email, or phone..."
+        searchFn={(c, q) =>
+          c.code.toLowerCase().includes(q) ||
+          c.name.toLowerCase().includes(q) ||
+          (c.email?.toLowerCase().includes(q) ?? false) ||
+          (c.phone?.toLowerCase().includes(q) ?? false)
+        }
       />
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedIds.length} customer(s)?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. The selected customers will be permanently deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmBulkDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

@@ -3,7 +3,7 @@
 import { useApi, useMutation } from "@/hooks/use-api"
 import { toast } from "sonner"
 import { api, type Order, type MrpShortage, type MrpShortagesResponse, type MaterialStatus } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -118,28 +118,9 @@ export default function OrdersPage() {
     }
   )
 
-  const bulkDeleteMutation = useMutation<{ deleted: number }, string[]>(
-    (ids) => api.post("/orders/bulk-delete", { ids }),
-    {
-      onSuccess: (data) => {
-        toast.success(`${data.deleted} order(s) deleted successfully`)
-        refetch()
-      },
-      onError: (error) => {
-        toast.error(error.message || "Failed to delete orders")
-      },
-    }
-  )
-
   const handleDelete = (id: string, orderNumber: string) => {
     if (confirm(`Are you sure you want to delete order ${orderNumber}?`)) {
       deleteMutation.mutate(id)
-    }
-  }
-
-  const handleBulkDelete = (ids: string[]) => {
-    if (confirm(`Are you sure you want to delete ${ids.length} order(s)?`)) {
-      bulkDeleteMutation.mutate(ids)
     }
   }
 
@@ -150,78 +131,73 @@ export default function OrdersPage() {
     return orders.filter((order) => order.status === statusFilter)
   }, [orders, statusFilter])
 
-  const columns: Column<Order>[] = [
+  const columns: VirtualGridColumn<Order>[] = [
     {
-      key: "order_number",
+      id: "order_number",
       header: "Order #",
-      defaultWidth: 180,
+      size: 180,
       sortable: true,
       filterable: true,
-      sortAccessor: (order) => order.order_number,
+      accessorFn: (order) => order.order_number,
       filterAccessor: (order) => order.order_number,
-      cell: (order) => (
-        <span className="font-medium">{order.order_number}</span>
-      ),
+      cell: (order) => <span className="font-medium">{order.order_number}</span>,
     },
     {
-      key: "po_number",
+      id: "po_number",
       header: "Customer PO #",
-      defaultWidth: 140,
+      size: 140,
       sortable: true,
       filterable: true,
-      sortAccessor: (order) => order.po_number ?? "",
-      filterAccessor: (order) => order.po_number ?? "",
-      cell: (order) => (
-        <span className="text-sm">{order.po_number || "\u2014"}</span>
-      ),
+      accessorFn: (order) => order.po_number ?? "",
+      filterAccessor: (order) => order.po_number || "-",
+      cell: (order) => <span className="text-sm">{order.po_number || "\u2014"}</span>,
     },
     {
-      key: "wo_number",
+      id: "wo_number",
       header: "WO #",
-      defaultWidth: 120,
+      size: 120,
       sortable: true,
       filterable: true,
-      sortAccessor: (order) => order.wo_number ?? "",
-      filterAccessor: (order) => order.wo_number ?? "",
-      cell: (order) => (
-        <span className="text-sm">{order.wo_number || "\u2014"}</span>
-      ),
+      accessorFn: (order) => order.wo_number ?? "",
+      filterAccessor: (order) => order.wo_number || "-",
+      cell: (order) => <span className="text-sm">{order.wo_number || "\u2014"}</span>,
     },
     {
-      key: "customer",
+      id: "customer",
       header: "Customer",
-      defaultWidth: 150,
+      size: 150,
       sortable: true,
       filterable: true,
-      sortAccessor: (order) => order.customer?.name ?? "",
-      filterAccessor: (order) => order.customer?.name ?? "",
+      accessorFn: (order) => order.customer?.name ?? "",
+      filterAccessor: (order) => order.customer?.name || "Unknown",
       cell: (order) => order.customer?.name || "Unknown",
     },
     {
-      key: "product",
+      id: "product",
       header: "Product",
-      defaultWidth: 180,
+      size: 180,
       sortable: true,
       filterable: true,
-      sortAccessor: (order) => order.product?.name ?? order.product?.part_number ?? "",
-      filterAccessor: (order) => order.product?.name ?? order.product?.part_number ?? "",
+      accessorFn: (order) => order.product?.name ?? order.product?.part_number ?? "",
+      filterAccessor: (order) => order.product?.name ?? order.product?.part_number ?? "Unknown",
       cell: (order) => order.product?.name || order.product?.part_number || "Unknown",
     },
     {
-      key: "quantity",
+      id: "quantity",
       header: "Qty",
-      defaultWidth: 80,
+      size: 80,
+      align: "right",
       sortable: true,
-      sortAccessor: (order) => order.quantity,
+      accessorFn: (order) => order.quantity,
       cell: (order) => order.quantity.toLocaleString(),
     },
     {
-      key: "status",
+      id: "status",
       header: "Order Status",
-      defaultWidth: 130,
+      size: 130,
       sortable: true,
       filterable: true,
-      sortAccessor: (order) => order.status,
+      accessorFn: (order) => order.status,
       filterAccessor: (order) => order.status.replace("_", " "),
       cell: (order) => (
         <Badge variant="outline" className={orderStatusColors[order.status]}>
@@ -230,9 +206,10 @@ export default function OrdersPage() {
       ),
     },
     {
-      key: "material_status",
+      id: "material_status",
       header: "Material Status",
-      defaultWidth: 140,
+      size: 140,
+      accessorFn: (order) => order.status,
       cell: (order) => {
         if (["CANCELLED", "SHIPPED"].includes(order.status)) {
           return <span className="text-muted-foreground text-sm">-</span>
@@ -242,12 +219,12 @@ export default function OrdersPage() {
       },
     },
     {
-      key: "due_date",
+      id: "due_date",
       header: "Due Date",
-      defaultWidth: 130,
+      size: 130,
       sortable: true,
       filterable: true,
-      sortAccessor: (order) => new Date(order.due_date).getTime(),
+      accessorFn: (order) => new Date(order.due_date).getTime(),
       filterAccessor: (order) => new Date(order.due_date).toLocaleDateString(),
       cell: (order) => {
         const date = new Date(order.due_date)
@@ -261,12 +238,12 @@ export default function OrdersPage() {
       },
     },
     {
-      key: "order_type",
+      id: "order_type",
       header: "Type",
-      defaultWidth: 100,
+      size: 100,
       sortable: true,
       filterable: true,
-      sortAccessor: (order) => order.order_type,
+      accessorFn: (order) => order.order_type,
       filterAccessor: (order) => order.order_type,
       cell: (order) => (
         <Badge variant="secondary" className="text-xs">
@@ -275,11 +252,12 @@ export default function OrdersPage() {
       ),
     },
     {
-      key: "actions",
+      id: "actions",
       header: "",
-      defaultWidth: 100,
-      resizable: false,
-      className: "w-[100px]",
+      size: 100,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
       cell: (order) => (
         <div className="flex items-center gap-1">
           <Button
@@ -389,17 +367,19 @@ export default function OrdersPage() {
         })}
       </div>
 
-      <DataTable
+      <VirtualGrid
         data={filteredOrders}
         columns={columns}
         isLoading={isLoading}
-        searchKey="order_number"
-        searchPlaceholder="Search by order number..."
-        emptyMessage="No orders found"
-        onRowClick={(order) => router.push(`/orders/${order.id}`)}
-        enableSelection
-        onBulkDelete={handleBulkDelete}
-        storageKey="orders"
+        searchPlaceholder="Search by order #, PO, WO, customer, or product..."
+        searchFn={(order, q) =>
+          order.order_number.toLowerCase().includes(q) ||
+          (order.po_number ?? "").toLowerCase().includes(q) ||
+          (order.wo_number ?? "").toLowerCase().includes(q) ||
+          (order.customer?.name ?? "").toLowerCase().includes(q) ||
+          (order.product?.name ?? "").toLowerCase().includes(q) ||
+          (order.product?.part_number ?? "").toLowerCase().includes(q)
+        }
       />
     </div>
   )

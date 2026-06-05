@@ -2,7 +2,7 @@
 
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type Product, type Customer } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -24,21 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Pencil, Trash2, FileText, Eye, X, Search, Filter } from "lucide-react"
+import { Plus, Pencil, Trash2, FileText, Eye, X, Filter } from "lucide-react"
 import { useState, useMemo, useEffect } from "react"
 import { toast } from "sonner"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 
 interface ProductFormData {
   customer_id: string
@@ -212,43 +201,18 @@ export default function ProductsPage() {
   const router = useRouter()
   const { data: products, isLoading, refetch } = useApi<Product[]>("/products")
   const { data: customers } = useApi<Customer[]>("/customers")
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
-  // Search and filter state
-  const [search, setSearch] = useState("")
   const [customerFilter, setCustomerFilter] = useState<string>("all")
   const [showFilters, setShowFilters] = useState(false)
 
-  // Filter products based on search and filters
   const filteredProducts = useMemo(() => {
     if (!products) return null
-
-    return products.filter((product) => {
-      // Search across part number, name, and description
-      if (search) {
-        const searchLower = search.toLowerCase()
-        const matchesSearch =
-          product.part_number.toLowerCase().includes(searchLower) ||
-          product.name.toLowerCase().includes(searchLower) ||
-          (product.description?.toLowerCase().includes(searchLower) ?? false)
-        if (!matchesSearch) return false
-      }
-
-      // Filter by customer
-      if (customerFilter !== "all" && product.customer_id !== customerFilter) {
-        return false
-      }
-
-      return true
-    })
-  }, [products, search, customerFilter])
+    if (customerFilter === "all") return products
+    return products.filter((p) => p.customer_id === customerFilter)
+  }, [products, customerFilter])
 
   const hasActiveFilters = customerFilter !== "all"
-
-  const clearFilters = () => {
-    setCustomerFilter("all")
-  }
+  const clearFilters = () => setCustomerFilter("all")
 
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/products/${id}`),
@@ -263,59 +227,39 @@ export default function ProductsPage() {
     }
   )
 
-  const bulkDeleteMutation = useMutation(
-    async (ids: string[]) => {
-      for (const id of ids) {
-        await api.delete(`/products/${id}`)
-      }
-    },
+  const columns: VirtualGridColumn<Product>[] = [
     {
-      onSuccess: () => {
-        toast.success(`${selectedIds.length} product(s) deleted successfully`)
-        setSelectedIds([])
-        setShowDeleteDialog(false)
-        refetch()
-      },
-      onError: (error) => {
-        toast.error(error.message || "Failed to delete products")
-        setShowDeleteDialog(false)
-        refetch()
-      },
-    }
-  )
-
-  const handleBulkDelete = () => {
-    if (selectedIds.length === 0) return
-    setShowDeleteDialog(true)
-  }
-
-  const confirmBulkDelete = () => {
-    bulkDeleteMutation.mutate(selectedIds)
-  }
-
-  const columns: Column<Product>[] = [
-    {
-      key: "customer",
+      id: "customer",
       header: "Customer",
-      defaultWidth: 150,
+      size: 150,
+      sortable: true,
+      filterable: true,
+      accessorFn: (product) => product.customer?.name || "",
+      filterAccessor: (product) => product.customer?.name || "-",
       cell: (product) => product.customer?.name || "-",
     },
     {
-      key: "part_number",
+      id: "part_number",
       header: "Part Number",
-      defaultWidth: 150,
+      size: 150,
+      sortable: true,
+      accessorFn: (product) => product.part_number,
       cell: (product) => <span className="font-medium">{product.part_number}</span>,
     },
     {
-      key: "name",
+      id: "name",
       header: "Name",
-      defaultWidth: 180,
+      size: 180,
+      sortable: true,
+      accessorFn: (product) => product.name,
       cell: (product) => product.name,
     },
     {
-      key: "description",
+      id: "description",
       header: "Description",
-      defaultWidth: 250,
+      size: 250,
+      sortable: true,
+      accessorFn: (product) => product.description || "",
       cell: (product) => (
         <span className="truncate block" title={product.description || ""}>
           {product.description || "-"}
@@ -323,9 +267,13 @@ export default function ProductsPage() {
       ),
     },
     {
-      key: "bom",
+      id: "bom",
       header: "BOM",
-      defaultWidth: 100,
+      size: 100,
+      sortable: true,
+      filterable: true,
+      accessorFn: (product) => (product.active_bom_revision_id ? "Active" : "No BOM"),
+      filterAccessor: (product) => (product.active_bom_revision_id ? "Active" : "No BOM"),
       cell: (product) =>
         product.active_bom_revision_id ? (
           <Badge variant="secondary" className="gap-1">
@@ -337,11 +285,12 @@ export default function ProductsPage() {
         ),
     },
     {
-      key: "actions",
+      id: "actions",
       header: "",
-      defaultWidth: 130,
-      resizable: false,
-      className: "w-[130px]",
+      size: 130,
+      sortable: false,
+      filterable: false,
+      accessorFn: () => "",
       cell: (product) => (
         <div className="flex items-center gap-1">
           <Button
@@ -410,21 +359,8 @@ export default function ProductsPage() {
         />
       </div>
 
-      {/* Search and Filters */}
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          {/* Search box */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by part number, name, or description..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-
-          {/* Filter toggle button */}
           <Button
             variant={showFilters || hasActiveFilters ? "secondary" : "outline"}
             size="sm"
@@ -439,23 +375,14 @@ export default function ProductsPage() {
             )}
           </Button>
 
-          {/* Clear filters */}
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" onClick={clearFilters}>
               <X className="h-4 w-4 mr-1" />
               Clear filters
             </Button>
           )}
-
-          {/* Results count */}
-          {(search || hasActiveFilters) && filteredProducts && (
-            <span className="text-sm text-muted-foreground">
-              {filteredProducts.length} result{filteredProducts.length !== 1 ? "s" : ""}
-            </span>
-          )}
         </div>
 
-        {/* Filter panel */}
         {showFilters && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg border">
             <div className="space-y-2">
@@ -478,62 +405,18 @@ export default function ProductsPage() {
         )}
       </div>
 
-      {selectedIds.length > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
-          <span className="text-sm font-medium">
-            {selectedIds.length} selected
-          </span>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleBulkDelete}
-            disabled={bulkDeleteMutation.isLoading}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete Selected"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelectedIds([])}
-          >
-            <X className="h-4 w-4 mr-2" />
-            Clear Selection
-          </Button>
-        </div>
-      )}
-
-      <DataTable
+      <VirtualGrid
         data={filteredProducts}
         columns={columns}
         isLoading={isLoading}
-        emptyMessage="No products found. Add your first product to get started."
-        onRowClick={(product) => router.push(`/products/${product.id}`)}
-        selectable
-        selectedIds={selectedIds}
-        onSelectionChange={setSelectedIds}
-        storageKey="products"
+        searchPlaceholder="Search by part number, name, or description..."
+        searchFn={(product, q) =>
+          product.part_number.toLowerCase().includes(q) ||
+          product.name.toLowerCase().includes(q) ||
+          (product.description?.toLowerCase().includes(q) ?? false) ||
+          (product.customer?.name?.toLowerCase().includes(q) ?? false)
+        }
       />
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedIds.length} product(s)?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. The selected products will be permanently deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmBulkDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {bulkDeleteMutation.isLoading ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
