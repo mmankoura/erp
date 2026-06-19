@@ -355,3 +355,23 @@ PM2 boot persistence was attempted via three approaches, all failed:
   - The `.next` folder must be fully intact — partial copies cause runtime crashes. Always verify `static\` and `server\` directories exist after copy.
   - Moving directly from `C:\erp-deploy\releases\` to `C:\apps\erp\current` (skipping the staging→app robocopy) saves significant time.
 **VMware snapshot**: Remember to delete `Pre-ERP-Deploy-2026-03-30` within 72 hours of confirming stability
+
+---
+
+## REV-006 Deployment — June 5, 2026
+
+- **Changes**: BIN stock locations on inventory_lots (inline-editable + import wizard mapping), per-PO Excel + per-consumable-PO Excel/PDF exports, VirtualGrid migration across all major tables (AML / Customers / Suppliers / Materials / Products / Product BOM / Orders / Production WIP / Consumable Orders / Purchase Orders / PO History), VirtualGrid sticky-header + single-scrollbar fix, manual PO# entry with duplicate validation, PO delete from any status, "Generate PDF by PO#" lookup, body-parser limit raised to 50 MB for inventory imports, `material.customer` joined on PO list query, Import Inventory button restored. See `CHANGELOG.md` REV-006 for the full table.
+- **Migration**: Yes — 2 migrations applied.
+  - `AddCustomerIdToProducts1768400000000` — already in prod's `migrations` table from an earlier manual application; TypeORM skipped it as expected.
+  - `AddBinToInventoryLots1768900000000` — ran; added `inventory_lots.bin varchar(50) NULL` + `IDX_inventory_lots_bin`.
+- **Backup**: `C:\erp-backups\pre-rev006.dump`
+- **Issues during deploy**:
+  - **Migration failed with `Cannot find module 'dotenv/config'`** when run from `C:\erp-deploy\releases\2026-06-05_001\backend\`. Cause: `deploy.bat`'s smart-skip optimization did not copy backend `node_modules` (lockfile unchanged), so the staging release had no module tree for `data-source.js` to resolve `dotenv` against. The documented step 3 in `UPGRADE_PROCEDURE.md` assumes `node_modules` is in the release folder and doesn't cover the smart-skip case. **Workaround**: created a temp junction `mklink /J <staging>\backend\node_modules C:\apps\erp\current\backend\node_modules`, re-ran migration successfully, then `rmdir` the junction before the switch.
+  - **`switch-release.bat` step `[2/6] Rotating releases...` printed `Access is denied.`** but the script continued. Step `[3/6]` succeeded with `1 dir(s) moved.` and step `[4/6]` reported the node_modules junctions "already existed" so they were skipped. After completion, `C:\apps\erp\previous\` did not exist — REV-005's deploy had been consumed by the failed rotate. The junction `current\backend\node_modules → previous\backend\node_modules` pointed to nothing, so the backend service crashed with `Cannot find module 'dotenv/config'`. Frontend was unaffected. **Recovery**: `rmdir` the broken junction, then `npm ci --omit=dev` in `C:\apps\erp\current\backend\` (registry.npmjs.org reachable from the server; installed 286 packages in ~4 min from the committed `package-lock.json`). Backend started cleanly and stayed up.
+  - Root cause of the "Access is denied" not identified — likely a file lock held briefly after `net stop`. The deeper problem is that `switch-release.bat` does not check ERRORLEVEL between rotate commands and proceeds even when the rotate fails silently.
+- **Result**: REV-006 live on production. Backend healthy, frontend healthy, migration applied. **Rollback safety degraded**: there is no `previous\` directory, so the standard `rename current broken & rename previous current` rollback is not available — if REV-006 turns out broken, recovery requires either restoring `pre-rev006.dump` or rebuilding REV-005 from git tag `3380f06` and redeploying (~15 min).
+- **Lessons** (added to memory as `deployment_known_issues.md`):
+  - `deploy.bat`'s smart-skip + `UPGRADE_PROCEDURE.md`'s migrate-before-switch step are incompatible without a temp junction. Until the scripts are reconciled, perform the junction dance for any side that was SKIPPED.
+  - `switch-release.bat` step 2 must be watched for "Access is denied". If it appears, do NOT let the script proceed — Ctrl-C and investigate the file lock. Until the script is patched to `exit /b 1` on rotate failure, treat the rotate as a "verify after" operation.
+  - Take a manual `robocopy C:\apps\erp\current C:\apps\erp\manual-snapshot-<REV>` before every deploy as a safety net against destructive rotates.
+  - `npm ci --omit=dev` in `current\backend\` is a reliable recovery for MODULE_NOT_FOUND crashes when registry.npmjs.org is reachable.

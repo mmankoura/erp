@@ -804,6 +804,49 @@ export class PurchaseOrdersService {
     return String(next);
   }
 
+  async getPurchaseHistoryForMaterial(materialId: string) {
+    const pos = await this.poRepository
+      .createQueryBuilder('po')
+      .innerJoinAndSelect('po.lines', 'line', 'line.material_id = :materialId', { materialId })
+      .innerJoinAndSelect('po.supplier', 'supplier')
+      .where('po.deleted_at IS NULL')
+      .orderBy('po.order_date', 'DESC')
+      .addOrderBy('po.po_number', 'DESC')
+      .getMany();
+
+    const result: Array<{
+      po_id: string;
+      po_number: string;
+      order_date: Date;
+      status: PurchaseOrderStatus;
+      supplier_name: string;
+      manufacturer: string | null;
+      manufacturer_pn: string | null;
+      quantity_ordered: number;
+      quantity_received: number;
+      unit_cost: number | null;
+      currency: string;
+    }> = [];
+    for (const po of pos) {
+      for (const line of po.lines) {
+        result.push({
+          po_id: po.id,
+          po_number: po.po_number,
+          order_date: po.order_date,
+          status: po.status,
+          supplier_name: po.supplier?.name ?? '',
+          manufacturer: line.manufacturer,
+          manufacturer_pn: line.manufacturer_pn,
+          quantity_ordered: line.quantity_ordered,
+          quantity_received: line.quantity_received,
+          unit_cost: line.unit_cost,
+          currency: po.currency,
+        });
+      }
+    }
+    return result;
+  }
+
   async getOpenPOsForMaterial(materialId: string): Promise<PurchaseOrder[]> {
     return this.poRepository
       .createQueryBuilder('po')

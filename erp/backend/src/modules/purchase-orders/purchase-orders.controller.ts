@@ -187,4 +187,11 @@ export class PurchaseOrdersController {
   ) {
     return this.poService.getOpenPOsForMaterial(materialId);
   }
+
+  @Get('material/:materialId/history')
+  async getPurchaseHistoryForMaterial(
+    @Param('materialId', ParseUUIDPipe) materialId: string,
+  ) {
+    return this.poService.getPurchaseHistoryForMaterial(materialId);
+  }
 }

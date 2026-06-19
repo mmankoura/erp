@@ -68,6 +68,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react"
 import { useState, useEffect, useMemo, useRef } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 
 // Calculate date + N business days (skips weekends)
@@ -650,12 +651,22 @@ function PurchaseOrderDetailDialog({
   purchaseOrder,
   onSuccess,
   trigger,
+  open: openProp,
+  onOpenChange,
 }: {
   purchaseOrder: PurchaseOrder
   onSuccess: () => void
-  trigger: React.ReactNode
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isControlled = openProp !== undefined
+  const open = isControlled ? openProp : internalOpen
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setInternalOpen(next)
+    onOpenChange?.(next)
+  }
   const { data: poDetail, refetch } = useApi<PurchaseOrder>(
     `/purchase-orders/${purchaseOrder.id}`,
     { enabled: open }
@@ -805,7 +816,7 @@ function PurchaseOrderDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between">
@@ -1221,12 +1232,28 @@ function GeneratePoPdfDialog() {
 }
 
 export default function PurchaseOrdersPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const focusId = searchParams.get("focus")
+
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
   const endpoint =
     statusFilter === "all" ? "/purchase-orders" : `/purchase-orders?status=${statusFilter}`
 
   const { data: purchaseOrders, isLoading, refetch } = useApi<PurchaseOrder[]>(endpoint)
+
+  const focusedPo = useMemo(
+    () => (focusId && purchaseOrders ? purchaseOrders.find((p) => p.id === focusId) ?? null : null),
+    [focusId, purchaseOrders],
+  )
+
+  const clearFocus = () => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("focus")
+    const qs = params.toString()
+    router.replace(qs ? `/purchase-orders?${qs}` : "/purchase-orders", { scroll: false })
+  }
 
   const deleteMutation = useMutation((id: string) => api.delete(`/purchase-orders/${id}`), {
     onSuccess: () => {
@@ -1577,6 +1604,17 @@ export default function PurchaseOrdersPage() {
           <PoHistoryTab />
         </TabsContent>
       </Tabs>
+
+      {/* Focus-driven detail dialog (opened via /purchase-orders?focus=<id>) */}
+      {focusedPo && (
+        <PurchaseOrderDetailDialog
+          key={focusedPo.id}
+          purchaseOrder={focusedPo}
+          onSuccess={refetch}
+          open={true}
+          onOpenChange={(next) => { if (!next) clearFocus() }}
+        />
+      )}
     </div>
   )
 }

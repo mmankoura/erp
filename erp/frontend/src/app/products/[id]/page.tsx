@@ -105,6 +105,7 @@ export default function ProductDetailPage() {
   const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null)
   const [showNewRevisionDialog, setShowNewRevisionDialog] = useState(false)
   const [showAddItemDialog, setShowAddItemDialog] = useState(false)
+  const [editMode, setEditMode] = useState(false)
   const [showImportWizard, setShowImportWizard] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [editingItem, setEditingItem] = useState<BomItem | null>(null)
@@ -262,7 +263,7 @@ export default function ProductDetailPage() {
         header: "Internal P/N",
         size: 140,
         accessorFn: (item) => item.material?.internal_part_number || "",
-        cell: (item) => <span className="font-medium">{item.material?.internal_part_number || "-"}</span>,
+        cell: (item) => <span className="font-medium whitespace-normal break-words">{item.material?.internal_part_number || "-"}</span>,
       },
       {
         id: "alternate_ipn",
@@ -293,14 +294,14 @@ export default function ProductDetailPage() {
         size: 140,
         accessorFn: (item) => item.material?.manufacturer || "",
         filterAccessor: (item) => item.material?.manufacturer || "-",
-        cell: (item) => <span className="text-sm">{item.material?.manufacturer || "-"}</span>,
+        cell: (item) => <span className="text-sm whitespace-normal break-words">{item.material?.manufacturer || "-"}</span>,
       },
       {
         id: "manufacturer_pn",
         header: "Manufacturer P/N",
         size: 150,
         accessorFn: (item) => item.material?.manufacturer_pn || "",
-        cell: (item) => <span className="text-sm">{item.material?.manufacturer_pn || "-"}</span>,
+        cell: (item) => <span className="text-sm whitespace-normal break-words">{item.material?.manufacturer_pn || "-"}</span>,
       },
       {
         id: "quantity_required",
@@ -334,7 +335,7 @@ export default function ProductDetailPage() {
         size: 220,
         accessorFn: (item) => item.reference_designators || "",
         cell: (item) => (
-          <span className="text-sm font-mono whitespace-normal break-all" title={item.reference_designators || ""}>
+          <span className="text-sm font-mono whitespace-normal break-words" title={item.reference_designators || ""}>
             {item.reference_designators || "-"}
           </span>
         ),
@@ -344,11 +345,11 @@ export default function ProductDetailPage() {
         header: "Notes",
         size: 160,
         accessorFn: (item) => item.notes || "",
-        cell: (item) => <span className="text-sm">{item.notes || "-"}</span>,
+        cell: (item) => <span className="text-sm whitespace-normal break-words">{item.notes || "-"}</span>,
       },
     ]
 
-    if (canEditBom) {
+    if (canEditBom && editMode) {
       cols.push({
         id: "actions",
         header: "",
@@ -397,7 +398,7 @@ export default function ProductDetailPage() {
     }
 
     return cols
-  }, [canEditBom, deleteItemMutation])
+  }, [canEditBom, editMode, deleteItemMutation])
 
   if (loadingProduct) {
     return (
@@ -736,17 +737,32 @@ export default function ProductDetailPage() {
                 {selectedRevision.items?.length || 0} items in this revision
               </CardDescription>
             </div>
-            <AddItemDialog
-              revisionId={selectedRevision.id}
-              materials={materials || []}
-              existingMaterialIds={selectedRevision.items?.map(i => i.material_id) || []}
-              open={showAddItemDialog}
-              onOpenChange={setShowAddItemDialog}
-              onSuccess={() => {
-                refetchSelectedRevision()
-                setShowAddItemDialog(false)
-              }}
-            />
+            <div className="flex items-center gap-2">
+              {canEditBom && !editMode && (
+                <Button variant="outline" onClick={() => setEditMode(true)}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit BOM
+                </Button>
+              )}
+              {canEditBom && editMode && (
+                <>
+                  <AddItemDialog
+                    revisionId={selectedRevision.id}
+                    materials={materials || []}
+                    existingMaterialIds={selectedRevision.items?.map(i => i.material_id) || []}
+                    open={showAddItemDialog}
+                    onOpenChange={setShowAddItemDialog}
+                    onSuccess={() => {
+                      refetchSelectedRevision()
+                      setShowAddItemDialog(false)
+                    }}
+                  />
+                  <Button variant="outline" onClick={() => setEditMode(false)}>
+                    Done
+                  </Button>
+                </>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <VirtualGrid
@@ -771,6 +787,8 @@ export default function ProductDetailPage() {
       {/* Edit BOM Item Dialog */}
       <EditItemDialog
         item={editingItem}
+        materials={materials || []}
+        existingMaterialIds={selectedRevision?.items?.filter((i) => i.id !== editingItem?.id).map((i) => i.material_id) || []}
         open={!!editingItem}
         onOpenChange={(open) => { if (!open) setEditingItem(null) }}
         onSuccess={() => {
@@ -1177,16 +1195,21 @@ function AddItemDialog({
 // Edit BOM Item Dialog Component
 function EditItemDialog({
   item,
+  materials,
+  existingMaterialIds,
   open,
   onOpenChange,
   onSuccess,
 }: {
   item: BomItem | null
+  materials: Material[]
+  existingMaterialIds: string[]
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
 }) {
   const [formData, setFormData] = useState({
+    material_id: "",
     quantity_required: 1,
     alternate_ipn: "",
     reference_designators: "",
@@ -1208,6 +1231,7 @@ function EditItemDialog({
   useEffect(() => {
     if (item) {
       setFormData({
+        material_id: item.material_id,
         quantity_required: item.quantity_required,
         alternate_ipn: item.alternate_ipn || "",
         reference_designators: item.reference_designators || "",
@@ -1258,12 +1282,18 @@ function EditItemDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     updateMutation.mutate({
+      material_id: formData.material_id,
       quantity_required: Number(formData.quantity_required),
       alternate_ipn: formData.alternate_ipn || undefined,
       reference_designators: formData.reference_designators || undefined,
       notes: formData.notes || undefined,
     })
   }
+
+  const selectableMaterials = useMemo(
+    () => materials.filter((m) => !existingMaterialIds.includes(m.id)),
+    [materials, existingMaterialIds],
+  )
 
   if (!item) return null
 
@@ -1279,10 +1309,22 @@ function EditItemDialog({
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label>Internal Part Number</Label>
-              <p className="text-sm font-medium text-muted-foreground">
-                {item.material?.internal_part_number || "-"}
-              </p>
+              <Label htmlFor="edit_material_id">Internal Part Number *</Label>
+              <Select
+                value={formData.material_id}
+                onValueChange={(value) => setFormData({ ...formData, material_id: value })}
+              >
+                <SelectTrigger id="edit_material_id">
+                  <SelectValue placeholder="Select a material" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectableMaterials.map((material) => (
+                    <SelectItem key={material.id} value={material.id}>
+                      {material.internal_part_number} - {material.description || "No description"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Alternates management */}

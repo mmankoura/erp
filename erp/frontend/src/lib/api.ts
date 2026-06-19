@@ -849,6 +849,7 @@ export interface CreateBomItemDto {
 }
 
 export interface UpdateBomItemDto {
+  material_id?: string
   quantity_required?: number
   alternate_ipn?: string
   reference_designators?: string

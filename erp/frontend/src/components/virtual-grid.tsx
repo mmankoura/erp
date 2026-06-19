@@ -216,6 +216,11 @@ export function VirtualGrid<T>({
     getScrollElement: () => parentRef.current,
     estimateSize: () => rowHeight,
     overscan: 15,
+    // Key heights by the row's stable id, not by its current index. Without
+    // this, sorting reuses the slot's cached height for whatever row now
+    // occupies that slot, causing taller rows to overflow into their
+    // neighbours.
+    getItemKey: (index) => rows[index]?.id ?? index,
     // Dynamic row heights: measure each rendered row so cells with wrapping
     // content (e.g. multi-line ref designators) aren't clipped.
     measureElement:
@@ -367,7 +372,7 @@ export function VirtualGrid<T>({
                       <div
                         key={cell.id}
                         className={cn(
-                          "px-3 py-2 shrink-0 self-center",
+                          "px-3 py-2 shrink-0 self-center overflow-hidden",
                           colDef?.align === "right" && "text-right"
                         )}
                         style={{ width: cell.column.getSize(), minWidth: cell.column.getSize() }}

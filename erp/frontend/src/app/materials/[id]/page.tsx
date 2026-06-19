@@ -1,7 +1,7 @@
 "use client"
 
 import { useApi } from "@/hooks/use-api"
-import { api, type Material, type WhereUsedResponse, type UsageSummary } from "@/lib/api"
+import { api, type Material, type WhereUsedResponse, type UsageSummary, type ApprovedManufacturer } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -51,6 +51,22 @@ export default function MaterialDetailPage() {
   const { data: summary, isLoading: summaryLoading } = useApi<UsageSummary>(
     `/materials/${materialId}/usage-summary`
   )
+  const { data: amlEntries, isLoading: amlLoading } = useApi<ApprovedManufacturer[]>(
+    `/aml/material/${materialId}`
+  )
+  const { data: purchaseHistory, isLoading: historyLoading } = useApi<Array<{
+    po_id: string
+    po_number: string
+    order_date: string
+    status: string
+    supplier_name: string
+    manufacturer: string | null
+    manufacturer_pn: string | null
+    quantity_ordered: number
+    quantity_received: number
+    unit_cost: number | null
+    currency: string
+  }>>(`/purchase-orders/material/${materialId}/history`)
 
   if (materialLoading) {
     return (
@@ -160,6 +176,12 @@ export default function MaterialDetailPage() {
       <Tabs defaultValue="where-used" className="space-y-4">
         <TabsList>
           <TabsTrigger value="where-used">Where Used</TabsTrigger>
+          <TabsTrigger value="aml">
+            Approved MFGs {amlEntries && `(${amlEntries.length})`}
+          </TabsTrigger>
+          <TabsTrigger value="purchase-history">
+            Purchase History {purchaseHistory && `(${purchaseHistory.length})`}
+          </TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
         </TabsList>
 
@@ -295,6 +317,135 @@ export default function MaterialDetailPage() {
                 <p className="text-muted-foreground text-center py-8">
                   No open orders require this material
                 </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Approved MFGs Tab */}
+        <TabsContent value="aml">
+          <Card>
+            <CardHeader>
+              <CardTitle>Approved Manufacturers</CardTitle>
+              <CardDescription>
+                All AML entries for this internal part number, including the catalog primary.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {amlLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : amlEntries && amlEntries.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Manufacturer</TableHead>
+                      <TableHead>MPN</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Approved By</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {amlEntries.map((e) => (
+                      <TableRow key={e.id}>
+                        <TableCell className="font-medium">{e.manufacturer}</TableCell>
+                        <TableCell className="font-mono text-sm">{e.manufacturer_part_number}</TableCell>
+                        <TableCell>{e.customer?.name || "Global"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">{e.source}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={
+                              e.status === "APPROVED"
+                                ? "bg-green-100 text-green-800 border-green-200"
+                                : e.status === "PENDING"
+                                ? "bg-yellow-100 text-yellow-800 border-yellow-200"
+                                : e.status === "SUSPENDED"
+                                ? "bg-orange-100 text-orange-800 border-orange-200"
+                                : "bg-gray-100 text-gray-800 border-gray-200"
+                            }
+                          >
+                            {e.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">{e.approved_by || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground">No AML entries for this material.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Purchase History Tab */}
+        <TabsContent value="purchase-history">
+          <Card>
+            <CardHeader>
+              <CardTitle>Purchase History</CardTitle>
+              <CardDescription>
+                All POs that have included this material, newest first.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {historyLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : purchaseHistory && purchaseHistory.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>PO #</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Mfr / MPN</TableHead>
+                      <TableHead className="text-right">Qty Ord</TableHead>
+                      <TableHead className="text-right">Qty Rcv</TableHead>
+                      <TableHead className="text-right">Unit Cost</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {purchaseHistory.map((h) => (
+                      <TableRow key={`${h.po_id}-${h.manufacturer_pn ?? ""}-${h.quantity_ordered}`}>
+                        <TableCell className="font-mono font-medium">
+                          <Link href={`/purchase-orders?focus=${h.po_id}`} className="hover:underline">
+                            {h.po_number}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {new Date(h.order_date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>{h.supplier_name}</TableCell>
+                        <TableCell className="text-sm">
+                          {h.manufacturer && <span className="font-medium">{h.manufacturer}</span>}
+                          {h.manufacturer && h.manufacturer_pn && " / "}
+                          {h.manufacturer_pn && <span className="font-mono">{h.manufacturer_pn}</span>}
+                          {!h.manufacturer && !h.manufacturer_pn && "—"}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {Number(h.quantity_ordered).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {Number(h.quantity_received).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {h.unit_cost != null
+                            ? `${Number(h.unit_cost).toFixed(4)} ${h.currency}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">{h.status}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground">No purchasing history for this material.</p>
               )}
             </CardContent>
           </Card>
