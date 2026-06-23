@@ -11,10 +11,12 @@ import {
   PackageCheck,
   RotateCcw,
   ClipboardList,
+  ClipboardPen,
   TrendingDown,
   Truck,
   FileText,
   Users,
+  UserPlus,
   Factory,
   History,
   Settings,
@@ -57,6 +59,8 @@ const navGroups: NavGroup[] = [
     label: "Warehouse",
     items: [
       { title: "Inventory", url: "/inventory", icon: Warehouse },
+      { title: "Physical Count", url: "/physical-count", icon: ClipboardPen },
+      { title: "Assign Customers", url: "/inventory/assign-customer", icon: UserPlus },
     ],
   },
   {

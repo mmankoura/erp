@@ -281,8 +281,14 @@ export class PurchaseOrdersService {
   }
 
   async remove(id: string): Promise<void> {
+    // Load for audit metadata. softDelete (vs softRemove) is intentional —
+    // PurchaseOrderLine has no @DeleteDateColumn, so softRemove on the
+    // eager-loaded entity tries to cascade-soft-delete the lines and fails.
+    // softDelete(id) runs a direct UPDATE on the PO row by id with no
+    // cascade. Lines stay in DB; downstream queries already filter on
+    // po.deleted_at IS NULL via the FK join.
     const po = await this.findOne(id);
-    await this.poRepository.softRemove(po);
+    await this.poRepository.softDelete(id);
 
     await this.auditService.emitDelete('PO_DELETED', 'purchase_order', id, {
       po_number: po.po_number,

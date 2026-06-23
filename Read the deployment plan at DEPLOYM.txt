@@ -1,0 +1,5 @@
+ "Read the deployment plan at DEPLOYMENT_PLAN.md and the deploy scripts in the deploy/ folder. We're ready to start
+  Phase 1 on the server."
+
+Read the README at C:\Users\mark.mankoura\Documents\projects\New folder\mounting-type-lookup\README.md and pick up
+  where we left off"

@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
@@ -26,6 +27,8 @@ import {
   ReturnFloorStockDto,
 } from './dto';
 import { FilterInventoryDto } from './dto/filter-inventory.dto';
+import { UpdateLotOwnerDto } from './dto/update-lot-owner.dto';
+import { BulkAssignLotOwnerDto } from './dto/bulk-assign-lot-owner.dto';
 import { OwnerType } from '../../entities/inventory-transaction.entity';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -190,6 +193,33 @@ export class InventoryController {
     @Body() body: { bin: string | null },
   ) {
     return this.inventoryImportService.updateLotBin(id, body.bin);
+  }
+
+  /**
+   * PATCH /inventory/lots/:id/owner
+   * Assign / change customer ownership for a lot
+   */
+  @Patch('lots/:id/owner')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async updateLotOwner(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLotOwnerDto,
+    @Req() req: { user?: { username?: string } },
+  ) {
+    return this.inventoryImportService.updateLotOwner(id, dto, req.user?.username);
+  }
+
+  /**
+   * POST /inventory/lots/bulk-assign-owner
+   * Bulk-assign multiple lots to a single owner. Atomic — rolls back on any failure.
+   */
+  @Post('lots/bulk-assign-owner')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async bulkAssignLotOwner(
+    @Body() dto: BulkAssignLotOwnerDto,
+    @Req() req: { user?: { username?: string } },
+  ) {
+    return this.inventoryImportService.bulkAssignLotOwner(dto, req.user?.username);
   }
 
   /**

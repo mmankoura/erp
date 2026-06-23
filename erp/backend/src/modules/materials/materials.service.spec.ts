@@ -1,0 +1,285 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { NotFoundException, ConflictException } from '@nestjs/common';
+import { MaterialsService } from './materials.service';
+import { Material } from '../../entities/material.entity';
+import { BomItem } from '../../entities/bom-item.entity';
+import { BomRevision } from '../../entities/bom-revision.entity';
+import { Order, OrderStatus } from '../../entities/order.entity';
+import { AuditService } from '../audit/audit.service';
+import { createMockRepo, MockRepo } from '../../test-utils/repo-mock';
+
+const buildMaterial = (overrides: Partial<Material> = {}): Material =>
+  ({
+    id: 'mat-1',
+    internal_part_number: 'IPN-1',
+    description: null,
+    value: null,
+    package: null,
+    manufacturer: null,
+    manufacturer_pn: null,
+    category: null,
+    uom: 'EA',
+    resource_type: null,
+    customer_id: null,
+    customer: null,
+    costing_method: 'WEIGHTED_AVG',
+    standard_cost: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+    deleted_at: null,
+    ...overrides,
+  }) as unknown as Material;
+
+describe('MaterialsService', () => {
+  let service: MaterialsService;
+  let materialRepo: MockRepo<Material>;
+  let bomItemRepo: MockRepo<BomItem>;
+  let bomRevisionRepo: MockRepo<BomRevision>;
+  let orderRepo: MockRepo<Order>;
+
+  beforeEach(async () => {
+    materialRepo = createMockRepo<Material>();
+    bomItemRepo = createMockRepo<BomItem>();
+    bomRevisionRepo = createMockRepo<BomRevision>();
+    orderRepo = createMockRepo<Order>();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MaterialsService,
+        { provide: getRepositoryToken(Material), useValue: materialRepo },
+        { provide: getRepositoryToken(BomItem), useValue: bomItemRepo },
+        { provide: getRepositoryToken(BomRevision), useValue: bomRevisionRepo },
+        { provide: getRepositoryToken(Order), useValue: orderRepo },
+        { provide: AuditService, useValue: { emitDelete: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get(MaterialsService);
+  });
+
+  it('findAll orders by internal_part_number ASC and includes customer relation', async () => {
+    (materialRepo.find as jest.Mock).mockResolvedValue([]);
+    await service.findAll();
+    expect(materialRepo.find).toHaveBeenCalledWith({
+      relations: ['customer'],
+      order: { internal_part_number: 'ASC' },
+    });
+  });
+
+  it('findOne throws NotFound if missing', async () => {
+    (materialRepo.findOne as jest.Mock).mockResolvedValue(null);
+    await expect(service.findOne('x')).rejects.toThrow(NotFoundException);
+  });
+
+  it('findByPartNumber resolves null when missing', async () => {
+    (materialRepo.findOne as jest.Mock).mockResolvedValue(null);
+    const out = await service.findByPartNumber('NOPE');
+    expect(out).toBeNull();
+  });
+
+  describe('create', () => {
+    it('rejects on duplicate IPN', async () => {
+      (materialRepo.findOne as jest.Mock).mockResolvedValue(buildMaterial());
+      await expect(service.create({ internal_part_number: 'IPN-1' } as any))
+        .rejects.toThrow(ConflictException);
+    });
+
+    it('persists when IPN is new', async () => {
+      (materialRepo.findOne as jest.Mock).mockResolvedValue(null);
+      (materialRepo.save as jest.Mock).mockImplementation((m) => Promise.resolve({ ...m, id: 'new' }));
+      const out = await service.create({ internal_part_number: 'IPN-NEW' } as any);
+      expect(out.id).toBe('new');
+    });
+  });
+
+  describe('bulkCreate', () => {
+    it('rejects when input contains duplicate IPNs', async () => {
+      await expect(
+        service.bulkCreate({
+          materials: [
+            { internal_part_number: 'A' } as any,
+            { internal_part_number: 'A' } as any,
+          ],
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('skips already-existing IPNs into errors and saves the rest', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([
+        buildMaterial({ internal_part_number: 'A' }),
+      ]);
+      (materialRepo.save as jest.Mock).mockImplementation((m) => Promise.resolve({ ...m, id: 'gen' }));
+
+      const out = await service.bulkCreate({
+        materials: [
+          { internal_part_number: 'A' } as any,
+          { internal_part_number: 'B' } as any,
+        ],
+      });
+      expect(out.errors).toHaveLength(1);
+      expect(out.errors[0].partNumber).toBe('A');
+      expect(out.created).toHaveLength(1);
+    });
+  });
+
+  describe('update', () => {
+    it('throws Conflict when IPN changes to one that exists', async () => {
+      const existing = buildMaterial({ internal_part_number: 'OLD' });
+      (materialRepo.findOne as jest.Mock)
+        .mockResolvedValueOnce(existing) // findOne(id)
+        .mockResolvedValueOnce(buildMaterial({ id: 'other', internal_part_number: 'TAKEN' })); // findByPartNumber
+      await expect(service.update('mat-1', { internal_part_number: 'TAKEN' } as any))
+        .rejects.toThrow(ConflictException);
+    });
+
+    it('updates fields when IPN is unchanged', async () => {
+      const m = buildMaterial({ description: 'Old' });
+      (materialRepo.findOne as jest.Mock).mockResolvedValue(m);
+      (materialRepo.save as jest.Mock).mockImplementation((x) => Promise.resolve(x));
+      const out = await service.update('mat-1', { description: 'New' } as any);
+      expect(out.description).toBe('New');
+    });
+  });
+
+  describe('filterMaterials', () => {
+    it('returns findAll() when filters list is empty', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([]);
+      await service.filterMaterials({ filters: [] } as any);
+      expect(materialRepo.find).toHaveBeenCalledWith({
+        relations: ['customer'],
+        order: { internal_part_number: 'ASC' },
+      });
+    });
+
+    it('returns findAll() when no IDs accumulated', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([]);
+      // filter with empty ids list -> skipped, no sets accumulated
+      await service.filterMaterials({
+        filters: [{ type: 'product_revision', ids: [] }],
+      } as any);
+      expect(materialRepo.find).toHaveBeenCalled();
+    });
+
+    it('OR-combines product_revision and order filters', async () => {
+      (bomItemRepo.find as jest.Mock).mockResolvedValueOnce([
+        { material_id: 'm1' }, { material_id: 'm2' },
+      ]);
+      (orderRepo.find as jest.Mock).mockResolvedValue([
+        { bom_revision_id: 'r9' },
+      ]);
+      (bomItemRepo.find as jest.Mock).mockResolvedValueOnce([
+        { material_id: 'm2' }, { material_id: 'm3' },
+      ]);
+      (materialRepo.find as jest.Mock).mockResolvedValue([
+        buildMaterial({ id: 'm1' }),
+        buildMaterial({ id: 'm2' }),
+        buildMaterial({ id: 'm3' }),
+      ]);
+
+      const out = await service.filterMaterials({
+        logic: 'OR',
+        filters: [
+          { type: 'product_revision', ids: ['r1'] },
+          { type: 'order', ids: ['o1'] },
+        ],
+      } as any);
+      // The final query should include m1, m2, m3 in the In() set
+      const finalCall = (materialRepo.find as jest.Mock).mock.calls.at(-1)![0];
+      const idSet: any = finalCall.where.id;
+      // TypeORM In() returns an object — its .value property holds the array
+      const ids = idSet.value ?? idSet._value ?? [];
+      expect([...ids].sort()).toEqual(['m1', 'm2', 'm3']);
+      expect(out).toHaveLength(3);
+    });
+
+    it('AND-combines filters by intersecting the ID sets', async () => {
+      (bomItemRepo.find as jest.Mock)
+        .mockResolvedValueOnce([{ material_id: 'm1' }, { material_id: 'm2' }])
+        .mockResolvedValueOnce([{ material_id: 'm2' }, { material_id: 'm3' }]);
+      (orderRepo.find as jest.Mock).mockResolvedValue([
+        { bom_revision_id: 'r9' },
+      ]);
+      (materialRepo.find as jest.Mock).mockResolvedValue([
+        buildMaterial({ id: 'm2' }),
+      ]);
+      const out = await service.filterMaterials({
+        logic: 'AND',
+        filters: [
+          { type: 'product_revision', ids: ['r1'] },
+          { type: 'order', ids: ['o1'] },
+        ],
+      } as any);
+      expect(out).toHaveLength(1);
+      expect(out[0].id).toBe('m2');
+    });
+  });
+
+  describe('where-used analysis', () => {
+    it('getWhereUsedProducts converts string numerics to floats', async () => {
+      (materialRepo.findOne as jest.Mock).mockResolvedValue(buildMaterial());
+      const qb = bomItemRepo.createQueryBuilder();
+      qb.getRawMany.mockResolvedValue([
+        {
+          product_id: 'p1',
+          product_name: 'P',
+          product_part_number: 'PN-P',
+          bom_revision_id: 'r1',
+          revision_number: '1',
+          is_active_revision: true,
+          quantity_per_unit: '2.5',
+          resource_type: 'SMD',
+        },
+      ]);
+      const out = await service.getWhereUsedProducts('mat-1');
+      expect(out[0].quantity_per_unit).toBe(2.5);
+    });
+
+    it('getWhereUsedOrders multiplies order qty by qty_per_unit', async () => {
+      (materialRepo.findOne as jest.Mock).mockResolvedValue(buildMaterial());
+      const qb = orderRepo.createQueryBuilder();
+      qb.getRawMany.mockResolvedValue([
+        {
+          order_id: 'o1',
+          order_number: 'ORD-1',
+          customer_name: 'Cust',
+          product_name: 'P',
+          order_quantity: '10',
+          qty_per_unit: '3.5',
+          status: OrderStatus.ENTERED,
+          due_date: new Date('2026-05-01'),
+        },
+      ]);
+      const out = await service.getWhereUsedOrders('mat-1');
+      expect(out[0].total_required).toBe(35);
+    });
+
+    it('getUsageSummary parses raw counts safely', async () => {
+      (materialRepo.findOne as jest.Mock).mockResolvedValue(buildMaterial());
+      const qbItems = bomItemRepo.createQueryBuilder();
+      qbItems.getRawOne
+        .mockResolvedValueOnce({ count: '4' })
+        .mockResolvedValueOnce({ count: '5' });
+      const qbOrders = orderRepo.createQueryBuilder();
+      qbOrders.getRawOne.mockResolvedValueOnce({ order_count: '2', total_qty: '50.0' });
+
+      const out = await service.getUsageSummary('mat-1');
+      expect(out).toEqual({
+        total_products: 4,
+        active_bom_count: 5,
+        open_orders_count: 2,
+        total_qty_required_by_open_orders: 50,
+      });
+    });
+
+    it('getUsageSummary handles null raw rows', async () => {
+      (materialRepo.findOne as jest.Mock).mockResolvedValue(buildMaterial());
+      const qbItems = bomItemRepo.createQueryBuilder();
+      qbItems.getRawOne.mockResolvedValue(null);
+      const qbOrders = orderRepo.createQueryBuilder();
+      qbOrders.getRawOne.mockResolvedValue(null);
+      const out = await service.getUsageSummary('mat-1');
+      expect(out.total_products).toBe(0);
+      expect(out.total_qty_required_by_open_orders).toBe(0);
+    });
+  });
+});

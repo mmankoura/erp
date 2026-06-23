@@ -97,6 +97,11 @@ const navigation = {
       icon: Warehouse,
     },
     {
+      title: "Assign Customers",
+      url: "/inventory/assign-customer",
+      icon: Warehouse,
+    },
+    {
       title: "MRP / Shortages",
       url: "/mrp",
       icon: TrendingDown,
@@ -109,8 +114,8 @@ const navigation = {
       icon: ClipboardCheck,
     },
     {
-      title: "Cycle Counts",
-      url: "/cycle-counts",
+      title: "Physical Count",
+      url: "/physical-count",
       icon: ClipboardPen,
     },
     {

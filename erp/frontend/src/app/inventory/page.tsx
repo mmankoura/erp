@@ -61,8 +61,9 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  MapPin,
 } from "lucide-react"
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { toast } from "sonner"
 
 // Transaction type colors
@@ -557,6 +558,137 @@ function BinCell({ lot, onSaved }: { lot: InventoryLotWithId; onSaved: () => voi
   )
 }
 
+interface AssignStockLocationDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess: () => void
+}
+
+function AssignStockLocationDialog({ open, onOpenChange, onSuccess }: AssignStockLocationDialogProps) {
+  const [uid, setUid] = useState("")
+  const [bin, setBin] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [history, setHistory] = useState<Array<{ uid: string; bin: string; ipn: string }>>([])
+  const uidRef = useRef<HTMLInputElement | null>(null)
+  const binRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      setUid("")
+      setBin("")
+      setHistory([])
+      setTimeout(() => uidRef.current?.focus(), 50)
+    }
+  }, [open])
+
+  const submit = async () => {
+    const trimmedUid = uid.trim()
+    const trimmedBin = bin.trim()
+    if (!trimmedUid || !trimmedBin) {
+      toast.error("UID and BIN are both required")
+      return
+    }
+    setSaving(true)
+    try {
+      const lot = await api.get<InventoryLot & { id: string }>(`/inventory/lots/by-uid/${encodeURIComponent(trimmedUid)}`)
+      await api.patch(`/inventory/lots/${lot.id}/bin`, { bin: trimmedBin })
+      toast.success(`${trimmedUid} → ${trimmedBin}`)
+      setHistory((prev) => [
+        { uid: trimmedUid, bin: trimmedBin, ipn: lot.material?.internal_part_number ?? "" },
+        ...prev,
+      ].slice(0, 10))
+      setUid("")
+      setBin("")
+      onSuccess()
+      setTimeout(() => uidRef.current?.focus(), 50)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to assign location"
+      toast.error(msg.includes("404") ? `UID "${trimmedUid}" not found` : msg)
+      setTimeout(() => uidRef.current?.focus(), 50)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MapPin className="h-5 w-5" />
+            Assign Stock Location
+          </DialogTitle>
+          <DialogDescription>
+            Scan the UID, then scan or type the BIN. Press Enter to advance and submit.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-1">
+            <Label htmlFor="asl-uid">UID</Label>
+            <Input
+              id="asl-uid"
+              ref={uidRef}
+              value={uid}
+              onChange={(e) => setUid(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  binRef.current?.focus()
+                }
+              }}
+              placeholder="Scan or type UID..."
+              className="font-mono"
+              disabled={saving}
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="asl-bin">BIN / Stock Location</Label>
+            <Input
+              id="asl-bin"
+              ref={binRef}
+              value={bin}
+              onChange={(e) => setBin(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  submit()
+                }
+              }}
+              placeholder="Scan or type BIN..."
+              className="font-mono"
+              disabled={saving}
+              autoComplete="off"
+            />
+          </div>
+        </div>
+        {history.length > 0 && (
+          <div className="border-t pt-3 space-y-1">
+            <div className="text-xs font-medium text-muted-foreground">This session</div>
+            <div className="max-h-40 overflow-auto space-y-0.5 text-xs font-mono">
+              {history.map((h, i) => (
+                <div key={i} className="flex justify-between gap-2">
+                  <span className="font-medium truncate">{h.uid}</span>
+                  <span className="text-muted-foreground truncate">{h.ipn}</span>
+                  <span className="text-primary">→ {h.bin}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+          <Button onClick={submit} disabled={saving || !uid.trim() || !bin.trim()}>
+            {saving ? "Assigning..." : "Assign"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function InventoryPage() {
   const router = useRouter()
   const { data: inventoryRaw, isLoading, refetch } = useApi<InventoryStock[]>("/inventory")
@@ -566,6 +698,7 @@ export default function InventoryPage() {
   )
   const { data: lotsRaw, isLoading: lotsLoading, refetch: refetchLots } = useApi<InventoryLot[]>("/inventory/lots")
   const [importWizardOpen, setImportWizardOpen] = useState(false)
+  const [assignLocationOpen, setAssignLocationOpen] = useState(false)
 
   // Relational filter state
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
@@ -948,6 +1081,10 @@ export default function InventoryPage() {
             <Upload className="h-4 w-4 mr-2" />
             Import Inventory
           </Button>
+          <Button variant="outline" onClick={() => setAssignLocationOpen(true)}>
+            <MapPin className="h-4 w-4 mr-2" />
+            Assign Stock Location
+          </Button>
           <Button variant="outline" onClick={() => router.push("/customer-supplied")}>
             Customer Supplied
           </Button>
@@ -969,6 +1106,14 @@ export default function InventoryPage() {
         onOpenChange={setImportWizardOpen}
         onSuccess={() => {
           refetch()
+          refetchLots()
+        }}
+      />
+
+      <AssignStockLocationDialog
+        open={assignLocationOpen}
+        onOpenChange={setAssignLocationOpen}
+        onSuccess={() => {
           refetchLots()
         }}
       />

@@ -135,6 +135,8 @@ interface VirtualGridProps<T> {
   height?: number
   rowHeight?: number
   headerActions?: ReactNode
+  /** Optional per-row className for tinting (e.g., status backgrounds). */
+  rowClassName?: (row: T) => string
 }
 
 // =============== VirtualGrid Component ===============
@@ -149,6 +151,7 @@ export function VirtualGrid<T>({
   height = 560,
   rowHeight = 44,
   headerActions,
+  rowClassName,
 }: VirtualGridProps<T>) {
   const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([])
@@ -356,7 +359,10 @@ export function VirtualGrid<T>({
                   key={row.id}
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
-                  className="flex border-b hover:bg-muted/30 transition-colors items-stretch"
+                  className={cn(
+                    "flex border-b hover:bg-muted/30 transition-colors items-stretch",
+                    rowClassName?.(row.original),
+                  )}
                   style={{
                     position: "absolute",
                     top: 0,

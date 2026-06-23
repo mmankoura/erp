@@ -337,6 +337,7 @@ export class KittingService {
     const kittingList = await this.findOne(kittingListId);
 
     if (
+      kittingList.status !== KittingListStatus.DRAFT &&
       kittingList.status !== KittingListStatus.PRINTED &&
       kittingList.status !== KittingListStatus.IN_PROGRESS
     ) {
@@ -425,8 +426,11 @@ export class KittingService {
         location: 'WIP',
       });
 
-      // Transition list to IN_PROGRESS if still PRINTED
-      if (kittingList.status === KittingListStatus.PRINTED) {
+      // Transition list to IN_PROGRESS on first scan (skips the PRINTED gate)
+      if (
+        kittingList.status === KittingListStatus.DRAFT ||
+        kittingList.status === KittingListStatus.PRINTED
+      ) {
         await manager.update(KittingList, kittingListId, {
           status: KittingListStatus.IN_PROGRESS,
         });
@@ -463,6 +467,7 @@ export class KittingService {
     const kittingList = await this.findOne(id);
 
     if (
+      kittingList.status !== KittingListStatus.DRAFT &&
       kittingList.status !== KittingListStatus.PRINTED &&
       kittingList.status !== KittingListStatus.IN_PROGRESS
     ) {

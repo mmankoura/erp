@@ -10,6 +10,7 @@ import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
 import { InventoryImportService } from './inventory-import.service';
 import { PurchaseOrdersModule } from '../purchase-orders/purchase-orders.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PurchaseOrdersModule } from '../purchase-orders/purchase-orders.module'
       BomItem,
     ]),
     forwardRef(() => PurchaseOrdersModule),
+    AuditModule,
   ],
   controllers: [InventoryController],
   providers: [InventoryService, InventoryImportService],

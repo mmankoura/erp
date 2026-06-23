@@ -9,8 +9,6 @@ import {
   type PurchaseOrderStatus,
   type Supplier,
   type Material,
-  type CreatePurchaseOrderDto,
-  type CreatePurchaseOrderLineDto,
   type PoHistory,
 } from "@/lib/api"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
@@ -41,7 +39,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Table,
   TableBody,
@@ -60,7 +57,6 @@ import {
   CheckCircle,
   XCircle,
   Eye,
-  X,
   Upload,
   Loader2,
   History,
@@ -68,20 +64,12 @@ import {
   FileSpreadsheet,
 } from "lucide-react"
 import { useState, useEffect, useMemo, useRef } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { toast } from "sonner"
-
-// Calculate date + N business days (skips weekends)
-function addBusinessDays(date: Date, days: number): Date {
-  const result = new Date(date)
-  let added = 0
-  while (added < days) {
-    result.setDate(result.getDate() + 1)
-    const dow = result.getDay()
-    if (dow !== 0 && dow !== 6) added++
-  }
-  return result
-}
+import { useAuth, UserRole } from "@/contexts/auth-context"
+import { Lock, Unlock } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 // Status colors and labels
 const statusConfig: Record<
@@ -97,568 +85,22 @@ const statusConfig: Record<
   CANCELLED: { label: "Cancelled", variant: "destructive" },
 }
 
-// Line item form state
-interface LineItemForm {
-  material_id: string
-  ipn_search: string
-  quantity_ordered: number
-  unit_cost: number | null
-  manufacturer: string
-  manufacturer_pn: string
-  notes: string
-  // Auto-populated display fields
-  customer_name: string
-  description: string
-  resource_type: string
-}
-
-// Create/Edit PO Dialog — full-window with excel-style line table
-function PurchaseOrderDialog({
-  purchaseOrder,
-  onSuccess,
-  trigger,
-}: {
-  purchaseOrder?: PurchaseOrder
-  onSuccess: () => void
-  trigger: React.ReactNode
-}) {
-  const [open, setOpen] = useState(false)
-  const [poNumber, setPoNumber] = useState(purchaseOrder?.po_number || "")
-  const [supplierId, setSupplierId] = useState(purchaseOrder?.supplier_id || "")
-  const [orderDate, setOrderDate] = useState(
-    purchaseOrder?.order_date?.split("T")[0] || new Date().toISOString().split("T")[0]
-  )
-  const defaultExpected = addBusinessDays(new Date(), 2).toISOString().split("T")[0]
-  const [expectedDate, setExpectedDate] = useState(
-    purchaseOrder?.expected_date?.split("T")[0] || defaultExpected
-  )
-  const [currency, setCurrency] = useState(purchaseOrder?.currency || "USD")
-  const [notes, setNotes] = useState(purchaseOrder?.notes || "")
-  const [lines, setLines] = useState<LineItemForm[]>([])
-  const [activeNoteIndex, setActiveNoteIndex] = useState<number | null>(null)
-  const [showPasteModal, setShowPasteModal] = useState(false)
-  const [pasteText, setPasteText] = useState("")
-
-  const { data: suppliers } = useApi<Supplier[]>("/suppliers")
-  const { data: materials } = useApi<Material[]>("/materials")
-
-  useEffect(() => {
-    if (open && !purchaseOrder) {
-      setPoNumber("")
-      setSupplierId("")
-      setOrderDate(new Date().toISOString().split("T")[0])
-      setExpectedDate(addBusinessDays(new Date(), 2).toISOString().split("T")[0])
-      setCurrency("USD")
-      setNotes("")
-      setLines([createEmptyLine()])
-      setActiveNoteIndex(null)
-    }
-  }, [open, purchaseOrder])
-
-  function createEmptyLine(): LineItemForm {
-    return {
-      material_id: "", ipn_search: "", quantity_ordered: 1, unit_cost: null,
-      manufacturer: "", manufacturer_pn: "",
-      notes: "", customer_name: "", description: "", resource_type: "",
-    }
-  }
-
-  const updateLine = (index: number, updates: Partial<LineItemForm>) => {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...updates } : l)))
-  }
-
-  const handleIpnChange = (index: number, value: string) => {
-    updateLine(index, { ipn_search: value, material_id: "" })
-  }
-
-  const handleIpnSelect = (index: number, materialId: string) => {
-    const material = materials?.find((m) => m.id === materialId)
-    if (!material) return
-    updateLine(index, {
-      material_id: materialId,
-      ipn_search: material.internal_part_number,
-      manufacturer: material.manufacturer || "",
-      manufacturer_pn: material.manufacturer_pn || "",
-      customer_name: material.customer?.name || "",
-      description: material.description || "",
-      resource_type: material.resource_type || "",
-    })
-  }
-
-  const handleAddLine = () => {
-    setLines((prev) => [...prev, createEmptyLine()])
-  }
-
-  const handlePasteImport = () => {
-    if (!pasteText.trim()) return
-    const rows = pasteText.trim().split("\n")
-    // Detect header row and find column indices
-    const firstRow = rows[0].split("\t")
-    const headerMap: Record<string, number> = {}
-    const headerKeywords: Record<string, string[]> = {
-      index: ["index", "#"],
-      mpn: ["manufacturer part number", "manufacturer part #", "mfg part", "mpn"],
-      manufacturer: ["manufacturer"],
-      description: ["description"],
-      customerRef: ["customer reference", "customer ref", "reference"],
-      quantity: ["quantity", "qty"],
-      unitPrice: ["unit price", "price"],
-    }
-
-    // Try to match headers — check longer/more specific keywords first,
-    // and don't let two keys claim the same column index
-    const usedColumns = new Set<number>()
-    // Process mpn before manufacturer so "Manufacturer Part Number" maps to mpn, not manufacturer
-    const keyOrder = ["mpn", "customerRef", "unitPrice", "manufacturer", "description", "quantity", "index"]
-    for (let i = 0; i < firstRow.length; i++) {
-      const col = firstRow[i].trim().toLowerCase()
-      for (const key of keyOrder) {
-        if (key in headerMap) continue
-        const keywords = headerKeywords[key]
-        if (keywords?.some((kw) => col.includes(kw)) && !usedColumns.has(i)) {
-          headerMap[key] = i
-          usedColumns.add(i)
-          break
-        }
-      }
-    }
-
-    const hasHeaders = "mpn" in headerMap || "manufacturer" in headerMap
-    const dataRows = hasHeaders ? rows.slice(1) : rows
-
-    const materialMap = new Map<string, Material>()
-    materials?.forEach((m) => {
-      materialMap.set(m.internal_part_number.toLowerCase(), m)
-    })
-
-    const newLines: LineItemForm[] = []
-    for (const row of dataRows) {
-      const cols = row.split("\t")
-      if (cols.length < 3) continue
-      // Skip subtotal/empty rows
-      if (cols.every((c) => !c.trim()) || row.toLowerCase().includes("subtotal")) continue
-
-      const get = (key: string, fallbackIdx?: number): string => {
-        const idx = headerMap[key] ?? fallbackIdx
-        return idx !== undefined && idx < cols.length ? cols[idx].trim() : ""
-      }
-
-      const mpn = get("mpn", 2)
-      const mfg = get("manufacturer", 3)
-      const desc = get("description", 4)
-      const custRef = get("customerRef", 5)
-      const qtyStr = get("quantity", 6)
-      const priceStr = get("unitPrice", 8)
-
-      const qty = parseInt(qtyStr) || 1
-      const price = parseFloat(priceStr.replace(/[$,]/g, "")) || null
-
-      // Try to match customer reference to IPN
-      const matchedMaterial = custRef ? materialMap.get(custRef.toLowerCase()) : undefined
-
-      newLines.push({
-        material_id: matchedMaterial?.id || "",
-        ipn_search: matchedMaterial?.internal_part_number || custRef || "",
-        quantity_ordered: qty,
-        unit_cost: price,
-        manufacturer: mfg,
-        manufacturer_pn: mpn,
-        notes: "",
-        customer_name: matchedMaterial?.customer?.name || "",
-        description: matchedMaterial?.description || desc,
-        resource_type: matchedMaterial?.resource_type || "",
-      })
-    }
-
-    if (newLines.length > 0) {
-      // Replace the empty starting line if it exists
-      const hasOnlyEmpty = lines.length === 1 && !lines[0].material_id && !lines[0].ipn_search
-      setLines(hasOnlyEmpty ? newLines : [...lines, ...newLines])
-      toast.success(`Imported ${newLines.length} line(s)`)
-    } else {
-      toast.error("Could not parse any lines from pasted data")
-    }
-
-    setPasteText("")
-    setShowPasteModal(false)
-  }
-
-  const handleRemoveLine = (index: number) => {
-    if (lines.length <= 1) return
-    setLines((prev) => prev.filter((_, i) => i !== index))
-    if (activeNoteIndex === index) setActiveNoteIndex(null)
-  }
-
-  const createMutation = useMutation(
-    (data: CreatePurchaseOrderDto) => api.post<PurchaseOrder>("/purchase-orders", data),
-    {
-      onSuccess: () => {
-        toast.success("Purchase order created successfully")
-        setOpen(false)
-        onSuccess()
-      },
-      onError: (error) => toast.error(error.message || "Failed to create purchase order"),
-    }
-  )
-
-  const updateMutation = useMutation(
-    (data: Partial<CreatePurchaseOrderDto>) =>
-      api.patch<PurchaseOrder>(`/purchase-orders/${purchaseOrder?.id}`, data),
-    {
-      onSuccess: () => {
-        toast.success("Purchase order updated successfully")
-        setOpen(false)
-        onSuccess()
-      },
-      onError: (error) => toast.error(error.message || "Failed to update purchase order"),
-    }
-  )
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const lineItems: CreatePurchaseOrderLineDto[] = lines
-      .filter((line) => line.material_id)
-      .map((line) => ({
-        material_id: line.material_id,
-        quantity_ordered: line.quantity_ordered,
-        unit_cost: line.unit_cost || undefined,
-        manufacturer: line.manufacturer,
-        manufacturer_pn: line.manufacturer_pn,
-        packaging: "",
-        notes: line.notes || undefined,
-      }))
-
-    if (purchaseOrder) {
-      updateMutation.mutate({
-        supplier_id: supplierId,
-        expected_date: expectedDate || undefined,
-        currency,
-        notes: notes || undefined,
-      })
-    } else {
-      createMutation.mutate({
-        po_number: poNumber.trim() || undefined,
-        supplier_id: supplierId,
-        order_date: orderDate,
-        expected_date: expectedDate || undefined,
-        currency,
-        notes: notes || undefined,
-        lines: lineItems.length > 0 ? lineItems : undefined,
-      })
-    }
-  }
-
-  const isLoading = createMutation.isLoading || updateMutation.isLoading
-  const totalAmount = lines.reduce((sum, l) => sum + (l.unit_cost || 0) * l.quantity_ordered, 0)
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent showCloseButton={false} className="!max-w-[95vw] w-full !h-[90vh] flex flex-col p-0">
-        <DialogTitle className="sr-only">
-          {purchaseOrder ? "Edit Purchase Order" : "New Purchase Order"}
-        </DialogTitle>
-        <form onSubmit={handleSubmit} className="flex flex-col h-full">
-          {/* Header bar */}
-          <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-            <div>
-              <h2 className="text-lg font-semibold">
-                {purchaseOrder ? "Edit Purchase Order" : "New Purchase Order"}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              {!purchaseOrder && (
-                <Button type="button" variant="outline" onClick={() => setShowPasteModal(true)}>
-                  <Upload className="h-4 w-4 mr-1" />
-                  Paste from DigiKey
-                </Button>
-              )}
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isLoading || !supplierId}>
-                {isLoading ? "Saving..." : purchaseOrder ? "Update" : "Create PO"}
-              </Button>
-            </div>
-          </div>
-
-          {/* PO header fields */}
-          <div className="px-6 py-3 border-b shrink-0 bg-muted/30">
-            <div className="grid grid-cols-6 gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs">PO #</Label>
-                <Input
-                  value={poNumber}
-                  onChange={(e) => setPoNumber(e.target.value)}
-                  placeholder="Auto-generated"
-                  className="h-8 font-mono"
-                  disabled={!!purchaseOrder}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Supplier *</Label>
-                <Select value={supplierId} onValueChange={setSupplierId}>
-                  <SelectTrigger className="h-8">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers?.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Order Date *</Label>
-                <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)}
-                  className="h-8" required disabled={!!purchaseOrder} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Expected Date</Label>
-                <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)}
-                  className="h-8" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Currency</Label>
-                <Select value={currency} onValueChange={setCurrency}>
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="CAD">CAD</SelectItem>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                    <SelectItem value="GBP">GBP</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">PO Notes</Label>
-                <Input value={notes} onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Optional notes..." className="h-8" />
-              </div>
-            </div>
-          </div>
-
-          {/* Excel-style line items table */}
-          {!purchaseOrder && (
-            <div className="flex-1 overflow-auto px-6 py-3">
-              <div className="border rounded-md">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="w-[40px] text-center">#</TableHead>
-                      <TableHead className="w-[180px]">IPN</TableHead>
-                      <TableHead className="w-[120px]">Client</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="w-[60px]">Type</TableHead>
-                      <TableHead className="w-[150px]">Manufacturer *</TableHead>
-                      <TableHead className="w-[150px]">MPN *</TableHead>
-                      <TableHead className="w-[80px] text-right">Qty *</TableHead>
-                      <TableHead className="w-[100px] text-right">Unit Cost</TableHead>
-                      <TableHead className="w-[70px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lines.map((line, index) => {
-                      const filtered = line.ipn_search && !line.material_id
-                        ? (materials?.filter((m) =>
-                            m.internal_part_number.toLowerCase().includes(line.ipn_search.toLowerCase())
-                          ) || [])
-                        : []
-
-                      return (
-                        <React.Fragment key={index}>
-                          <TableRow className="group">
-                            <TableCell className="text-center text-muted-foreground text-xs">{index + 1}</TableCell>
-                            <TableCell className="p-1 relative">
-                              <Input
-                                value={line.ipn_search}
-                                onChange={(e) => handleIpnChange(index, e.target.value)}
-                                placeholder="Type IPN..."
-                                className="h-7 text-xs border-transparent bg-transparent hover:border-input focus:border-input"
-                              />
-                              {filtered.length > 0 && (
-                                <div className="absolute z-50 left-1 right-1 top-full mt-0.5 max-h-48 overflow-y-auto bg-popover border rounded-md shadow-lg">
-                                  {filtered.slice(0, 15).map((m) => (
-                                    <button
-                                      key={m.id}
-                                      type="button"
-                                      className="w-full text-left px-2 py-1 text-xs hover:bg-accent truncate"
-                                      onClick={() => handleIpnSelect(index, m.id)}
-                                    >
-                                      <span className="font-medium">{m.internal_part_number}</span>
-                                      {m.description && (
-                                        <span className="text-muted-foreground ml-1">— {m.description}</span>
-                                      )}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">
-                              {line.customer_name || "—"}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {line.description || "—"}
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              {line.resource_type ? (
-                                <Badge variant="outline" className="text-[10px] px-1 py-0">{line.resource_type}</Badge>
-                              ) : "—"}
-                            </TableCell>
-                            <TableCell className="p-1">
-                              <Input
-                                value={line.manufacturer}
-                                onChange={(e) => updateLine(index, { manufacturer: e.target.value })}
-                                placeholder="Manufacturer"
-                                className="h-7 text-xs border-transparent bg-transparent hover:border-input focus:border-input"
-                              />
-                            </TableCell>
-                            <TableCell className="p-1">
-                              <Input
-                                value={line.manufacturer_pn}
-                                onChange={(e) => updateLine(index, { manufacturer_pn: e.target.value })}
-                                placeholder="MPN"
-                                className="h-7 text-xs border-transparent bg-transparent hover:border-input focus:border-input"
-                              />
-                            </TableCell>
-                            <TableCell className="p-1">
-                              <Input
-                                type="number"
-                                min="1"
-                                value={line.quantity_ordered}
-                                onChange={(e) => updateLine(index, { quantity_ordered: Number(e.target.value) || 1 })}
-                                className="h-7 text-xs text-right border-transparent bg-transparent hover:border-input focus:border-input"
-                              />
-                            </TableCell>
-                            <TableCell className="p-1">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="any"
-                                value={line.unit_cost ?? ""}
-                                onChange={(e) => updateLine(index, { unit_cost: e.target.value ? Number(e.target.value) : null })}
-                                placeholder="0.00"
-                                className="h-7 text-xs text-right border-transparent bg-transparent hover:border-input focus:border-input"
-                              />
-                            </TableCell>
-                            <TableCell className="p-1">
-                              <div className="flex items-center gap-0.5">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                                  title="Add comment"
-                                  onClick={() => setActiveNoteIndex(activeNoteIndex === index ? null : index)}
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100"
-                                  onClick={() => handleRemoveLine(index)}
-                                  disabled={lines.length <= 1}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                          {activeNoteIndex === index && (
-                            <TableRow key={`note-${index}`}>
-                              <TableCell></TableCell>
-                              <TableCell colSpan={10} className="py-1 px-1">
-                                <Input
-                                  value={line.notes}
-                                  onChange={(e) => updateLine(index, { notes: e.target.value })}
-                                  placeholder="Comment for this line..."
-                                  className="h-7 text-xs"
-                                  autoFocus
-                                />
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </React.Fragment>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="flex items-center justify-between mt-2">
-                <Button type="button" variant="outline" size="sm" onClick={handleAddLine}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add Line
-                </Button>
-                {totalAmount > 0 && (
-                  <span className="text-sm">
-                    <span className="text-muted-foreground">Total: </span>
-                    <span className="font-medium">{currency} {totalAmount.toFixed(2)}</span>
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-        </form>
-
-        {/* Paste from DigiKey modal */}
-        {showPasteModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-            <div className="bg-background rounded-lg border shadow-lg w-[600px] max-h-[80vh] flex flex-col">
-              <div className="px-4 py-3 border-b flex items-center justify-between">
-                <h3 className="font-semibold">Paste from DigiKey</h3>
-                <Button variant="ghost" size="icon" className="h-7 w-7"
-                  onClick={() => { setShowPasteModal(false); setPasteText("") }}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="p-4 flex-1 overflow-auto space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Copy your DigiKey cart/order table and paste it below. The &quot;Customer Reference&quot; column will be matched to your IPNs.
-                </p>
-                <Textarea
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  placeholder="Paste tab-separated data from DigiKey here..."
-                  rows={12}
-                  className="font-mono text-xs"
-                  autoFocus
-                />
-              </div>
-              <div className="px-4 py-3 border-t flex justify-end gap-2">
-                <Button variant="outline" onClick={() => { setShowPasteModal(false); setPasteText("") }}>
-                  Cancel
-                </Button>
-                <Button onClick={handlePasteImport} disabled={!pasteText.trim()}>
-                  Import Lines
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// View PO Detail Dialog
-function PurchaseOrderDetailDialog({
+// View PO Detail — renders as a Dialog by default, or as embedded content (for
+// the /purchase-orders/[id] route page) when `embedded` is true.
+export function PurchaseOrderDetailDialog({
   purchaseOrder,
   onSuccess,
   trigger,
   open: openProp,
   onOpenChange,
+  embedded,
 }: {
   purchaseOrder: PurchaseOrder
   onSuccess: () => void
   trigger?: React.ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  embedded?: boolean
 }) {
   const [internalOpen, setInternalOpen] = useState(false)
   const isControlled = openProp !== undefined
@@ -667,11 +109,13 @@ function PurchaseOrderDetailDialog({
     if (!isControlled) setInternalOpen(next)
     onOpenChange?.(next)
   }
+  // In embedded (page) mode we always fetch; otherwise gate on dialog open.
+  const fetchEnabled = embedded || open
   const { data: poDetail, refetch } = useApi<PurchaseOrder>(
     `/purchase-orders/${purchaseOrder.id}`,
-    { enabled: open }
+    { enabled: fetchEnabled }
   )
-  const { data: materials } = useApi<Material[]>("/materials", { enabled: open })
+  const { data: materials } = useApi<Material[]>("/materials", { enabled: fetchEnabled })
 
   // Line item mutations
   const addLineMutation = useMutation(
@@ -814,150 +258,171 @@ function PurchaseOrderDetailDialog({
       return sum + (parseFloat(String(line.unit_cost)) || 0) * parseFloat(String(line.quantity_ordered))
     }, 0) || 0
 
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
-      <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="flex items-center gap-2">
-                {po.po_number}
-                <Badge variant={statusConfig[po.status].variant}>
-                  {statusConfig[po.status].label}
-                </Badge>
-              </DialogTitle>
-              <DialogDescription>
-                {po.supplier?.name} ({po.supplier?.code})
-              </DialogDescription>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  const { generatePoPdf } = await import("@/lib/po-pdf")
-                  await generatePoPdf(po)
-                }}
-              >
-                <FileDown className="h-4 w-4 mr-1" />
-                PDF
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  const { exportPoToExcel } = await import("@/lib/po-excel")
-                  exportPoToExcel(po)
-                }}
-              >
-                <FileSpreadsheet className="h-4 w-4 mr-1" />
-                Excel
-              </Button>
-              {canSubmit && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => submitMutation.mutate(undefined)}
-                  disabled={submitMutation.isLoading}
-                >
-                  <Send className="h-4 w-4 mr-1" />
-                  Submit
-                </Button>
-              )}
-              {canConfirm && (
-                <Button
-                  size="sm"
-                  onClick={() => confirmMutation.mutate(undefined)}
-                  disabled={confirmMutation.isLoading}
-                >
-                  <CheckCircle className="h-4 w-4 mr-1" />
-                  Confirm
-                </Button>
-              )}
-              {canClose && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => closeMutation.mutate(undefined)}
-                  disabled={closeMutation.isLoading}
-                >
-                  Close PO
-                </Button>
-              )}
-              {canCancel && (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => {
-                    if (confirm("Are you sure you want to cancel this PO?")) {
-                      cancelMutation.mutate(undefined)
-                    }
-                  }}
-                  disabled={cancelMutation.isLoading}
-                >
-                  <XCircle className="h-4 w-4 mr-1" />
-                  Cancel
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => {
-                  const msg =
-                    po.status === "DRAFT"
-                      ? `Delete PO ${po.po_number}?`
-                      : `Delete PO ${po.po_number} (status: ${po.status})? This is a soft delete — the PO will be hidden but receipts already posted against it stay in inventory.`
-                  if (confirm(msg)) {
-                    deletePoMutation.mutate(undefined)
-                  }
-                }}
-                disabled={deletePoMutation.isLoading}
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-            </div>
-          </div>
-        </DialogHeader>
+  const titleAndDescription = embedded ? (
+    <>
+      <h1 className="text-2xl font-bold flex items-center gap-2">
+        {po.po_number}
+        <Badge variant={statusConfig[po.status].variant}>
+          {statusConfig[po.status].label}
+        </Badge>
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        {po.supplier?.name} ({po.supplier?.code})
+      </p>
+    </>
+  ) : (
+    <>
+      <DialogTitle className="flex items-center gap-2">
+        {po.po_number}
+        <Badge variant={statusConfig[po.status].variant}>
+          {statusConfig[po.status].label}
+        </Badge>
+      </DialogTitle>
+      <DialogDescription>
+        {po.supplier?.name} ({po.supplier?.code})
+      </DialogDescription>
+    </>
+  )
 
-        <div className="space-y-4">
-          {/* PO Info */}
-          <div className="grid grid-cols-4 gap-4 text-sm">
-            <div>
-              <span className="text-muted-foreground">Order Date</span>
-              <p className="font-medium">{new Date(po.order_date).toLocaleDateString()}</p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Expected Date</span>
-              <p className="font-medium">
-                {po.expected_date ? new Date(po.expected_date).toLocaleDateString() : "-"}
-              </p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Currency</span>
-              <p className="font-medium">{po.currency}</p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Total</span>
-              <p className="font-medium">
-                {po.currency} {totalAmount.toFixed(2)}
-              </p>
-            </div>
-          </div>
+  const actionButtons = (
+    <div className="flex gap-2">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={async () => {
+          const { generatePoPdf } = await import("@/lib/po-pdf")
+          await generatePoPdf(po)
+        }}
+      >
+        <FileDown className="h-4 w-4 mr-1" />
+        PDF
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={async () => {
+          const { exportPoToExcel } = await import("@/lib/po-excel")
+          exportPoToExcel(po)
+        }}
+      >
+        <FileSpreadsheet className="h-4 w-4 mr-1" />
+        Excel
+      </Button>
+      {canSubmit && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => submitMutation.mutate(undefined)}
+          disabled={submitMutation.isLoading}
+        >
+          <Send className="h-4 w-4 mr-1" />
+          Submit
+        </Button>
+      )}
+      {canConfirm && (
+        <Button
+          size="sm"
+          onClick={() => confirmMutation.mutate(undefined)}
+          disabled={confirmMutation.isLoading}
+        >
+          <CheckCircle className="h-4 w-4 mr-1" />
+          Confirm
+        </Button>
+      )}
+      {canClose && (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => closeMutation.mutate(undefined)}
+          disabled={closeMutation.isLoading}
+        >
+          Close PO
+        </Button>
+      )}
+      {canCancel && (
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => {
+            if (confirm("Are you sure you want to cancel this PO?")) {
+              cancelMutation.mutate(undefined)
+            }
+          }}
+          disabled={cancelMutation.isLoading}
+        >
+          <XCircle className="h-4 w-4 mr-1" />
+          Cancel
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant="destructive"
+        onClick={() => {
+          const msg =
+            po.status === "DRAFT"
+              ? `Delete PO ${po.po_number}?`
+              : `Delete PO ${po.po_number} (status: ${po.status})? This is a soft delete — the PO will be hidden but receipts already posted against it stay in inventory.`
+          if (confirm(msg)) {
+            deletePoMutation.mutate(undefined)
+          }
+        }}
+        disabled={deletePoMutation.isLoading}
+      >
+        <Trash2 className="h-4 w-4 mr-1" />
+        Delete
+      </Button>
+    </div>
+  )
 
-          {po.notes && (
-            <div className="text-sm">
-              <span className="text-muted-foreground">Notes: </span>
-              {po.notes}
+  const headerRow = (
+    <div className="flex items-center justify-between">
+      <div>{titleAndDescription}</div>
+      {actionButtons}
+    </div>
+  )
+
+  const bodyContent = (
+    <div className="space-y-3">
+          {/* PO header panel */}
+          <div className="rounded-md border bg-muted/30 px-4 py-3">
+            <div className="grid grid-cols-5 gap-4 text-sm">
+              <div>
+                <span className="text-xs text-muted-foreground">Supplier</span>
+                <p className="font-medium truncate">
+                  {po.supplier?.name || "-"}{po.supplier?.code ? ` (${po.supplier.code})` : ""}
+                </p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Order Date</span>
+                <p className="font-medium">{new Date(po.order_date).toLocaleDateString()}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Expected Date</span>
+                <p className="font-medium">
+                  {po.expected_date ? new Date(po.expected_date).toLocaleDateString() : "-"}
+                </p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Currency</span>
+                <p className="font-medium">{po.currency}</p>
+              </div>
+              <div>
+                <span className="text-xs text-muted-foreground">Total</span>
+                <p className="font-medium">
+                  {po.currency} {totalAmount.toFixed(2)}
+                </p>
+              </div>
             </div>
-          )}
+            {po.notes && (
+              <div className="mt-2 text-sm">
+                <span className="text-xs text-muted-foreground">Notes: </span>
+                {po.notes}
+              </div>
+            )}
+          </div>
 
           {/* Line Items */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h4 className="font-medium">Line Items</h4>
-            </div>
 
             <div className="border rounded-md">
               <Table>
@@ -974,70 +439,101 @@ function PurchaseOrderDetailDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {po.lines?.map((line) => (
-                    <TableRow key={line.id}>
-                      <TableCell>{line.line_number}</TableCell>
-                      <TableCell>
-                        <div>
-                          <span className="font-medium">
-                            {line.material?.internal_part_number}
-                          </span>
-                          {line.material?.description && (
-                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {line.material.description}
-                            </p>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            {line.material?.customer?.name || "-"} | {line.material?.resource_type || "-"}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <p>{line.manufacturer || line.material?.manufacturer || "-"}</p>
-                          <p className="text-xs text-muted-foreground">{line.manufacturer_pn || line.material?.manufacturer_pn || "-"}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">{line.quantity_ordered}</TableCell>
-                      <TableCell className="text-right">
-                        <span
-                          className={
-                            line.quantity_received >= line.quantity_ordered
-                              ? "text-green-600"
-                              : line.quantity_received > 0
-                                ? "text-yellow-600"
-                                : ""
-                          }
-                        >
-                          {line.quantity_received}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {line.unit_cost ? `${po.currency} ${parseFloat(String(line.unit_cost)).toFixed(2)}` : "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {line.unit_cost
-                          ? `${po.currency} ${(parseFloat(String(line.unit_cost)) * parseFloat(String(line.quantity_ordered))).toFixed(2)}`
-                          : "-"}
-                      </TableCell>
-                      {canEdit && (
+                  {po.lines?.map((line) => {
+                    const qty = parseFloat(String(line.quantity_ordered)) || 0
+                    const cost = line.unit_cost != null ? parseFloat(String(line.unit_cost)) : null
+                    return (
+                      <TableRow key={line.id}>
+                        <TableCell>{line.line_number}</TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive"
-                            onClick={() => {
-                              if (confirm("Remove this line?")) {
-                                deleteLineMutation.mutate(line.id)
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div>
+                            <span className="font-medium">
+                              {line.material?.internal_part_number}
+                            </span>
+                            {line.material?.description && (
+                              <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                {line.material.description}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                              {line.material?.customer?.name || "-"} | {line.material?.resource_type || "-"}
+                            </p>
+                          </div>
                         </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
+                        <TableCell>
+                          <div className="space-y-1">
+                            <InlineTextCell
+                              lineId={line.id}
+                              field="manufacturer"
+                              initial={line.manufacturer || line.material?.manufacturer || ""}
+                              onSaved={refetch}
+                              disabled={!canEdit}
+                            />
+                            <InlineTextCell
+                              lineId={line.id}
+                              field="manufacturer_pn"
+                              initial={line.manufacturer_pn || line.material?.manufacturer_pn || ""}
+                              onSaved={refetch}
+                              disabled={!canEdit}
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <InlineNumberCell
+                            lineId={line.id}
+                            field="quantity_ordered"
+                            initial={qty}
+                            step="1"
+                            formatter={(n) => n.toString()}
+                            onSaved={refetch}
+                            disabled={!canEdit}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span
+                            className={
+                              line.quantity_received >= line.quantity_ordered
+                                ? "text-green-600"
+                                : line.quantity_received > 0
+                                  ? "text-yellow-600"
+                                  : ""
+                            }
+                          >
+                            {line.quantity_received}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <InlineNumberCell
+                            lineId={line.id}
+                            field="unit_cost"
+                            initial={cost}
+                            formatter={(n) => `${po.currency} ${n.toFixed(2)}`}
+                            onSaved={refetch}
+                            disabled={!canEdit}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {cost != null ? `${po.currency} ${(cost * qty).toFixed(2)}` : "-"}
+                        </TableCell>
+                        {canEdit && (
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => {
+                                if (confirm("Remove this line?")) {
+                                  deleteLineMutation.mutate(line.id)
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    )
+                  })}
                   {(!po.lines || po.lines.length === 0) && (
                     <TableRow>
                       <TableCell colSpan={canEdit ? 8 : 7} className="text-center text-muted-foreground">
@@ -1132,8 +628,24 @@ function PurchaseOrderDetailDialog({
               </Table>
             </div>
           </div>
-        </div>
+    </div>
+  )
 
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        {headerRow}
+        {bodyContent}
+      </div>
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
+      <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>{headerRow}</DialogHeader>
+        {bodyContent}
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
             Close
@@ -1146,6 +658,303 @@ function PurchaseOrderDetailDialog({
 
 // One row per PO line. POs with no lines get a single placeholder row so they
 // remain visible.
+// ==================== Inline editor cells (Phase 1) ====================
+
+const statusRowTint: Record<PurchaseOrderStatus, string> = {
+  DRAFT: "bg-slate-100 border-l-4 border-l-slate-400",
+  SUBMITTED: "bg-amber-100 border-l-4 border-l-amber-500",
+  CONFIRMED: "bg-blue-100 border-l-4 border-l-blue-500",
+  PARTIALLY_RECEIVED: "bg-cyan-100 border-l-4 border-l-cyan-500",
+  RECEIVED: "bg-emerald-100 border-l-4 border-l-emerald-500",
+  CLOSED: "bg-zinc-200 border-l-4 border-l-zinc-500",
+  CANCELLED: "bg-rose-100 border-l-4 border-l-rose-500",
+}
+
+function lineEditAllowed(status: PurchaseOrderStatus): boolean {
+  return status === "DRAFT"
+}
+
+function InlineNumberCell({
+  lineId,
+  field,
+  initial,
+  formatter,
+  step,
+  onSaved,
+  disabled,
+}: {
+  lineId: string
+  field: "quantity_ordered" | "unit_cost"
+  initial: number | null
+  formatter: (n: number) => string
+  step?: string
+  onSaved: () => void
+  disabled?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState<string>(initial != null ? String(initial) : "")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setValue(initial != null ? String(initial) : "")
+  }, [initial])
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select()
+  }, [editing])
+
+  const commit = async () => {
+    const trimmed = value.trim()
+    if (trimmed === "" || isNaN(Number(trimmed)) || Number(trimmed) < 0) {
+      setError(true)
+      return
+    }
+    setError(false)
+    const num = parseFloat(trimmed)
+    if (num === initial) {
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await api.patch(`/purchase-orders/lines/${lineId}`, { [field]: num })
+      onSaved()
+      setEditing(false)
+    } catch (err) {
+      setError(true)
+      toast.error(err instanceof Error ? err.message : "Save failed")
+      setValue(initial != null ? String(initial) : "")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setEditing(true)}
+        className={cn(
+          "font-mono text-sm w-full text-right tabular-nums",
+          disabled ? "cursor-not-allowed text-muted-foreground" : "hover:bg-accent rounded px-1 -mx-1 cursor-text",
+        )}
+      >
+        {initial != null ? formatter(initial) : "—"}
+      </button>
+    )
+  }
+
+  return (
+    <div className="relative w-full">
+      <Input
+        ref={inputRef}
+        type="number"
+        step={step ?? "any"}
+        min={0}
+        value={value}
+        onChange={(e) => { setValue(e.target.value); setError(false) }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); inputRef.current?.blur() }
+          if (e.key === "Escape") {
+            e.preventDefault()
+            setValue(initial != null ? String(initial) : "")
+            setError(false)
+            setEditing(false)
+          }
+        }}
+        disabled={saving}
+        className={cn(
+          "h-7 text-right font-mono text-sm tabular-nums px-1 py-0",
+          error && "border-destructive focus-visible:ring-destructive",
+        )}
+      />
+      {saving && (
+        <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-500" title="Saving..." />
+      )}
+    </div>
+  )
+}
+
+function InlineTextCell({
+  lineId,
+  field,
+  initial,
+  onSaved,
+  disabled,
+}: {
+  lineId: string
+  field: "manufacturer" | "manufacturer_pn"
+  initial: string | null
+  onSaved: () => void
+  disabled?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState<string>(initial ?? "")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { setValue(initial ?? "") }, [initial])
+  useEffect(() => { if (editing) inputRef.current?.select() }, [editing])
+
+  const commit = async () => {
+    const trimmed = value.trim()
+    if (trimmed === (initial ?? "")) {
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    setError(false)
+    try {
+      await api.patch(`/purchase-orders/lines/${lineId}`, { [field]: trimmed })
+      onSaved()
+      setEditing(false)
+    } catch (err) {
+      setError(true)
+      toast.error(err instanceof Error ? err.message : "Save failed")
+      setValue(initial ?? "")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setEditing(true)}
+        className={cn(
+          "text-sm w-full text-left truncate",
+          disabled ? "cursor-not-allowed text-muted-foreground" : "hover:bg-accent rounded px-1 -mx-1 cursor-text",
+        )}
+      >
+        {initial || "—"}
+      </button>
+    )
+  }
+  return (
+    <div className="relative w-full">
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => { setValue(e.target.value); setError(false) }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); inputRef.current?.blur() }
+          if (e.key === "Escape") {
+            e.preventDefault()
+            setValue(initial ?? "")
+            setError(false)
+            setEditing(false)
+          }
+        }}
+        disabled={saving}
+        className={cn(
+          "h-7 text-sm px-1 py-0",
+          error && "border-destructive focus-visible:ring-destructive",
+        )}
+      />
+      {saving && (
+        <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-500" title="Saving..." />
+      )}
+    </div>
+  )
+}
+
+function nextStatusTransitions(status: PurchaseOrderStatus): Array<{
+  label: string
+  endpoint: "submit" | "confirm" | "close" | "cancel"
+  destructive?: boolean
+}> {
+  switch (status) {
+    case "DRAFT":
+      return [
+        { label: "Submit", endpoint: "submit" },
+        { label: "Cancel", endpoint: "cancel", destructive: true },
+      ]
+    case "SUBMITTED":
+      return [
+        { label: "Confirm", endpoint: "confirm" },
+        { label: "Cancel", endpoint: "cancel", destructive: true },
+      ]
+    case "CONFIRMED":
+      return [
+        { label: "Close", endpoint: "close" },
+        { label: "Cancel", endpoint: "cancel", destructive: true },
+      ]
+    case "PARTIALLY_RECEIVED":
+    case "RECEIVED":
+      return [{ label: "Close", endpoint: "close" }]
+    case "CLOSED":
+    case "CANCELLED":
+      return []
+  }
+}
+
+function InlineStatusCell({
+  po,
+  onSaved,
+  disabled,
+}: {
+  po: PurchaseOrder
+  onSaved: () => void
+  disabled?: boolean
+}) {
+  const transitions = nextStatusTransitions(po.status)
+  const [pending, setPending] = useState<string | null>(null)
+
+  const run = async (endpoint: string, destructive?: boolean) => {
+    if (destructive && !confirm(`Confirm: ${endpoint} PO ${po.po_number}?`)) return
+    setPending(endpoint)
+    try {
+      await api.post(`/purchase-orders/${po.id}/${endpoint}`, {})
+      toast.success(`PO ${po.po_number} → ${endpoint}`)
+      onSaved()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Failed to ${endpoint}`)
+    } finally {
+      setPending(null)
+    }
+  }
+
+  if (disabled || transitions.length === 0) {
+    return <Badge variant={statusConfig[po.status].variant}>{statusConfig[po.status].label}</Badge>
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={pending !== null}
+          className="inline-flex items-center hover:opacity-80 transition-opacity cursor-pointer disabled:opacity-50"
+          title="Change status"
+        >
+          <Badge variant={statusConfig[po.status].variant}>
+            {pending ? "..." : statusConfig[po.status].label}
+          </Badge>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {transitions.map((t) => (
+          <DropdownMenuItem
+            key={t.endpoint}
+            className={t.destructive ? "text-destructive" : ""}
+            onClick={() => run(t.endpoint, t.destructive)}
+          >
+            {t.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 type PoLineRow = {
   po: PurchaseOrder
   line: PurchaseOrderLine | null
@@ -1233,27 +1042,16 @@ function GeneratePoPdfDialog() {
 
 export default function PurchaseOrdersPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const focusId = searchParams.get("focus")
 
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const { hasRole } = useAuth()
+  const canEditTable = hasRole(UserRole.ADMIN, UserRole.MANAGER)
+  const [editUnlocked, setEditUnlocked] = useState(false)
 
   const endpoint =
     statusFilter === "all" ? "/purchase-orders" : `/purchase-orders?status=${statusFilter}`
 
   const { data: purchaseOrders, isLoading, refetch } = useApi<PurchaseOrder[]>(endpoint)
-
-  const focusedPo = useMemo(
-    () => (focusId && purchaseOrders ? purchaseOrders.find((p) => p.id === focusId) ?? null : null),
-    [focusId, purchaseOrders],
-  )
-
-  const clearFocus = () => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete("focus")
-    const qs = params.toString()
-    router.replace(qs ? `/purchase-orders?${qs}` : "/purchase-orders", { scroll: false })
-  }
 
   const deleteMutation = useMutation((id: string) => api.delete(`/purchase-orders/${id}`), {
     onSuccess: () => {
@@ -1288,7 +1086,15 @@ export default function PurchaseOrdersPage() {
       header: "PO #",
       size: 110,
       accessorFn: (r) => r.po.po_number,
-      cell: (r) => <span className="font-medium">{r.po.po_number}</span>,
+      cell: (r) => (
+        <Link
+          href={`/purchase-orders/${r.po.id}`}
+          className="font-medium italic hover:underline"
+          title="Open PO details"
+        >
+          {r.po.po_number}
+        </Link>
+      ),
     },
     {
       id: "supplier",
@@ -1296,17 +1102,24 @@ export default function PurchaseOrdersPage() {
       size: 160,
       accessorFn: (r) => r.po.supplier?.name || "",
       filterAccessor: (r) => r.po.supplier?.name || "-",
-      cell: (r) => r.po.supplier?.name || "-",
+      cell: (r) => (
+        <span className="italic text-muted-foreground">
+          {r.po.supplier?.name || "-"}
+        </span>
+      ),
     },
     {
       id: "status",
       header: "Status",
-      size: 130,
+      size: 140,
       accessorFn: (r) => r.po.status,
       filterAccessor: (r) => statusConfig[r.po.status].label,
-      cell: (r) => (
-        <Badge variant={statusConfig[r.po.status].variant}>{statusConfig[r.po.status].label}</Badge>
-      ),
+      cell: (r) =>
+        editUnlocked ? (
+          <InlineStatusCell po={r.po} onSaved={refetch} />
+        ) : (
+          <Badge variant={statusConfig[r.po.status].variant}>{statusConfig[r.po.status].label}</Badge>
+        ),
     },
     {
       id: "order_date",
@@ -1370,14 +1183,24 @@ export default function PurchaseOrdersPage() {
         r.line?.manufacturer || r.line?.material?.manufacturer || "",
       filterAccessor: (r) =>
         r.line?.manufacturer || r.line?.material?.manufacturer || "-",
-      cell: (r) =>
-        r.line ? (
+      cell: (r) => {
+        if (!r.line) return "-"
+        if (editUnlocked && lineEditAllowed(r.po.status)) {
+          return (
+            <InlineTextCell
+              lineId={r.line.id}
+              field="manufacturer"
+              initial={r.line.manufacturer || r.line.material?.manufacturer || ""}
+              onSaved={refetch}
+            />
+          )
+        }
+        return (
           <span className="text-sm">
             {r.line.manufacturer || r.line.material?.manufacturer || "-"}
           </span>
-        ) : (
-          "-"
-        ),
+        )
+      },
     },
     {
       id: "manufacturer_pn",
@@ -1385,14 +1208,24 @@ export default function PurchaseOrdersPage() {
       size: 150,
       accessorFn: (r) =>
         r.line?.manufacturer_pn || r.line?.material?.manufacturer_pn || "",
-      cell: (r) =>
-        r.line ? (
+      cell: (r) => {
+        if (!r.line) return "-"
+        if (editUnlocked && lineEditAllowed(r.po.status)) {
+          return (
+            <InlineTextCell
+              lineId={r.line.id}
+              field="manufacturer_pn"
+              initial={r.line.manufacturer_pn || r.line.material?.manufacturer_pn || ""}
+              onSaved={refetch}
+            />
+          )
+        }
+        return (
           <span className="font-mono text-sm">
             {r.line.manufacturer_pn || r.line.material?.manufacturer_pn || "-"}
           </span>
-        ) : (
-          "-"
-        ),
+        )
+      },
     },
     {
       id: "qty_ordered",
@@ -1401,14 +1234,26 @@ export default function PurchaseOrdersPage() {
       align: "right",
       accessorFn: (r) =>
         r.line ? parseFloat(String(r.line.quantity_ordered)) : 0,
-      cell: (r) =>
-        r.line ? (
+      cell: (r) => {
+        if (!r.line) return "-"
+        if (editUnlocked && lineEditAllowed(r.po.status)) {
+          return (
+            <InlineNumberCell
+              lineId={r.line.id}
+              field="quantity_ordered"
+              initial={parseFloat(String(r.line.quantity_ordered))}
+              formatter={(n) => n.toLocaleString()}
+              step="any"
+              onSaved={refetch}
+            />
+          )
+        }
+        return (
           <span className="font-mono">
             {parseFloat(String(r.line.quantity_ordered)).toLocaleString()}
           </span>
-        ) : (
-          "-"
-        ),
+        )
+      },
     },
     {
       id: "qty_received",
@@ -1429,12 +1274,25 @@ export default function PurchaseOrdersPage() {
     {
       id: "unit_cost",
       header: "Unit Cost",
-      size: 110,
+      size: 130,
       align: "right",
       accessorFn: (r) =>
         r.line?.unit_cost != null ? parseFloat(String(r.line.unit_cost)) : 0,
       cell: (r) => {
-        if (!r.line || r.line.unit_cost == null) return "-"
+        if (!r.line) return "-"
+        if (editUnlocked && lineEditAllowed(r.po.status)) {
+          return (
+            <InlineNumberCell
+              lineId={r.line.id}
+              field="unit_cost"
+              initial={r.line.unit_cost != null ? parseFloat(String(r.line.unit_cost)) : null}
+              formatter={(n) => `${r.po.currency} ${n.toFixed(4)}`}
+              step="0.0001"
+              onSaved={refetch}
+            />
+          )
+        }
+        if (r.line.unit_cost == null) return "-"
         return (
           <span className="font-mono text-sm">
             {r.po.currency} {parseFloat(String(r.line.unit_cost)).toFixed(4)}
@@ -1475,15 +1333,11 @@ export default function PurchaseOrdersPage() {
       accessorFn: () => "",
       cell: (r) => (
         <div className="flex items-center gap-1">
-          <PurchaseOrderDetailDialog
-            purchaseOrder={r.po}
-            onSuccess={refetch}
-            trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Eye className="h-4 w-4" />
-              </Button>
-            }
-          />
+          <Link href={`/purchase-orders/${r.po.id}`}>
+            <Button variant="ghost" size="icon" className="h-8 w-8" title="Open PO details">
+              <Eye className="h-4 w-4" />
+            </Button>
+          </Link>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -1493,16 +1347,12 @@ export default function PurchaseOrdersPage() {
             <DropdownMenuContent align="end">
               {r.po.status === "DRAFT" && (
                 <>
-                  <PurchaseOrderDialog
-                    purchaseOrder={r.po}
-                    onSuccess={refetch}
-                    trigger={
-                      <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                        <Pencil className="h-4 w-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                    }
-                  />
+                  <DropdownMenuItem
+                    onClick={() => router.push(`/purchase-orders/${r.po.id}`)}
+                  >
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
               )}
@@ -1537,15 +1387,12 @@ export default function PurchaseOrdersPage() {
         </div>
         <div className="flex items-center gap-2">
           <GeneratePoPdfDialog />
-          <PurchaseOrderDialog
-            onSuccess={refetch}
-            trigger={
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Create PO
-              </Button>
-            }
-          />
+          <Link href="/purchase-orders/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Create PO
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -1559,8 +1406,8 @@ export default function PurchaseOrdersPage() {
         </TabsList>
 
         <TabsContent value="active" className="space-y-4">
-          {/* Status Filter */}
-          <div className="flex items-center gap-4">
+          {/* Status Filter + Edit lock */}
+          <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <Label htmlFor="status-filter" className="text-sm font-medium">
                 Status:
@@ -1581,12 +1428,32 @@ export default function PurchaseOrdersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {canEditTable && (
+              <Button
+                variant={editUnlocked ? "default" : "outline"}
+                size="sm"
+                onClick={() => setEditUnlocked((v) => !v)}
+              >
+                {editUnlocked ? (
+                  <>
+                    <Unlock className="h-4 w-4 mr-1" />
+                    Edit unlocked
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-4 w-4 mr-1" />
+                    Edit locked
+                  </>
+                )}
+              </Button>
+            )}
           </div>
 
           <VirtualGrid
             data={flatLines}
             columns={columns}
             isLoading={isLoading}
+            rowClassName={(r) => statusRowTint[r.po.status]}
             searchPlaceholder="Search by PO #, supplier, IPN, MFR, or MPN..."
             searchFn={(r, q) =>
               r.po.po_number.toLowerCase().includes(q) ||
@@ -1604,17 +1471,6 @@ export default function PurchaseOrdersPage() {
           <PoHistoryTab />
         </TabsContent>
       </Tabs>
-
-      {/* Focus-driven detail dialog (opened via /purchase-orders?focus=<id>) */}
-      {focusedPo && (
-        <PurchaseOrderDetailDialog
-          key={focusedPo.id}
-          purchaseOrder={focusedPo}
-          onSuccess={refetch}
-          open={true}
-          onOpenChange={(next) => { if (!next) clearFocus() }}
-        />
-      )}
     </div>
   )
 }

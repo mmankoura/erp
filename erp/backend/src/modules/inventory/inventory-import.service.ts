@@ -27,6 +27,13 @@ import {
   InventoryImportCommitResult,
   InventoryColumnMappingDto,
 } from './dto/inventory-import.dto';
+import { UpdateLotOwnerDto } from './dto/update-lot-owner.dto';
+import { BulkAssignLotOwnerDto } from './dto/bulk-assign-lot-owner.dto';
+import { AuditService } from '../audit/audit.service';
+import {
+  AuditEventType,
+  AuditEntityType,
+} from '../../entities/audit-event.entity';
 
 @Injectable()
 export class InventoryImportService {
@@ -38,6 +45,7 @@ export class InventoryImportService {
     @InjectRepository(Material)
     private readonly materialRepository: Repository<Material>,
     private readonly dataSource: DataSource,
+    private readonly auditService: AuditService,
   ) {}
 
   // ==================== FILE PREVIEW ====================
@@ -311,6 +319,87 @@ export class InventoryImportService {
     return this.findLot(id);
   }
 
+  async updateLotOwner(
+    id: string,
+    dto: UpdateLotOwnerDto,
+    actor?: string,
+  ): Promise<InventoryLot> {
+    this.validateLotOwnerPair(dto.owner_type, dto.owner_id);
+
+    const lot = await this.lotRepository.findOne({ where: { id } });
+    if (!lot) {
+      throw new NotFoundException(`Lot with ID "${id}" not found`);
+    }
+
+    const oldState = { owner_type: lot.owner_type, owner_id: lot.owner_id };
+    lot.owner_type = dto.owner_type;
+    lot.owner_id = dto.owner_type === OwnerType.COMPANY ? null : dto.owner_id;
+    await this.lotRepository.save(lot);
+
+    const newState = { owner_type: lot.owner_type, owner_id: lot.owner_id };
+    await this.auditService.emitStateChange(
+      'INVENTORY_LOT_OWNER_CHANGED',
+      AuditEntityType.INVENTORY_LOT,
+      id,
+      oldState,
+      newState,
+      actor,
+    );
+
+    return this.findLot(id);
+  }
+
+  async bulkAssignLotOwner(
+    dto: BulkAssignLotOwnerDto,
+    actor?: string,
+  ): Promise<{ assigned: number }> {
+    this.validateLotOwnerPair(dto.owner_type, dto.owner_id);
+
+    const ownerIdResolved =
+      dto.owner_type === OwnerType.COMPANY ? null : dto.owner_id;
+
+    await this.dataSource.transaction(async (manager) => {
+      for (const lotId of dto.lot_ids) {
+        const lot = await manager.findOne(InventoryLot, { where: { id: lotId } });
+        if (!lot) {
+          throw new NotFoundException(`Lot with ID "${lotId}" not found`);
+        }
+        const oldState = { owner_type: lot.owner_type, owner_id: lot.owner_id };
+        lot.owner_type = dto.owner_type;
+        lot.owner_id = ownerIdResolved;
+        await manager.save(InventoryLot, lot);
+
+        const newState = { owner_type: lot.owner_type, owner_id: lot.owner_id };
+        await this.auditService.emitStateChange(
+          'INVENTORY_LOT_OWNER_CHANGED',
+          AuditEntityType.INVENTORY_LOT,
+          lot.id,
+          oldState,
+          newState,
+          actor,
+        );
+      }
+    });
+
+    return { assigned: dto.lot_ids.length };
+  }
+
+  private validateLotOwnerPair(
+    ownerType: OwnerType,
+    ownerId: string | null | undefined,
+  ): void {
+    if (ownerType === OwnerType.CUSTOMER && !ownerId) {
+      throw new BadRequestException(
+        'owner_id is required when owner_type is CUSTOMER',
+      );
+    }
+    if (ownerType === OwnerType.COMPANY && ownerId) {
+      throw new BadRequestException(
+        'owner_id must be null when owner_type is COMPANY',
+      );
+    }
+  }
+
   async deleteLot(id: string): Promise<void> {
     const lot = await this.lotRepository.findOne({ where: { id } });
     if (!lot) {
@@ -321,10 +410,6 @@ export class InventoryImportService {
       // Nullify FK references in related tables
       await manager.query(
         `UPDATE receiving_session_lines SET lot_id = NULL WHERE lot_id = $1`,
-        [id],
-      );
-      await manager.query(
-        `UPDATE cycle_count_items SET lot_id = NULL WHERE lot_id = $1`,
         [id],
       );
       // Delete associated transactions
@@ -343,10 +428,6 @@ export class InventoryImportService {
       // Nullify FK references in related tables
       await manager.query(
         `UPDATE receiving_session_lines SET lot_id = NULL WHERE lot_id = ANY($1)`,
-        [ids],
-      );
-      await manager.query(
-        `UPDATE cycle_count_items SET lot_id = NULL WHERE lot_id = ANY($1)`,
         [ids],
       );
       // Delete associated transactions

@@ -1,0 +1,93 @@
+Server & VM Infrastructure
+
+  1. What OS are the 2 VMs running? (Windows Server 2019/2022? Linux distro?)
+	windows server 2019/2022
+  2. What are the specs on each VM? (CPU cores, RAM, disk) — and which VM would host the ERP?
+	refer to server folder and view the files for further details
+  3. Is Docker already installed on either VM? Or would you prefer to run services natively (Node.js + PostgreSQL
+  installed directly)?
+	no
+  4. Are the VMs on the same physical server? What hypervisor? (Hyper-V, VMware ESXi, Proxmox?)
+	yes same using VMware
+  5. Do you want to deploy on one of the existing VMs or create a third? Adding to an existing VM with the MES software
+  could create resource contention.
+	deploy on the existing main VM
+  6. How much disk space can you allocate? PostgreSQL + file attachments (uploaded proofs, etc.) will grow over time.
+	900GB of free space so far
+
+  Networking & Access
+
+  7. How will factory users access the ERP? Browser on shared workstations? Individual PCs? Tablets on the floor?
+	shared workstations and they 
+	shared workstations
+  8. Is this LAN-only, or do any users need remote/VPN access?
+	LAN and wifi mostly. remove/vpn access for a couple users only
+  9. Do you have a DNS server on the LAN? (e.g., could you point erp.factory.local to the VM?) Or will users access it
+  by IP address?
+	DNS server exists on the LAN but right now PCs are connected via IP address
+  10. What ports are available? Any firewall rules between VMs or between VMs and client machines?
+	not sure
+  11. Do you need HTTPS? (For LAN-only, HTTP is often fine — but if accessing over VPN or if you handle sensitive data,
+  TLS matters. Also, some browser features like barcode scanner APIs require HTTPS.)
+	1 or 2 users over https
+  12. Is there a reverse proxy already running on either VM? (IIS, nginx, Apache?)
+	not that i am aware of
+
+  Database
+
+  13. Do you want PostgreSQL in Docker, or installed natively? Docker is simpler to manage; native gives slightly better
+   performance and is easier to back up with standard tools.
+native
+  14. What's your backup strategy? Do you have an existing backup system for the VMs (snapshots, Veeam, etc.)?
+no back up system until now. need to develop one
+  15. How much data do you expect? Roughly how many materials, orders per month, PO lines? This helps size the DB.
+hard to tell but we are a small CM
+
+  MES & Existing Software
+
+  16. What MES software are you running? Is there any future plan to integrate it with this ERP (shared DB, API calls,
+  etc.)?
+eventually, not now. not in the scope of this launch
+  17. Does the MES use PostgreSQL or another database? Any port conflicts to watch for (5432)?
+uses MySQL
+  18. Are the shared drives on the same VMs? Could disk I/O from file serving impact ERP performance?
+shared drives are on the same VM
+
+  Operations & Maintenance
+
+  19. Who will be the system administrator? Is there an IT person, or is it you?
+me
+  20. How do you want to handle updates? Pull from git and rebuild? Pre-built packages? Minimal downtime matters?
+need recommendation. minimal downtime is key
+  21. Do you want automatic restarts on crash? (PM2, systemd, Docker restart policies)
+not sure - need recommendation based on best IT practices
+  22. Do you need logging/monitoring? (Where do logs go? Do you want alerts if the service goes down?)
+if possible
+  23. What are your uptime expectations? Is it OK if the ERP is down for 5 minutes during updates, or do you need
+  zero-downtime deploys?
+5 minutes is fine
+
+  Authentication & Users
+
+  24. How many concurrent users do you expect? (operators, managers, warehouse clerks)
+5-10
+  25. The current session secret is a placeholder (change-this-to-a-secure-random-string-in-production-min-32-chars). Do
+   you want me to generate a proper one, or do you have a secrets management approach?
+no idea what you are talking about
+  26. Do you need Active Directory / LDAP integration? Or are the built-in 4-role accounts (ADMIN, MANAGER,
+  WAREHOUSE_CLERK, OPERATOR) sufficient?
+4 roles are sufficient for now. would like active directory later on but not in the scope of this launch
+
+  Data Migration
+
+  27. Is there existing data to migrate in? (materials lists, BOMs, inventory counts, historical POs — beyond what the
+  PO History import already handles)
+not really, everything will be manually added from scratch
+  28. Do you want to seed the production database with test data, or start clean?
+start clean
+
+  Dymo / Label Printing (Phase 6)
+
+  29. Are the Dymo printers already connected to specific workstations? This affects whether you need HTTPS (the DYMO
+  Framework SDK requires the DYMO Web Service running on the client machine).
+not currently setup

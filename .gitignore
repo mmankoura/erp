@@ -4,6 +4,10 @@
 # Node
 node_modules/
 dist/
+.next/
+
+# Database dumps
+*.dump
 
 # Environment
 .env

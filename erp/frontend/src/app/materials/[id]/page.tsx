@@ -412,7 +412,7 @@ export default function MaterialDetailPage() {
                     {purchaseHistory.map((h) => (
                       <TableRow key={`${h.po_id}-${h.manufacturer_pn ?? ""}-${h.quantity_ordered}`}>
                         <TableCell className="font-mono font-medium">
-                          <Link href={`/purchase-orders?focus=${h.po_id}`} className="hover:underline">
+                          <Link href={`/purchase-orders/${h.po_id}`} className="hover:underline">
                             {h.po_number}
                           </Link>
                         </TableCell>

@@ -373,20 +373,10 @@ function KittingDetail({
   )
   const [scanInput, setScanInput] = useState("")
   const [showPrintView, setShowPrintView] = useState(false)
+  const [showShortageView, setShowShortageView] = useState(false)
   const scanInputRef = useRef<HTMLInputElement>(null)
 
   const kittingList = stockData?.kitting_list
-
-  const printMutation = useMutation<KittingList, void>(
-    () => api.post(`/kitting/${kittingListId}/print`, {}),
-    {
-      onSuccess: () => {
-        toast.success("Marked as printed")
-        refetch()
-      },
-      onError: (err) => toast.error(err.message),
-    },
-  )
 
   const scanMutation = useMutation<{ scan: unknown; item: unknown }, { uid: string }>(
     (vars) => api.post(`/kitting/${kittingListId}/scan`, vars),
@@ -448,6 +438,15 @@ function KittingDetail({
     )
   }
 
+  if (showShortageView && stockData) {
+    return (
+      <KittingShortagePrintView
+        stockData={stockData}
+        onClose={() => setShowShortageView(false)}
+      />
+    )
+  }
+
   if (isLoading || !kittingList) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -456,9 +455,15 @@ function KittingDetail({
     )
   }
 
-  const canScan = kittingList.status === "PRINTED" || kittingList.status === "IN_PROGRESS"
-  const canComplete = kittingList.status === "PRINTED" || kittingList.status === "IN_PROGRESS"
-  const canPrint = kittingList.status === "DRAFT" || kittingList.status === "PRINTED"
+  // Scanning and completion are allowed from any active status (DRAFT included) —
+  // printing the pick sheet is no longer a prerequisite.
+  const isActive =
+    kittingList.status === "DRAFT" ||
+    kittingList.status === "PRINTED" ||
+    kittingList.status === "IN_PROGRESS"
+  const canScan = isActive
+  const canComplete = isActive
+  const canPrint = isActive
   const canCancel = kittingList.status === "DRAFT" || kittingList.status === "PRINTED"
 
   // Shortage summary
@@ -510,15 +515,20 @@ function KittingDetail({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                if (kittingList.status === "DRAFT") {
-                  printMutation.mutate()
-                }
-                setShowPrintView(true)
-              }}
+              onClick={() => setShowPrintView(true)}
             >
               <Printer className="mr-1 h-4 w-4" />
-              Print
+              Print Pick Sheet
+            </Button>
+          )}
+          {stockData && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowShortageView(true)}
+            >
+              <AlertTriangle className="mr-1 h-4 w-4" />
+              Shortage Report
             </Button>
           )}
           {canComplete && (
@@ -585,13 +595,15 @@ function KittingDetail({
         </Card>
       )}
 
-      {/* Shortage summary (only when completed) */}
-      {kittingList.status === "COMPLETED" && shortItems.length > 0 && (
+      {/* Shortage summary — visible at any status when there are shortages.
+          For active lists the values are live (based on current on-hand vs.
+          required); for completed lists they reflect the snapshot at completion. */}
+      {kittingList.status !== "CANCELLED" && shortItems.length > 0 && (
         <Card className="border-amber-200 bg-amber-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2 text-amber-800">
               <AlertTriangle className="h-4 w-4" />
-              Shortages Detected ({shortItems.length} items)
+              Shortages ({shortItems.length} items)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -908,6 +920,123 @@ function PrintSection({
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function KittingShortagePrintView({
+  stockData,
+  onClose,
+}: {
+  stockData: KittingStockResponse
+  onClose: () => void
+}) {
+  const kittingList = stockData.kitting_list
+
+  const allItems = [
+    ...stockData.smt_items,
+    ...stockData.th_items,
+    ...stockData.other_items,
+  ]
+  const shortItems = allItems.filter((i) => i.is_short)
+
+  const handlePrint = () => {
+    window.print()
+  }
+
+  return (
+    <div>
+      {/* Screen-only controls */}
+      <div className="flex gap-2 mb-4 print:hidden">
+        <Button variant="outline" size="sm" onClick={onClose}>
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          Back
+        </Button>
+        <Button size="sm" onClick={handlePrint}>
+          <Printer className="mr-1 h-4 w-4" />
+          Print
+        </Button>
+      </div>
+
+      {/* Printable content */}
+      <div className="print:p-0 space-y-6">
+        {/* Header */}
+        <div className="border-b pb-4">
+          <h1 className="text-xl font-bold">
+            Shortage Report: {kittingList.list_number}
+          </h1>
+          <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+            <div>
+              <strong>Date:</strong>{" "}
+              {new Date(kittingList.created_at).toLocaleDateString()}
+            </div>
+            <div>
+              <strong>Created By:</strong> {kittingList.created_by ?? "-"}
+            </div>
+            <div className="col-span-2">
+              <strong>Orders:</strong>{" "}
+              {kittingList.orders
+                .map(
+                  (o) =>
+                    `${o.order?.order_number} (${o.order?.customer?.name} - ${o.order?.product?.name}, ${o.order_quantity} pcs)`,
+                )
+                .join(" | ")}
+            </div>
+            <div className="col-span-2">
+              <strong>Items short:</strong> {shortItems.length}
+            </div>
+          </div>
+        </div>
+
+        {shortItems.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No shortages — all components are fully available.
+          </p>
+        ) : (
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-1 pr-2 w-8">#</th>
+                <th className="text-left py-1 pr-2">IPN</th>
+                <th className="text-left py-1 pr-2">MPN</th>
+                <th className="text-left py-1 pr-2">Description</th>
+                <th className="text-right py-1 pr-2">Qty Required</th>
+                <th className="text-right py-1 pr-2">On Hand</th>
+                <th className="text-right py-1 pr-2">Available</th>
+                <th className="text-right py-1 pr-2">Short</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shortItems.map((item, idx) => (
+                <tr key={item.id} className="border-b border-gray-200">
+                  <td className="py-1 pr-2 text-gray-500">{idx + 1}</td>
+                  <td className="py-1 pr-2 font-mono">
+                    {item.material?.internal_part_number}
+                  </td>
+                  <td className="py-1 pr-2 font-mono text-xs">
+                    {item.material?.manufacturer_pn ?? "-"}
+                  </td>
+                  <td className="py-1 pr-2 text-xs truncate max-w-[200px]">
+                    {item.material?.description ?? "-"}
+                  </td>
+                  <td className="py-1 pr-2 text-right font-medium">
+                    {parseFloat(String(item.total_qty_required)).toLocaleString()}
+                  </td>
+                  <td className="py-1 pr-2 text-right">
+                    {parseFloat(String(item.quantity_on_hand)).toLocaleString()}
+                  </td>
+                  <td className="py-1 pr-2 text-right">
+                    {parseFloat(String(item.quantity_available)).toLocaleString()}
+                  </td>
+                  <td className="py-1 pr-2 text-right font-medium text-red-600">
+                    {parseFloat(String(item.shortage_qty)).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   )
 }

@@ -17,7 +17,7 @@ import { AmlModule } from './modules/aml/aml.module';
 import { ReceivingInspectionModule } from './modules/receiving-inspection/receiving-inspection.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { ReceivingModule } from './modules/receiving/receiving.module';
-import { CycleCountModule } from './modules/cycle-count/cycle-count.module';
+import { PhysicalCountModule } from './modules/physical-count/physical-count.module';
 import { ProductionModule } from './modules/production/production.module';
 import { KittingModule } from './modules/kitting/kitting.module';
 import { ConsumableOrdersModule } from './modules/consumable-orders/consumable-orders.module';
@@ -48,7 +48,7 @@ import { SharedModule } from './modules/shared/shared.module';
     ReceivingModule, // Operator-facing receiving sessions
     PurchaseOrdersModule,
     MrpModule,
-    CycleCountModule, // Cycle counting / physical inventory
+    PhysicalCountModule, // Per-customer UID-scan physical count (replaces cycle-count)
     ProductionModule, // WIP / production tracking
     KittingModule, // Kitting list management
     ConsumableOrdersModule, // Consumable purchase orders (solder paste, stencils, etc.)

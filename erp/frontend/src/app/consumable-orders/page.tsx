@@ -1,23 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import Link from "next/link"
 import { useApi, useMutation } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -25,11 +15,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, Trash2, CheckCircle, ClipboardList, Pencil, Undo2, FileDown, FileSpreadsheet } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Plus,
+  Trash2,
+  CheckCircle,
+  ClipboardList,
+  Pencil,
+  Undo2,
+  FileDown,
+  FileSpreadsheet,
+  Eye,
+  MoreHorizontal,
+  Lock,
+  Unlock,
+} from "lucide-react"
 import { toast } from "sonner"
-import { useAuth } from "@/contexts/auth-context"
+import { useAuth, UserRole } from "@/contexts/auth-context"
 
-interface ConsumableOrderLine {
+export interface ConsumableOrderLine {
   id: string
   ata_part_number: string | null
   description: string
@@ -42,11 +52,13 @@ interface ConsumableOrderLine {
   notes: string | null
 }
 
-interface ConsumableOrder {
+export type ConsumableOrderStatus = "ORDERED" | "RECEIVED"
+
+export interface ConsumableOrder {
   id: string
   order_number: string
   supplier: string
-  status: "ORDERED" | "RECEIVED"
+  status: ConsumableOrderStatus
   order_date: string
   expected_date: string | null
   currency: string
@@ -56,7 +68,7 @@ interface ConsumableOrder {
   created_at: string
 }
 
-interface NewLine {
+export interface NewLine {
   ata_part_number: string
   description: string
   manufacturer: string
@@ -67,7 +79,7 @@ interface NewLine {
   notes: string
 }
 
-const emptyLine: NewLine = {
+export const emptyLine: NewLine = {
   ata_part_number: "",
   description: "",
   manufacturer: "",
@@ -78,71 +90,89 @@ const emptyLine: NewLine = {
   notes: "",
 }
 
+const statusRowTint: Record<ConsumableOrderStatus, string> = {
+  ORDERED: "bg-blue-100 border-l-4 border-l-blue-500",
+  RECEIVED: "bg-emerald-100 border-l-4 border-l-emerald-500",
+}
+
+const statusBadgeVariant: Record<ConsumableOrderStatus, "default" | "secondary"> = {
+  ORDERED: "default",
+  RECEIVED: "secondary",
+}
+
+type CoLineRow = {
+  order: ConsumableOrder
+  line: ConsumableOrderLine | null
+  rowKey: string
+}
+
+function InlineStatusCell({
+  order,
+  onSaved,
+  disabled,
+}: {
+  order: ConsumableOrder
+  onSaved: () => void
+  disabled?: boolean
+}) {
+  const [pending, setPending] = useState<string | null>(null)
+
+  const run = async (endpoint: "receive" | "undo-receive") => {
+    setPending(endpoint)
+    try {
+      await api.post(`/consumable-orders/${order.id}/${endpoint}`, {})
+      toast.success(`Order ${order.order_number} → ${endpoint === "receive" ? "RECEIVED" : "ORDERED"}`)
+      onSaved()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Failed to ${endpoint}`)
+    } finally {
+      setPending(null)
+    }
+  }
+
+  if (disabled) {
+    return <Badge variant={statusBadgeVariant[order.status]}>{order.status}</Badge>
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={pending !== null}
+          className="inline-flex items-center hover:opacity-80 transition-opacity cursor-pointer disabled:opacity-50"
+          title="Change status"
+        >
+          <Badge variant={statusBadgeVariant[order.status]}>
+            {pending ? "..." : order.status}
+          </Badge>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {order.status === "ORDERED" && (
+          <DropdownMenuItem onClick={() => run("receive")}>
+            Mark Received
+          </DropdownMenuItem>
+        )}
+        {order.status === "RECEIVED" && (
+          <DropdownMenuItem onClick={() => run("undo-receive")}>
+            Undo Receive
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export default function ConsumableOrdersPage() {
-  const { user } = useAuth()
-  const [createOpen, setCreateOpen] = useState(false)
+  const { hasRole } = useAuth()
+  const canEditTable = hasRole(UserRole.ADMIN, UserRole.MANAGER)
+  const [editUnlocked, setEditUnlocked] = useState(false)
   const [filterStatus, setFilterStatus] = useState<string>("")
 
-  // Form state
-  const [supplier, setSupplier] = useState("")
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
-  const [expectedDate, setExpectedDate] = useState("")
-  const [currency, setCurrency] = useState("CAD")
-  const [notes, setNotes] = useState("")
-  const [lines, setLines] = useState<NewLine[]>([{ ...emptyLine }])
-
   const { data: orders, isLoading, refetch } = useApi<ConsumableOrder[]>(
-    filterStatus ? `/consumable-orders?status=${filterStatus}` : "/consumable-orders"
+    filterStatus ? `/consumable-orders?status=${filterStatus}` : "/consumable-orders",
   )
-
-  const createMutation = useMutation(
-    (data: unknown) => api.post<ConsumableOrder>("/consumable-orders", data),
-    {
-      onSuccess: (result) => {
-        toast.success(`Consumable order ${result.order_number} created`)
-        setCreateOpen(false)
-        resetForm()
-        refetch()
-      },
-      onError: (error) => toast.error(error.message || "Failed to create order"),
-    }
-  )
-
-  const receiveMutation = useMutation(
-    (id: string) => api.post<ConsumableOrder>(`/consumable-orders/${id}/receive`, {}),
-    {
-      onSuccess: () => {
-        toast.success("Order marked as received")
-        refetch()
-      },
-      onError: (error) => toast.error(error.message || "Failed to mark as received"),
-    }
-  )
-
-  const undoReceiveMutation = useMutation(
-    (id: string) => api.post<ConsumableOrder>(`/consumable-orders/${id}/undo-receive`, {}),
-    {
-      onSuccess: () => {
-        toast.success("Receiving undone — order back to ORDERED")
-        refetch()
-      },
-      onError: (error) => toast.error(error.message || "Failed to undo receive"),
-    }
-  )
-
-  const updateMutation = useMutation(
-    ({ id, data }: { id: string; data: unknown }) => api.patch<ConsumableOrder>(`/consumable-orders/${id}`, data),
-    {
-      onSuccess: () => {
-        toast.success("Order updated")
-        setEditOrder(null)
-        refetch()
-      },
-      onError: (error) => toast.error(error.message || "Failed to update order"),
-    }
-  )
-
-  const [editOrder, setEditOrder] = useState<ConsumableOrder | null>(null)
 
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/consumable-orders/${id}`),
@@ -152,110 +182,144 @@ export default function ConsumableOrdersPage() {
         refetch()
       },
       onError: (error) => toast.error(error.message || "Failed to delete order"),
-    }
+    },
   )
 
-  const resetForm = () => {
-    setSupplier("")
-    setOrderDate(new Date().toISOString().split("T")[0])
-    setExpectedDate("")
-    setCurrency("CAD")
-    setNotes("")
-    setLines([{ ...emptyLine }])
-  }
+  // Flatten orders into per-line rows; orders with no lines get a placeholder row.
+  const flatLines = useMemo<CoLineRow[] | null>(() => {
+    if (!orders) return null
+    const rows: CoLineRow[] = []
+    for (const o of orders) {
+      if (!o.lines || o.lines.length === 0) {
+        rows.push({ order: o, line: null, rowKey: `o-${o.id}` })
+      } else {
+        for (const line of o.lines) {
+          rows.push({ order: o, line, rowKey: `l-${line.id}` })
+        }
+      }
+    }
+    return rows
+  }, [orders])
 
-  const handleCreate = () => {
-    const validLines = lines.filter((l) => l.description.trim())
-    if (!supplier.trim()) { toast.error("Supplier is required"); return }
-    if (validLines.length === 0) { toast.error("At least one line item is required"); return }
-
-    createMutation.mutate({
-      supplier: supplier.trim(),
-      order_date: orderDate,
-      expected_date: expectedDate || undefined,
-      currency,
-      notes: notes || undefined,
-      created_by: user?.username,
-      lines: validLines.map((l) => ({
-        ata_part_number: l.ata_part_number || undefined,
-        description: l.description,
-        manufacturer: l.manufacturer || undefined,
-        manufacturer_pn: l.manufacturer_pn || undefined,
-        quantity: parseFloat(l.quantity) || 1,
-        unit_cost: l.unit_cost ? parseFloat(l.unit_cost) : undefined,
-        customer: l.customer || undefined,
-        notes: l.notes || undefined,
-      })),
-    })
-  }
-
-  const updateLine = (index: number, field: keyof NewLine, value: string) => {
-    const updated = [...lines]
-    updated[index] = { ...updated[index], [field]: value }
-    setLines(updated)
-  }
-
-  const addLine = () => setLines([...lines, { ...emptyLine }])
-  const removeLine = (index: number) => {
-    if (lines.length <= 1) return
-    setLines(lines.filter((_, i) => i !== index))
-  }
-
-  const columns: VirtualGridColumn<ConsumableOrder>[] = [
+  const columns: VirtualGridColumn<CoLineRow>[] = [
     {
       id: "order_number",
       header: "Order #",
-      size: 180,
+      size: 170,
       sortable: true,
       filterable: true,
-      accessorFn: (o) => o.order_number,
-      filterAccessor: (o) => o.order_number,
-      cell: (o) => <span className="font-mono font-medium">{o.order_number}</span>,
+      accessorFn: (r) => r.order.order_number,
+      filterAccessor: (r) => r.order.order_number,
+      cell: (r) => (
+        <Link
+          href={`/consumable-orders/${r.order.id}`}
+          className="font-mono font-medium italic hover:underline"
+          title="Open order details"
+        >
+          {r.order.order_number}
+        </Link>
+      ),
     },
     {
       id: "supplier",
       header: "Supplier",
-      size: 180,
+      size: 160,
       sortable: true,
       filterable: true,
-      accessorFn: (o) => o.supplier,
-      filterAccessor: (o) => o.supplier,
-      cell: (o) => o.supplier,
+      accessorFn: (r) => r.order.supplier,
+      filterAccessor: (r) => r.order.supplier,
+      cell: (r) => <span className="italic text-muted-foreground">{r.order.supplier}</span>,
     },
     {
-      id: "items",
-      header: "Items",
-      size: 300,
+      id: "line_number",
+      header: "Line",
+      size: 60,
+      align: "right",
       sortable: false,
       filterable: false,
-      accessorFn: (o) => o.lines.map((l) => l.description).join(" "),
-      cell: (o) => (
-        <div className="text-sm space-y-0.5">
-          {o.lines.slice(0, 3).map((l) => (
-            <div key={l.id} className="truncate max-w-[280px]">
-              {l.ata_part_number && <span className="font-medium">{l.ata_part_number} — </span>}
-              {l.description}
-              {l.customer && <span className="text-muted-foreground ml-1">({l.customer})</span>}
-            </div>
-          ))}
-          {o.lines.length > 3 && (
-            <span className="text-muted-foreground">+{o.lines.length - 3} more</span>
-          )}
-        </div>
-      ),
+      accessorFn: (r) => r.line?.line_number ?? 0,
+      cell: (r) => <span className="text-muted-foreground">{r.line?.line_number ?? "—"}</span>,
     },
     {
-      id: "total",
-      header: "Total",
-      size: 100,
+      id: "ata_pn",
+      header: "AT&A P/N",
+      size: 130,
+      sortable: true,
+      filterable: true,
+      accessorFn: (r) => r.line?.ata_part_number ?? "",
+      filterAccessor: (r) => r.line?.ata_part_number ?? "—",
+      cell: (r) => <span className="font-mono text-sm">{r.line?.ata_part_number || "—"}</span>,
+    },
+    {
+      id: "description",
+      header: "Description",
+      size: 240,
+      sortable: true,
+      filterable: true,
+      accessorFn: (r) => r.line?.description ?? "",
+      filterAccessor: (r) => r.line?.description ?? "—",
+      cell: (r) => <span className="truncate">{r.line?.description || "—"}</span>,
+    },
+    {
+      id: "mfr",
+      header: "MFR",
+      size: 120,
+      sortable: true,
+      filterable: true,
+      accessorFn: (r) => r.line?.manufacturer ?? "",
+      filterAccessor: (r) => r.line?.manufacturer ?? "—",
+      cell: (r) => <span className="text-sm">{r.line?.manufacturer || "—"}</span>,
+    },
+    {
+      id: "mpn",
+      header: "MFR P/N",
+      size: 140,
+      sortable: true,
+      filterable: true,
+      accessorFn: (r) => r.line?.manufacturer_pn ?? "",
+      filterAccessor: (r) => r.line?.manufacturer_pn ?? "—",
+      cell: (r) => <span className="font-mono text-sm">{r.line?.manufacturer_pn || "—"}</span>,
+    },
+    {
+      id: "qty",
+      header: "Qty",
+      size: 70,
       align: "right",
       sortable: true,
       filterable: false,
-      accessorFn: (o) => o.lines.reduce((sum, l) => sum + (parseFloat(String(l.quantity)) * parseFloat(String(l.unit_cost ?? 0))), 0),
-      cell: (o) => {
-        const total = o.lines.reduce((sum, l) => sum + (parseFloat(String(l.quantity)) * parseFloat(String(l.unit_cost ?? 0))), 0)
-        return <span className="font-mono">{total > 0 ? `${total.toFixed(2)} ${o.currency}` : "—"}</span>
+      accessorFn: (r) => parseFloat(String(r.line?.quantity ?? 0)),
+      cell: (r) => (
+        <span className="font-mono">
+          {r.line ? parseFloat(String(r.line.quantity)) : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "unit_cost",
+      header: "Unit Cost",
+      size: 110,
+      align: "right",
+      sortable: true,
+      filterable: false,
+      accessorFn: (r) => parseFloat(String(r.line?.unit_cost ?? 0)),
+      cell: (r) => {
+        const cost = r.line?.unit_cost != null ? parseFloat(String(r.line.unit_cost)) : null
+        return (
+          <span className="font-mono">
+            {cost != null ? `${r.order.currency} ${cost.toFixed(2)}` : "—"}
+          </span>
+        )
       },
+    },
+    {
+      id: "customer",
+      header: "Customer",
+      size: 130,
+      sortable: true,
+      filterable: true,
+      accessorFn: (r) => r.line?.customer ?? "",
+      filterAccessor: (r) => r.line?.customer ?? "—",
+      cell: (r) => <span className="text-sm text-muted-foreground">{r.line?.customer || "—"}</span>,
     },
     {
       id: "order_date",
@@ -263,8 +327,8 @@ export default function ConsumableOrdersPage() {
       size: 110,
       sortable: true,
       filterable: false,
-      accessorFn: (o) => new Date(o.order_date).getTime(),
-      cell: (o) => new Date(o.order_date).toLocaleDateString(),
+      accessorFn: (r) => new Date(r.order.order_date).getTime(),
+      cell: (r) => new Date(r.order.order_date).toLocaleDateString(),
     },
     {
       id: "status",
@@ -272,35 +336,38 @@ export default function ConsumableOrdersPage() {
       size: 110,
       sortable: true,
       filterable: true,
-      accessorFn: (o) => o.status,
-      filterAccessor: (o) => o.status,
-      cell: (o) => (
-        <Badge className={o.status === "RECEIVED"
-          ? "bg-green-100 text-green-800 border-green-200"
-          : "bg-blue-100 text-blue-800 border-blue-200"
-        }>
-          {o.status}
-        </Badge>
+      accessorFn: (r) => r.order.status,
+      filterAccessor: (r) => r.order.status,
+      cell: (r) => (
+        <InlineStatusCell
+          order={r.order}
+          onSaved={refetch}
+          disabled={!canEditTable || !editUnlocked}
+        />
       ),
     },
     {
       id: "actions",
       header: "",
-      size: 220,
+      size: 130,
       sortable: false,
       filterable: false,
       accessorFn: () => "",
-      cell: (o) => (
-        <div className="flex gap-1">
+      cell: (r) => (
+        <div className="flex items-center gap-1">
+          <Link href={`/consumable-orders/${r.order.id}`}>
+            <Button variant="ghost" size="icon" className="h-8 w-8" title="Open order details">
+              <Eye className="h-4 w-4" />
+            </Button>
+          </Link>
           <Button
             variant="ghost"
             size="icon"
             className="h-8 w-8"
             title="Download PDF"
-            onClick={async (e) => {
-              e.stopPropagation()
+            onClick={async () => {
               const { generateConsumablePoPdf } = await import("@/lib/consumable-po-pdf")
-              await generateConsumablePoPdf(o)
+              await generateConsumablePoPdf(r.order)
             }}
           >
             <FileDown className="h-4 w-4" />
@@ -310,68 +377,72 @@ export default function ConsumableOrdersPage() {
             size="icon"
             className="h-8 w-8"
             title="Download Excel"
-            onClick={async (e) => {
-              e.stopPropagation()
+            onClick={async () => {
               const { exportConsumableOrderToExcel } = await import("@/lib/consumable-po-excel")
-              exportConsumableOrderToExcel(o)
+              exportConsumableOrderToExcel(r.order)
             }}
           >
             <FileSpreadsheet className="h-4 w-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            title="Edit"
-            onClick={(e) => {
-              e.stopPropagation()
-              setEditOrder(o)
-            }}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          {o.status === "ORDERED" && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              title="Mark Received"
-              onClick={(e) => {
-                e.stopPropagation()
-                receiveMutation.mutate(o.id)
-              }}
-            >
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            </Button>
-          )}
-          {o.status === "RECEIVED" && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              title="Undo Receive"
-              onClick={(e) => {
-                e.stopPropagation()
-                undoReceiveMutation.mutate(o.id)
-              }}
-            >
-              <Undo2 className="h-4 w-4 text-orange-600" />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive"
-            title="Delete"
-            onClick={(e) => {
-              e.stopPropagation()
-              if (confirm("Delete this consumable order?")) {
-                deleteMutation.mutate(o.id)
-              }
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <Link href={`/consumable-orders/${r.order.id}`}>
+                <DropdownMenuItem>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+              </Link>
+              {r.order.status === "ORDERED" && (
+                <DropdownMenuItem
+                  onClick={async () => {
+                    try {
+                      await api.post(`/consumable-orders/${r.order.id}/receive`, {})
+                      toast.success("Order marked as received")
+                      refetch()
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed")
+                    }
+                  }}
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Mark Received
+                </DropdownMenuItem>
+              )}
+              {r.order.status === "RECEIVED" && (
+                <DropdownMenuItem
+                  onClick={async () => {
+                    try {
+                      await api.post(`/consumable-orders/${r.order.id}/undo-receive`, {})
+                      toast.success("Receiving undone")
+                      refetch()
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed")
+                    }
+                  }}
+                >
+                  <Undo2 className="h-4 w-4 mr-2" />
+                  Undo Receive
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={() => {
+                  if (confirm(`Delete order ${r.order.order_number}?`)) {
+                    deleteMutation.mutate(r.order.id)
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
     },
@@ -390,8 +461,23 @@ export default function ConsumableOrdersPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Select value={filterStatus || "__all__"} onValueChange={(v) => setFilterStatus(v === "__all__" ? "" : v)}>
-            <SelectTrigger className="w-[150px]">
+          <Link href="/consumable-orders/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              New Order
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="co-status-filter" className="text-sm font-medium">Status:</Label>
+          <Select
+            value={filterStatus || "__all__"}
+            onValueChange={(v) => setFilterStatus(v === "__all__" ? "" : v)}
+          >
+            <SelectTrigger className="w-[180px]" id="co-status-filter">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent>
@@ -400,309 +486,44 @@ export default function ConsumableOrdersPage() {
               <SelectItem value="RECEIVED">Received</SelectItem>
             </SelectContent>
           </Select>
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                New Order
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>New Consumable Order</DialogTitle>
-                <DialogDescription>
-                  Order number will be auto-generated (CON-YYYYMMDD-NNN)
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="space-y-1.5">
-                    <Label>Supplier *</Label>
-                    <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Supplier name" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Order Date</Label>
-                    <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Expected Date</Label>
-                    <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Currency</Label>
-                    <Select value={currency} onValueChange={setCurrency}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CAD">CAD</SelectItem>
-                        <SelectItem value="USD">USD</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Notes</Label>
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes" rows={2} />
-                </div>
-
-                {/* Line items */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label>Line Items</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={addLine}>
-                      <Plus className="h-3 w-3 mr-1" /> Add Line
-                    </Button>
-                  </div>
-                  <div className="space-y-3">
-                    {lines.map((line, idx) => (
-                      <div key={idx} className="grid grid-cols-8 gap-2 items-end border rounded-md p-3 bg-muted/30">
-                        <div className="col-span-1 space-y-1">
-                          <Label className="text-xs">AT&A P/N</Label>
-                          <Input value={line.ata_part_number} onChange={(e) => updateLine(idx, "ata_part_number", e.target.value)} placeholder="P/N" className="h-8 text-sm" />
-                        </div>
-                        <div className="col-span-2 space-y-1">
-                          <Label className="text-xs">Description *</Label>
-                          <Input value={line.description} onChange={(e) => updateLine(idx, "description", e.target.value)} placeholder="Description" className="h-8 text-sm" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">MFR</Label>
-                          <Input value={line.manufacturer} onChange={(e) => updateLine(idx, "manufacturer", e.target.value)} placeholder="MFR" className="h-8 text-sm" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">MFR P/N</Label>
-                          <Input value={line.manufacturer_pn} onChange={(e) => updateLine(idx, "manufacturer_pn", e.target.value)} placeholder="MFR P/N" className="h-8 text-sm" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Qty</Label>
-                          <Input type="number" value={line.quantity} onChange={(e) => updateLine(idx, "quantity", e.target.value)} className="h-8 text-sm" min="0" step="any" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Unit Cost</Label>
-                          <Input type="number" value={line.unit_cost} onChange={(e) => updateLine(idx, "unit_cost", e.target.value)} placeholder="0.00" className="h-8 text-sm" min="0" step="any" />
-                        </div>
-                        <div className="flex items-end gap-1">
-                          <div className="flex-1 space-y-1">
-                            <Label className="text-xs">Customer</Label>
-                            <Input value={line.customer} onChange={(e) => updateLine(idx, "customer", e.target.value)} placeholder="Optional" className="h-8 text-sm" />
-                          </div>
-                          {lines.length > 1 && (
-                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeLine(idx)}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm() }}>Cancel</Button>
-                <Button onClick={handleCreate} disabled={createMutation.isLoading}>
-                  {createMutation.isLoading ? "Creating..." : "Create Order"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </div>
+        {canEditTable && (
+          <Button
+            variant={editUnlocked ? "default" : "outline"}
+            size="sm"
+            onClick={() => setEditUnlocked((v) => !v)}
+          >
+            {editUnlocked ? (
+              <>
+                <Unlock className="h-4 w-4 mr-1" />
+                Edit unlocked
+              </>
+            ) : (
+              <>
+                <Lock className="h-4 w-4 mr-1" />
+                Edit locked
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       <VirtualGrid
-        data={orders ?? null}
+        data={flatLines}
         columns={columns}
         isLoading={isLoading}
-        searchPlaceholder="Search by order #, supplier, description, part number..."
-        searchFn={(o, q) =>
-          o.order_number.toLowerCase().includes(q) ||
-          o.supplier.toLowerCase().includes(q) ||
-          o.lines.some((l) =>
-            l.description.toLowerCase().includes(q) ||
-            (l.ata_part_number ?? "").toLowerCase().includes(q) ||
-            (l.customer ?? "").toLowerCase().includes(q)
-          )
+        searchPlaceholder="Search by order #, supplier, description, P/N, MFR, customer..."
+        searchFn={(r, q) =>
+          r.order.order_number.toLowerCase().includes(q) ||
+          r.order.supplier.toLowerCase().includes(q) ||
+          (r.line?.description ?? "").toLowerCase().includes(q) ||
+          (r.line?.ata_part_number ?? "").toLowerCase().includes(q) ||
+          (r.line?.manufacturer ?? "").toLowerCase().includes(q) ||
+          (r.line?.manufacturer_pn ?? "").toLowerCase().includes(q) ||
+          (r.line?.customer ?? "").toLowerCase().includes(q)
         }
+        rowClassName={(r) => statusRowTint[r.order.status]}
       />
-
-      {/* Edit Dialog */}
-      {editOrder && (
-        <EditConsumableOrderDialog
-          order={editOrder}
-          open={!!editOrder}
-          onOpenChange={(open) => { if (!open) setEditOrder(null) }}
-          onSave={(data) => updateMutation.mutate({ id: editOrder.id, data })}
-          isSaving={updateMutation.isLoading}
-        />
-      )}
     </div>
-  )
-}
-
-function EditConsumableOrderDialog({
-  order,
-  open,
-  onOpenChange,
-  onSave,
-  isSaving,
-}: {
-  order: ConsumableOrder
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSave: (data: unknown) => void
-  isSaving: boolean
-}) {
-  const [supplier, setSupplier] = useState(order.supplier)
-  const [orderDate, setOrderDate] = useState(order.order_date.split("T")[0])
-  const [expectedDate, setExpectedDate] = useState(order.expected_date?.split("T")[0] ?? "")
-  const [currency, setCurrency] = useState(order.currency)
-  const [notes, setNotes] = useState(order.notes ?? "")
-  const [editLines, setEditLines] = useState<NewLine[]>(
-    order.lines.map((l) => ({
-      ata_part_number: l.ata_part_number ?? "",
-      description: l.description,
-      manufacturer: l.manufacturer ?? "",
-      manufacturer_pn: l.manufacturer_pn ?? "",
-      quantity: String(parseFloat(String(l.quantity))),
-      unit_cost: l.unit_cost ? String(parseFloat(String(l.unit_cost))) : "",
-      customer: l.customer ?? "",
-      notes: l.notes ?? "",
-    }))
-  )
-
-  const updateLine = (index: number, field: keyof NewLine, value: string) => {
-    const updated = [...editLines]
-    updated[index] = { ...updated[index], [field]: value }
-    setEditLines(updated)
-  }
-
-  const addLine = () => setEditLines([...editLines, { ...emptyLine }])
-  const removeLine = (index: number) => {
-    if (editLines.length <= 1) return
-    setEditLines(editLines.filter((_, i) => i !== index))
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Order {order.order_number}</DialogTitle>
-          <DialogDescription>Update consumable order details</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-1.5">
-              <Label>Supplier *</Label>
-              <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Order Date</Label>
-              <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Expected Date</Label>
-              <Input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="CAD">CAD</SelectItem>
-                  <SelectItem value="USD">USD</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <Label>Line Items</Label>
-              <Button type="button" variant="outline" size="sm" onClick={addLine}>
-                <Plus className="h-3 w-3 mr-1" /> Add Line
-              </Button>
-            </div>
-            <div className="space-y-3">
-              {editLines.map((line, idx) => (
-                <div key={idx} className="grid grid-cols-8 gap-2 items-end border rounded-md p-3 bg-muted/30">
-                  <div className="col-span-1 space-y-1">
-                    <Label className="text-xs">AT&A P/N</Label>
-                    <Input value={line.ata_part_number} onChange={(e) => updateLine(idx, "ata_part_number", e.target.value)} className="h-8 text-sm" />
-                  </div>
-                  <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">Description *</Label>
-                    <Input value={line.description} onChange={(e) => updateLine(idx, "description", e.target.value)} className="h-8 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">MFR</Label>
-                    <Input value={line.manufacturer} onChange={(e) => updateLine(idx, "manufacturer", e.target.value)} className="h-8 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">MFR P/N</Label>
-                    <Input value={line.manufacturer_pn} onChange={(e) => updateLine(idx, "manufacturer_pn", e.target.value)} className="h-8 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Qty</Label>
-                    <Input type="number" value={line.quantity} onChange={(e) => updateLine(idx, "quantity", e.target.value)} className="h-8 text-sm" min="0" step="any" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Unit Cost</Label>
-                    <Input type="number" value={line.unit_cost} onChange={(e) => updateLine(idx, "unit_cost", e.target.value)} className="h-8 text-sm" min="0" step="any" />
-                  </div>
-                  <div className="flex items-end gap-1">
-                    <div className="flex-1 space-y-1">
-                      <Label className="text-xs">Customer</Label>
-                      <Input value={line.customer} onChange={(e) => updateLine(idx, "customer", e.target.value)} className="h-8 text-sm" />
-                    </div>
-                    {editLines.length > 1 && (
-                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeLine(idx)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button
-            onClick={() => {
-              const validLines = editLines.filter((l) => l.description.trim())
-              if (!supplier.trim()) { toast.error("Supplier is required"); return }
-              if (validLines.length === 0) { toast.error("At least one line item is required"); return }
-              onSave({
-                supplier: supplier.trim(),
-                order_date: orderDate,
-                expected_date: expectedDate || undefined,
-                currency,
-                notes: notes || undefined,
-                lines: validLines.map((l) => ({
-                  ata_part_number: l.ata_part_number || undefined,
-                  description: l.description,
-                  manufacturer: l.manufacturer || undefined,
-                  manufacturer_pn: l.manufacturer_pn || undefined,
-                  quantity: parseFloat(l.quantity) || 1,
-                  unit_cost: l.unit_cost ? parseFloat(l.unit_cost) : undefined,
-                  customer: l.customer || undefined,
-                  notes: l.notes || undefined,
-                })),
-              })
-            }}
-            disabled={isSaving}
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }

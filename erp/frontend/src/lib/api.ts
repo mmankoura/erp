@@ -975,6 +975,163 @@ export interface InventoryLot {
   updated_at: string
 }
 
+// Physical Count types
+export type PhysicalCountStatus =
+  | "PLANNED"
+  | "IN_PROGRESS"
+  | "PENDING_REVIEW"
+  | "APPROVED"
+  | "CANCELLED"
+
+export type PhysicalCountDiscrepancyType =
+  | "SHORTAGE"
+  | "OVERAGE"
+  | "NOT_SCANNED"
+  | "ORPHAN"
+
+export type PhysicalCountResolutionAction =
+  | "ADJUST_TO_SCAN"
+  | "ACCEPT_WITH_NOTE"
+  | "RECOUNT"
+  | "SCRAP_MISSING"
+
+export type PhysicalCountScanResolution =
+  | "FIRST"
+  | "SUMMED"
+  | "REPLACED"
+  | "REJECTED"
+
+export interface PhysicalCount {
+  id: string
+  count_number: string
+  status: PhysicalCountStatus
+  customer_id: string
+  customer?: Customer
+  bin_filter: string | null
+  category_filter: string | null
+  parent_count_id: string | null
+  created_by: string | null
+  counted_by: string | null
+  approved_by: string | null
+  started_at: string | null
+  completed_at: string | null
+  approved_at: string | null
+  notes: string | null
+  total_expected_lots: number
+  total_scans: number
+  shortage_count: number
+  overage_count: number
+  not_scanned_count: number
+  orphan_count: number
+  total_variance_value: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PhysicalCountLot {
+  id: string
+  physical_count_id: string
+  lot_id: string
+  lot?: InventoryLot
+  material_id: string
+  material?: Material
+  customer_id: string
+  expected_qty: number
+  unit_cost: number | null
+  bin_at_snapshot: string | null
+  created_at: string
+}
+
+export interface PhysicalCountScan {
+  id: string
+  physical_count_id: string
+  uid: string
+  scanned_qty: number
+  scanned_by: string | null
+  scanned_at: string
+  matched_lot_id: string | null
+  matched_lot?: InventoryLot
+  resolution: PhysicalCountScanResolution
+  superseded_by_scan_id: string | null
+}
+
+export interface PhysicalCountDiscrepancy {
+  id: string
+  physical_count_id: string
+  type: PhysicalCountDiscrepancyType
+  lot_id: string | null
+  lot?: InventoryLot
+  material_id: string | null
+  material?: Material
+  uid: string | null
+  expected_qty: number | null
+  scanned_qty: number | null
+  variance: number
+  variance_value: number | null
+  resolution_action: PhysicalCountResolutionAction | null
+  resolution_note: string | null
+  resolved_by: string | null
+  resolved_at: string | null
+  adjustment_transaction_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PhysicalCountVarianceReport {
+  count: {
+    id: string
+    count_number: string
+    customer: { id: string; name: string; code: string }
+    status: PhysicalCountStatus
+    bin_filter: string | null
+    category_filter: string | null
+    started_at: string | null
+    completed_at: string | null
+    approved_at: string | null
+    counted_by: string | null
+    approved_by: string | null
+  }
+  by_type: {
+    SHORTAGE: PhysicalCountDiscrepancyRow[]
+    OVERAGE: PhysicalCountDiscrepancyRow[]
+    NOT_SCANNED: PhysicalCountDiscrepancyRow[]
+    ORPHAN: PhysicalCountDiscrepancyRow[]
+  }
+  totals: {
+    discrepancies_total: number
+    by_type_count: {
+      SHORTAGE: number
+      OVERAGE: number
+      NOT_SCANNED: number
+      ORPHAN: number
+    }
+    variance_value_total: number
+    by_resolution_count: {
+      ADJUST_TO_SCAN: number
+      ACCEPT_WITH_NOTE: number
+      RECOUNT: number
+      SCRAP_MISSING: number
+    }
+  }
+}
+
+export interface PhysicalCountDiscrepancyRow {
+  discrepancy_id: string
+  type: PhysicalCountDiscrepancyType
+  lot_id: string | null
+  uid: string | null
+  ipn: string | null
+  mfr: string | null
+  mpn: string | null
+  expected_qty: number | null
+  scanned_qty: number | null
+  variance: number
+  variance_value: number | null
+  resolution_action: PhysicalCountResolutionAction | null
+  resolution_note: string | null
+  resolved_by: string | null
+}
+
 // Inventory Import types
 export type InventoryImportField =
   | "uid"
