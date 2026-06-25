@@ -375,3 +375,26 @@ PM2 boot persistence was attempted via three approaches, all failed:
   - `switch-release.bat` step 2 must be watched for "Access is denied". If it appears, do NOT let the script proceed — Ctrl-C and investigate the file lock. Until the script is patched to `exit /b 1` on rotate failure, treat the rotate as a "verify after" operation.
   - Take a manual `robocopy C:\apps\erp\current C:\apps\erp\manual-snapshot-<REV>` before every deploy as a safety net against destructive rotates.
   - `npm ci --omit=dev` in `current\backend\` is a reliable recovery for MODULE_NOT_FOUND crashes when registry.npmjs.org is reachable.
+
+---
+
+## REV-007 Deployment — June 25, 2026
+
+- **Changes**: Lot-based inventory on-hand (on-hand is now summed from ACTIVE `inventory_lots`, not the transaction ledger, which had drifted via return-to-stock double counts — fixes 532 drifted materials and makes on-hand match the physical reels); kitting shortage computed live (required vs. verified), kitting items table → VirtualGrid, kitting Resume workflow (Complete with shortages parks the kit in new `AWAITING_MATERIALS` status; **Resume Kitting** returns it to IN_PROGRESS to scan in received material); removed "Set stock level" (endpoint + service + UI) now that on-hand is lot-derived; production auto-consume toggle on SMT→TH / TH→shipping moves; "Return to client" on return-to-stock (fully removes the reel via new `RETURNED_TO_CLIENT` lot status + generates a client return PDF); physical-count feature; cycle-count removed. Deploy scripts hardened (see Issues).
+- **Migration**: Yes — 4 migrations (prod was on `AddBinToInventoryLots1768900000000`):
+  - `CreatePhysicalCountTables1769000000000`
+  - `DropCycleCountTables1769000000001` — **IRREVERSIBLE** (drops `cycle_counts`/`cycle_count_items`; `DROP ... IF EXISTS`, idempotent)
+  - `AddAwaitingMaterialsKittingStatus1769100000000` (enum add)
+  - `AddReturnedToClientLotStatus1769100000001` (enum add)
+- **Backup**: `C:\erp-backups\pre-REV-007.dump` (1.48 MB) + `manual-snapshot-rev006`.
+- **Issues during deploy**:
+  - **Orphaned `node.exe` after `net stop` → "Access is denied" on `rename current previous`** (REV-006 redux). Both services reported `STOPPED`, but two `node.exe` (the NSSM-managed children) survived and held `current\`. **Recovery**: `taskkill /F /IM node.exe`, then the rename succeeded. **Nothing was destroyed this time** — the rename failed *before* mutating anything, so `previous\` was not consumed. Root-fix: `switch-release.bat` patched to poll `sc query` until both services report STOPPED before the rotate, and to `exit /b 1` on any rotate `rename` failure (restoring state + restarting services).
+  - **Migration failed with `permission denied for schema public`** (PG16, code 42501) when run via the staged release with `DATABASE_URL` falling back to `.env`'s **app user** — a non-owner can't `CREATE` in `public` on PG15+. The transaction **rolled back cleanly** (nothing applied). **Fix**: re-ran with `set DATABASE_URL=postgres://postgres:...@localhost:5432/erp_production` inline (dotenv won't override an already-set var) → all 4 migrations applied + committed. The documented procedure always ran migrations as the `postgres` superuser inline; a simplified "run from current\backend" shortcut dropped that and hit this.
+  - **Migration step was initially skipped** in the manual switch (went straight from env-copy to `net start`). Caught by running `migration:run` afterward; it's idempotent so re-running was safe, and the 4 then applied. Did a clean `net stop & net start erp-backend` after.
+- **Result**: REV-007 live. `current\` = REV-007, `previous\` = REV-006 (rollback capability **restored** — the patched switch avoided the REV-006 destructive rotate). All 4 migrations applied. Verified: inventory on-hand now lot-based, kitting / production auto-consume / return-to-client all working.
+  - **Apparent "Resume kitting doesn't work"**: not a bug. `KIT-20260519-001` was already `COMPLETED` (under old code, before the new parking logic was live). Parking happens *at completion time* and never reclassifies an already-completed kit. Forward completions of short kits park correctly. The specific kit was reclassified to `AWAITING_MATERIALS` (status + `completed_at=NULL`) via SQL to bring it into the resume workflow.
+- **Lessons** (memory `deployment_known_issues.md` updated):
+  - **Run migrations as the `postgres` superuser with `DATABASE_URL` set inline**, never the app user — PG15+ revoked `CREATE` on `public` from non-owners, so app-user migrations fail with 42501. A failed migration transaction rolls back cleanly (no partial state).
+  - **`net stop` can leave orphaned `node.exe`** that holds `current\`; `taskkill /F /IM node.exe` before the rotate. The patched `switch-release.bat` now waits for STOPPED first.
+  - **`switch-release.bat` now aborts on rotate failure** (no more silent `previous\` destruction) — Issues 1 & 2 from REV-006 are addressed in the script itself.
+  - **Don't skip the migration step** in the manual switch — run it before `net start`. `migration:run` is idempotent, so re-running to verify is safe.
