@@ -52,18 +52,56 @@ echo    - Start services
 echo.
 pause
 
-:: Step 1: Stop services
+:: Step 1: Stop services. "net stop" can return before the process fully
+:: releases its file handles on current\, which made the rotate below fail
+:: with "Access is denied" in REV-006. WAIT until both report STOPPED.
 echo.
 echo [1/6] Stopping services...
 net stop erp-frontend 2>nul
 net stop erp-backend 2>nul
 
-:: Step 2: Rotate releases
+echo     Waiting for services to fully stop...
+set /a _tries=0
+:wait_stopped
+sc query erp-backend | find "STOPPED" >nul
+if errorlevel 1 goto :still_running
+sc query erp-frontend | find "STOPPED" >nul
+if errorlevel 1 goto :still_running
+goto :stopped
+:still_running
+set /a _tries+=1
+if %_tries% GEQ 15 (
+    echo FAILED: services did not report STOPPED within ~30s. Aborting before rotate.
+    echo        Nothing was moved. Investigate the file lock, then retry.
+    exit /b 1
+)
+timeout /t 2 /nobreak >nul
+goto :wait_stopped
+:stopped
+echo     Services stopped.
+
+:: Step 2: Rotate releases. ABORT on any failed rename — silently continuing
+:: past a failed rotate is what consumed the previous\ rollback target in REV-006.
 echo [2/6] Rotating releases...
 cd /d %APP%
 if exist previous-backup (rmdir /s /q previous-backup)
-if exist previous (rename previous previous-backup)
+if exist previous (
+    rename previous previous-backup
+    if errorlevel 1 (
+        echo FAILED: could not rename previous -^> previous-backup. Aborting, no changes made.
+        net start erp-backend
+        net start erp-frontend
+        exit /b 1
+    )
+)
 rename current previous
+if errorlevel 1 (
+    echo FAILED: could not rename current -^> previous ^(file lock?^). Aborting.
+    if exist previous-backup rename previous-backup previous
+    net start erp-backend
+    net start erp-frontend
+    exit /b 1
+)
 
 :: Step 3: Move new release into place
 echo [3/6] Activating new release...
