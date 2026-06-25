@@ -9,11 +9,12 @@ setlocal
 ::
 :: This script:
 ::   1. Runs pre-flight checks
-::   2. Preserves current release as rollback target
-::   3. Activates the new release
-::   4. Copies environment files
-::   5. Restarts PM2
-::   6. Runs post-switch verification
+::   2. Stops the NSSM services (erp-backend, erp-frontend) BEFORE rotating
+::   3. Preserves current release as rollback target (aborts on rotate failure)
+::   4. Activates the new release
+::   5. Copies environment files
+::   6. Starts the services
+::   7. Runs post-switch verification
 ::
 :: See DEPLOYMENT_PLAN.md Sections 7.5 and 7.6
 :: ============================================================
@@ -74,46 +75,72 @@ echo.
 echo [Switch] Starting release switch...
 cd /d "%APP_DIR%"
 
-:: Step 1: Clear any stale previous-backup from a prior failed deploy
+:: Step 1: Stop services BEFORE any rotate. A running service holds a lock on
+::         current\, which made "rename current previous" fail with "Access is
+::         denied" in REV-006 — and because the rotate wasn't checked, the
+::         script continued and destroyed the previous\ rollback target.
+echo   Stopping services before rotate...
+net stop erp-backend
+net stop erp-frontend
+
+:: Step 2: Clear any stale previous-backup from a prior failed deploy
 if exist previous-backup (
     echo   Cleaning up stale previous-backup...
     rmdir /s /q previous-backup
 )
 
-:: Step 2: Preserve current as rollback target
+:: Step 3: Preserve current as rollback target. ABORT on any rotate failure —
+::         silently continuing past a failed rename is what consumed previous\
+::         in REV-006.
 if exist previous (
     rename previous previous-backup
+    if errorlevel 1 (
+        echo FAILED: could not rename previous -^> previous-backup. Aborting, no changes made.
+        net start erp-backend
+        net start erp-frontend
+        exit /b 1
+    )
 )
 if exist current (
     rename current previous
+    if errorlevel 1 (
+        echo FAILED: could not rename current -^> previous ^(file lock?^). Aborting.
+        if exist previous-backup rename previous-backup previous
+        net start erp-backend
+        net start erp-frontend
+        exit /b 1
+    )
     echo   Preserved current as rollback target (previous\)
 )
 
-:: Step 3: Activate new release
+:: Step 4: Activate new release
 rename "releases\%RELEASE_NAME%" current
-if %ERRORLEVEL% NEQ 0 (
+if errorlevel 1 (
     echo FAILED: Could not rename release to current.
     echo Attempting rollback...
     if exist previous (
         rename previous current
         echo   Rollback complete.
     )
+    net start erp-backend
+    net start erp-frontend
     exit /b 1
 )
 echo   Activated release: %RELEASE_NAME%
 
-:: Step 4: Copy env and config files
+:: Step 5: Copy env and config files
 copy shared\.env.backend current\backend\.env >nul
 copy shared\.env.frontend current\frontend\.env >nul
 copy shared\web.config current\frontend\web.config >nul
 echo   Environment and config files copied
 
-:: Step 5: Restart services
-echo   Restarting services...
-net stop erp-backend && net stop erp-frontend && net start erp-backend && net start erp-frontend
-echo   Services restarted
+:: Step 6: Start services (they were stopped before the rotate in Step 1)
+echo   Starting services...
+net start erp-backend
+net start erp-frontend
+echo   Services started
 
-:: Step 6: Clean up old backup
+:: Step 7: Clean up old backup
 if exist previous-backup (
     rmdir /s /q previous-backup
 )
