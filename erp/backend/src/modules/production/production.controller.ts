@@ -121,6 +121,7 @@ export class ProductionController {
       quantity: dto.quantity,
       notes: dto.notes,
       created_by: dto.created_by,
+      auto_consume: dto.auto_consume,
     });
   }
 

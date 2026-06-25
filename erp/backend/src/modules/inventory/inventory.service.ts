@@ -163,13 +163,8 @@ export class InventoryService {
       order: { internal_part_number: 'ASC' },
     });
 
-    // Get stock levels for all materials
-    const stockLevels = await this.transactionRepository
-      .createQueryBuilder('t')
-      .select('t.material_id', 'material_id')
-      .addSelect('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
-      .groupBy('t.material_id')
-      .getRawMany<StockLevel>();
+    // Get stock levels for all materials (on-hand from physical lots)
+    const stockMap = await this.getOnHandByMaterials(materials.map((m) => m.id));
 
     // Get allocated quantities for all materials
     const allocations = await this.allocationRepository
@@ -222,11 +217,6 @@ export class InventoryService {
     }
 
     // Create maps for quick lookup
-    const stockMap = new Map<string, number>();
-    for (const level of stockLevels) {
-      stockMap.set(level.material_id, parseFloat(String(level.quantity_on_hand)));
-    }
-
     const allocationMap = new Map<string, number>();
     for (const alloc of allocations) {
       allocationMap.set(alloc.material_id, parseFloat(String(alloc.quantity_allocated)));
@@ -385,13 +375,7 @@ export class InventoryService {
   async getStockByMaterialIds(materialIds: string[]): Promise<Map<string, BatchStockLevel>> {
     if (materialIds.length === 0) return new Map();
 
-    const stockLevels = await this.transactionRepository
-      .createQueryBuilder('t')
-      .select('t.material_id', 'material_id')
-      .addSelect('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
-      .where('t.material_id IN (:...materialIds)', { materialIds })
-      .groupBy('t.material_id')
-      .getRawMany<{ material_id: string; quantity_on_hand: string }>();
+    const onHandMap = await this.getOnHandByMaterials(materialIds);
 
     const allocations = await this.allocationRepository
       .createQueryBuilder('a')
@@ -403,11 +387,8 @@ export class InventoryService {
       .getRawMany<{ material_id: string; quantity_allocated: string }>();
 
     const stockMap = new Map<string, { on_hand: number; allocated: number }>();
-    for (const s of stockLevels) {
-      stockMap.set(s.material_id, {
-        on_hand: parseFloat(s.quantity_on_hand),
-        allocated: 0,
-      });
+    for (const [material_id, on_hand] of onHandMap) {
+      stockMap.set(material_id, { on_hand, allocated: 0 });
     }
     for (const a of allocations) {
       const existing = stockMap.get(a.material_id);
@@ -433,16 +414,56 @@ export class InventoryService {
   }
 
   /**
-   * Get quantity on hand for a material (sum of all transactions)
+   * Quantity on hand for a material = sum of ACTIVE lot/reel quantities.
+   *
+   * On-hand is derived from the physical lots (the reels actually in the
+   * building), NOT from the transaction ledger. The ledger is a running tally
+   * that drifts from reality (e.g. return-to-stock double counts, consumption
+   * recorded against the lot but not the ledger), so reading the lots keeps
+   * on-hand always matching inventory. The transaction table remains the audit
+   * history. See {@link getOnHandByMaterials}.
    */
   async getQuantityOnHand(materialId: string): Promise<number> {
-    const result = await this.transactionRepository
-      .createQueryBuilder('t')
-      .select('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
-      .where('t.material_id = :materialId', { materialId })
-      .getRawOne<{ quantity_on_hand: string }>();
+    const map = await this.getOnHandByMaterials([materialId]);
+    return map.get(materialId) ?? 0;
+  }
 
-    return parseFloat(result?.quantity_on_hand ?? '0');
+  /**
+   * Batch on-hand from ACTIVE lots, optionally scoped to an owner. Returns a
+   * map of material_id -> summed active-lot quantity (materials with no active
+   * lots are simply absent from the map).
+   */
+  private async getOnHandByMaterials(
+    materialIds: string[],
+    owner?: { ownerType: OwnerType; ownerId: string | null },
+  ): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    if (materialIds.length === 0) return map;
+
+    const qb = this.dataSource
+      .getRepository(InventoryLot)
+      .createQueryBuilder('l')
+      .select('l.material_id', 'material_id')
+      .addSelect('COALESCE(SUM(l.quantity), 0)', 'quantity_on_hand')
+      .where('l.material_id IN (:...materialIds)', { materialIds })
+      .andWhere('l.status = :status', { status: LotStatus.ACTIVE });
+
+    if (owner) {
+      qb.andWhere('l.owner_type = :ownerType', { ownerType: owner.ownerType });
+      if (owner.ownerType === OwnerType.CUSTOMER && owner.ownerId) {
+        qb.andWhere('l.owner_id = :ownerId', { ownerId: owner.ownerId });
+      } else {
+        qb.andWhere('l.owner_id IS NULL');
+      }
+    }
+
+    const rows = await qb
+      .groupBy('l.material_id')
+      .getRawMany<{ material_id: string; quantity_on_hand: string }>();
+    for (const r of rows) {
+      map.set(r.material_id, parseFloat(r.quantity_on_hand));
+    }
+    return map;
   }
 
   /**
@@ -478,20 +499,11 @@ export class InventoryService {
     ownerType: OwnerType,
     ownerId: string | null,
   ): Promise<number> {
-    const query = this.transactionRepository
-      .createQueryBuilder('t')
-      .select('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
-      .where('t.material_id = :materialId', { materialId })
-      .andWhere('t.owner_type = :ownerType', { ownerType });
-
-    if (ownerType === OwnerType.CUSTOMER && ownerId) {
-      query.andWhere('t.owner_id = :ownerId', { ownerId });
-    } else {
-      query.andWhere('t.owner_id IS NULL');
-    }
-
-    const result = await query.getRawOne<{ quantity_on_hand: string }>();
-    return parseFloat(result?.quantity_on_hand ?? '0');
+    const map = await this.getOnHandByMaterials([materialId], {
+      ownerType,
+      ownerId,
+    });
+    return map.get(materialId) ?? 0;
   }
 
   /**
@@ -560,23 +572,11 @@ export class InventoryService {
       return new Map();
     }
 
-    // Get on-hand quantities for this owner
-    const stockQuery = this.transactionRepository
-      .createQueryBuilder('t')
-      .select('t.material_id', 'material_id')
-      .addSelect('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
-      .where('t.material_id IN (:...materialIds)', { materialIds })
-      .andWhere('t.owner_type = :ownerType', { ownerType });
-
-    if (ownerType === OwnerType.CUSTOMER && ownerId) {
-      stockQuery.andWhere('t.owner_id = :ownerId', { ownerId });
-    } else {
-      stockQuery.andWhere('t.owner_id IS NULL');
-    }
-
-    const stockLevels = await stockQuery
-      .groupBy('t.material_id')
-      .getRawMany<StockLevel>();
+    // Get on-hand quantities for this owner (from physical lots)
+    const stockMap = await this.getOnHandByMaterials(materialIds, {
+      ownerType,
+      ownerId,
+    });
 
     // Get allocated quantities for this owner
     const allocationQuery = this.allocationRepository
@@ -596,11 +596,6 @@ export class InventoryService {
     const allocations = await allocationQuery
       .groupBy('a.material_id')
       .getRawMany<AllocationSummary>();
-
-    const stockMap = new Map<string, number>();
-    for (const level of stockLevels) {
-      stockMap.set(level.material_id, parseFloat(String(level.quantity_on_hand)));
-    }
 
     const allocationMap = new Map<string, number>();
     for (const alloc of allocations) {
@@ -625,14 +620,8 @@ export class InventoryService {
       return new Map();
     }
 
-    // Get on-hand quantities
-    const stockLevels = await this.transactionRepository
-      .createQueryBuilder('t')
-      .select('t.material_id', 'material_id')
-      .addSelect('COALESCE(SUM(t.quantity), 0)', 'quantity_on_hand')
-      .where('t.material_id IN (:...materialIds)', { materialIds })
-      .groupBy('t.material_id')
-      .getRawMany<StockLevel>();
+    // Get on-hand quantities (from physical lots)
+    const stockMap = await this.getOnHandByMaterials(materialIds);
 
     // Get allocated quantities
     const allocations = await this.allocationRepository
@@ -643,11 +632,6 @@ export class InventoryService {
       .andWhere('a.status = :status', { status: AllocationStatus.ACTIVE })
       .groupBy('a.material_id')
       .getRawMany<AllocationSummary>();
-
-    const stockMap = new Map<string, number>();
-    for (const level of stockLevels) {
-      stockMap.set(level.material_id, parseFloat(String(level.quantity_on_hand)));
-    }
 
     const allocationMap = new Map<string, number>();
     for (const alloc of allocations) {
@@ -800,37 +784,6 @@ export class InventoryService {
     }
   }
 
-  /**
-   * Set stock to a specific level (convenience method)
-   */
-  async setStockLevel(
-    materialId: string,
-    targetQuantity: number,
-    reason?: string,
-    createdBy?: string,
-  ): Promise<InventoryTransaction> {
-    if (targetQuantity < 0) {
-      throw new BadRequestException('Target quantity cannot be negative');
-    }
-
-    const currentStock = await this.getQuantityOnHand(materialId);
-    const adjustmentQuantity = targetQuantity - currentStock;
-
-    if (adjustmentQuantity === 0) {
-      throw new BadRequestException(
-        `Stock is already at ${targetQuantity}. No adjustment needed.`,
-      );
-    }
-
-    return this.createTransaction({
-      material_id: materialId,
-      transaction_type: TransactionType.ADJUSTMENT,
-      quantity: adjustmentQuantity,
-      reference_type: ReferenceType.MANUAL,
-      reason: reason ?? `Stock level set to ${targetQuantity}`,
-      created_by: createdBy,
-    });
-  }
 
   /**
    * Get materials with stock at or below threshold
@@ -2004,6 +1957,7 @@ export class InventoryService {
     uid: string,
     quantity: number,
     returnedBy?: string,
+    toClient = false,
   ) {
     const lotRepo = this.dataSource.getRepository(InventoryLot);
     const lot = await lotRepo.findOne({
@@ -2019,25 +1973,41 @@ export class InventoryService {
       throw new BadRequestException('Quantity cannot be negative');
     }
 
+    const previousQty = parseFloat(String(lot.quantity));
+    // A client return removes the whole reel from our inventory; otherwise the
+    // lot is set to the returned quantity.
+    const newQty = toClient ? 0 : quantity;
+    // Log only the DELTA against the lot's prior quantity, not the full amount.
+    // On-hand is derived from lot quantities, so the transaction is an audit
+    // record — writing the full quantity here is what historically double
+    // counted (the stock that left to WIP never produced a negative entry).
+    const delta = newQty - previousQty;
+    const ipn = lot.material?.internal_part_number ?? uid;
+
     return this.dataSource.transaction(async (manager) => {
-      // Create RETURN transaction (positive — adds back to stock)
+      // Create RETURN transaction recording the net change to the lot.
       const tx = manager.create(InventoryTransaction, {
         material_id: lot.material_id,
         transaction_type: TransactionType.RETURN,
-        quantity: quantity,
+        quantity: delta,
         reference_type: ReferenceType.MANUAL,
         bucket: InventoryBucket.RAW,
         lot_id: lot.id,
         owner_type: lot.owner_type,
         owner_id: lot.owner_id,
-        reason: `Return to stock: ${quantity} pcs of ${lot.material?.internal_part_number ?? uid} (lot qty set to ${quantity})`,
+        reason: toClient
+          ? `Returned to client: ${ipn} lot ${uid} (${previousQty} pcs removed from inventory)`
+          : `Return to stock: ${ipn} lot ${uid} qty ${previousQty} -> ${newQty} (delta ${delta >= 0 ? '+' : ''}${delta})`,
         created_by: returnedBy ?? null,
       });
       const savedTx = await manager.save(InventoryTransaction, tx);
 
-      // Update lot: set quantity to returned amount
-      lot.quantity = quantity;
-      if (quantity === 0) {
+      // Update lot: set quantity and status.
+      lot.quantity = newQty;
+      if (toClient) {
+        lot.status = LotStatus.RETURNED_TO_CLIENT;
+        lot.location = 'RETURNED_TO_CLIENT';
+      } else if (newQty === 0) {
         lot.status = LotStatus.CONSUMED;
         lot.location = 'CONSUMED';
       } else {
@@ -2054,6 +2024,7 @@ export class InventoryService {
           ipn: lot.material?.internal_part_number ?? '',
           description: lot.material?.description ?? null,
           quantity: lot.quantity,
+          previous_quantity: previousQty,
           location: lot.location,
           status: lot.status,
         },

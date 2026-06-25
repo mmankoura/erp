@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -109,6 +110,7 @@ export default function ProductionPage() {
   const [moveToStage, setMoveToStage] = useState<ProductionStage>("SMT")
   const [moveQuantity, setMoveQuantity] = useState("")
   const [moveNotes, setMoveNotes] = useState("")
+  const [moveAutoConsume, setMoveAutoConsume] = useState(true)
   const [startQuantity, setStartQuantity] = useState("")
   const [shipQuantity, setShipQuantity] = useState("")
 
@@ -136,7 +138,7 @@ export default function ProductionPage() {
 
   const moveUnits = useMutation<
     { order: unknown; log: unknown },
-    { from_stage: ProductionStage; to_stage: ProductionStage; quantity: number; notes?: string; created_by?: string }
+    { from_stage: ProductionStage; to_stage: ProductionStage; quantity: number; notes?: string; created_by?: string; auto_consume?: boolean }
   >(
     (data) => api.post(`/production/order/${selectedOrder}/move`, data),
     {
@@ -174,6 +176,7 @@ export default function ProductionPage() {
     setMoveToStage("SMT")
     setMoveQuantity("")
     setMoveNotes("")
+    setMoveAutoConsume(true)
   }
 
   // Get active WIP (exclude fully shipped)
@@ -653,6 +656,26 @@ export default function ProductionPage() {
                 onChange={(e) => setMoveNotes(e.target.value)}
               />
             </div>
+            {(moveFromStage === "SMT" || moveFromStage === "TH") && (
+              <div className="flex items-start gap-2 rounded-md border p-3">
+                <Checkbox
+                  id="move-auto-consume"
+                  checked={moveAutoConsume}
+                  onCheckedChange={(c) => setMoveAutoConsume(c === true)}
+                  className="mt-0.5"
+                />
+                <div className="space-y-0.5">
+                  <Label htmlFor="move-auto-consume" className="cursor-pointer">
+                    Auto-consume {moveFromStage} materials
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Draw down inventory for the {moveFromStage} materials on this
+                    order as the units leave {moveFromStage}. Uncheck to move
+                    without consuming.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMoveDialogOpen(false)}>
@@ -666,6 +689,7 @@ export default function ProductionPage() {
                   quantity: parseInt(moveQuantity),
                   notes: moveNotes || undefined,
                   created_by: "user",
+                  auto_consume: moveAutoConsume,
                 })
               }
               disabled={moveUnits.isLoading || !moveQuantity || parseInt(moveQuantity) < 1}

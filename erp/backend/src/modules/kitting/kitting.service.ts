@@ -267,8 +267,17 @@ export class KittingService {
           }
         }
 
+        // Compute shortage live (required vs. scanned/verified). The stored
+        // is_short/shortage_qty columns are only written at completion, so for
+        // an active list they would always read 0 — recompute here so the
+        // Shortages card and Shortage Report reflect the current scan progress.
+        const qtyVerified = parseFloat(String(item.qty_verified));
+        const shortageQty = Math.max(0, qtyNeeded - qtyVerified);
+
         return {
           ...item,
+          is_short: shortageQty > 0,
+          shortage_qty: Math.ceil(shortageQty * 10000) / 10000,
           quantity_on_hand: stock.quantity_on_hand,
           quantity_available: stock.quantity_available,
           use_alternate: useAlternate,
@@ -493,10 +502,15 @@ export class KittingService {
         });
       }
 
-      // Mark list as completed
+      // If anything is still short, park the kit in AWAITING_MATERIALS so it
+      // can be resumed once the buyer purchases and receives the shortage.
+      // Only a fully-picked kit is truly COMPLETED.
+      const hasShortages = totalShortages > 0;
       await manager.update(KittingList, id, {
-        status: KittingListStatus.COMPLETED,
-        completed_at: new Date(),
+        status: hasShortages
+          ? KittingListStatus.AWAITING_MATERIALS
+          : KittingListStatus.COMPLETED,
+        completed_at: hasShortages ? null : new Date(),
       });
 
       // Emit audit event
@@ -509,11 +523,41 @@ export class KittingService {
           list_number: kittingList.list_number,
           total_items: kittingList.items.length,
           items_short: totalShortages,
+          parked_awaiting_materials: hasShortages,
         },
       });
 
       return this.findOne(id);
     });
+  }
+
+  /**
+   * Resume a kit that was parked awaiting materials. Flips it back to
+   * IN_PROGRESS so the operator can scan in the now-received shortage material
+   * against this kit. Only valid from AWAITING_MATERIALS.
+   */
+  async resume(id: string, actor?: string): Promise<KittingList> {
+    const kittingList = await this.findOne(id);
+
+    if (kittingList.status !== KittingListStatus.AWAITING_MATERIALS) {
+      throw new BadRequestException(
+        `Cannot resume a kitting list in ${kittingList.status} status`,
+      );
+    }
+
+    kittingList.status = KittingListStatus.IN_PROGRESS;
+    kittingList.completed_at = null;
+    await this.kittingListRepository.save(kittingList);
+
+    await this.auditService.emit({
+      event_type: AuditEventType.KITTING_LIST_RESUMED,
+      entity_type: AuditEntityType.KITTING_LIST,
+      entity_id: id,
+      actor,
+      new_value: { list_number: kittingList.list_number },
+    });
+
+    return this.findOne(id);
   }
 
   /**

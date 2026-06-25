@@ -31,6 +31,8 @@ export enum LotStatus {
   REJECTED = 'REJECTED',
   SCRAPPED = 'SCRAPPED',
   RTV = 'RTV',
+  // Reel handed back to the customer — removed from our inventory entirely.
+  RETURNED_TO_CLIENT = 'RETURNED_TO_CLIENT',
 }
 
 @Entity('inventory_lots')

@@ -7,6 +7,7 @@ import {
   InventoryTransaction,
   OwnerType,
 } from '../../entities/inventory-transaction.entity';
+import { InventoryLot } from '../../entities/inventory-lot.entity';
 import { InventoryAllocation } from '../../entities/inventory-allocation.entity';
 import { Material } from '../../entities/material.entity';
 import { Order } from '../../entities/order.entity';
@@ -18,6 +19,7 @@ import { createMockRepo, MockRepo, createMockDataSource } from '../../test-utils
 describe('InventoryService', () => {
   let service: InventoryService;
   let trxRepo: MockRepo<InventoryTransaction>;
+  let lotRepo: MockRepo<InventoryLot>;
   let allocRepo: MockRepo<InventoryAllocation>;
   let materialRepo: MockRepo<Material>;
   let orderRepo: MockRepo<Order>;
@@ -26,6 +28,7 @@ describe('InventoryService', () => {
 
   beforeEach(async () => {
     trxRepo = createMockRepo<InventoryTransaction>();
+    lotRepo = createMockRepo<InventoryLot>();
     allocRepo = createMockRepo<InventoryAllocation>();
     materialRepo = createMockRepo<Material>();
     orderRepo = createMockRepo<Order>();
@@ -35,6 +38,10 @@ describe('InventoryService', () => {
       getQuantityOnOrder: jest.fn().mockResolvedValue(0),
     };
 
+    // On-hand is derived from ACTIVE lots via dataSource.getRepository(InventoryLot).
+    const dataSource = createMockDataSource();
+    (dataSource.getRepository as jest.Mock).mockImplementation(() => lotRepo);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InventoryService,
@@ -43,7 +50,7 @@ describe('InventoryService', () => {
         { provide: getRepositoryToken(Material), useValue: materialRepo },
         { provide: getRepositoryToken(Order), useValue: orderRepo },
         { provide: getRepositoryToken(BomItem), useValue: bomItemRepo },
-        { provide: DataSource, useValue: createMockDataSource() },
+        { provide: DataSource, useValue: dataSource },
         { provide: AuditService, useValue: { emit: jest.fn(), emitCreate: jest.fn(), emitDelete: jest.fn(), emitStateChange: jest.fn() } },
         { provide: PurchaseOrdersService, useValue: purchaseOrdersService },
       ],
@@ -52,18 +59,23 @@ describe('InventoryService', () => {
   });
 
   describe('getQuantityOnHand', () => {
-    it('returns 0 when there are no transactions', async () => {
-      const qb = trxRepo.createQueryBuilder();
-      qb.getRawOne.mockResolvedValue(null);
+    it('returns 0 when there are no active lots', async () => {
+      const qb = lotRepo.createQueryBuilder();
+      qb.getRawMany.mockResolvedValue([]);
       const out = await service.getQuantityOnHand('mat-1');
       expect(out).toBe(0);
     });
 
-    it('parses string sum from raw aggregate', async () => {
-      const qb = trxRepo.createQueryBuilder();
-      qb.getRawOne.mockResolvedValue({ quantity_on_hand: '42.5' });
+    it('sums ACTIVE lot quantities for the material', async () => {
+      const qb = lotRepo.createQueryBuilder();
+      qb.getRawMany.mockResolvedValue([
+        { material_id: 'mat-1', quantity_on_hand: '42.5' },
+      ]);
       const out = await service.getQuantityOnHand('mat-1');
       expect(out).toBe(42.5);
+      expect(qb.andWhere).toHaveBeenCalledWith('l.status = :status', {
+        status: 'ACTIVE',
+      });
     });
   });
 
@@ -95,8 +107,8 @@ describe('InventoryService', () => {
     });
 
     it('aggregates stock + allocations per material and fills zeros', async () => {
-      const qbT = trxRepo.createQueryBuilder();
-      qbT.getRawMany.mockResolvedValue([
+      const qbL = lotRepo.createQueryBuilder();
+      qbL.getRawMany.mockResolvedValue([
         { material_id: 'mat-1', quantity_on_hand: '50' },
         { material_id: 'mat-2', quantity_on_hand: '20' },
       ]);
@@ -125,19 +137,19 @@ describe('InventoryService', () => {
 
   describe('getQuantityOnHandByOwner', () => {
     it('filters by COMPANY (owner_id IS NULL)', async () => {
-      const qb = trxRepo.createQueryBuilder();
-      qb.getRawOne.mockResolvedValue({ quantity_on_hand: '5' });
+      const qb = lotRepo.createQueryBuilder();
+      qb.getRawMany.mockResolvedValue([{ material_id: 'mat-1', quantity_on_hand: '5' }]);
       const out = await service.getQuantityOnHandByOwner('mat-1', OwnerType.COMPANY, null);
       expect(out).toBe(5);
-      expect(qb.andWhere).toHaveBeenCalledWith('t.owner_id IS NULL');
+      expect(qb.andWhere).toHaveBeenCalledWith('l.owner_id IS NULL');
     });
 
     it('filters by CUSTOMER + owner_id', async () => {
-      const qb = trxRepo.createQueryBuilder();
-      qb.getRawOne.mockResolvedValue({ quantity_on_hand: '12' });
+      const qb = lotRepo.createQueryBuilder();
+      qb.getRawMany.mockResolvedValue([{ material_id: 'mat-1', quantity_on_hand: '12' }]);
       await service.getQuantityOnHandByOwner('mat-1', OwnerType.CUSTOMER, 'cust-1');
       expect(qb.andWhere).toHaveBeenCalledWith(
-        't.owner_id = :ownerId',
+        'l.owner_id = :ownerId',
         { ownerId: 'cust-1' },
       );
     });
@@ -175,8 +187,8 @@ describe('InventoryService', () => {
     it('combines materials with stock/allocation/required maps', async () => {
       const mat = { id: 'mat-1', internal_part_number: 'IPN-1', customer: null };
       (materialRepo.find as jest.Mock).mockResolvedValue([mat]);
-      const qbT = trxRepo.createQueryBuilder();
-      qbT.getRawMany.mockResolvedValue([{ material_id: 'mat-1', quantity_on_hand: '50' }]);
+      const qbL = lotRepo.createQueryBuilder();
+      qbL.getRawMany.mockResolvedValue([{ material_id: 'mat-1', quantity_on_hand: '50' }]);
       const qbA = allocRepo.createQueryBuilder();
       qbA.getRawMany.mockResolvedValue([{ material_id: 'mat-1', quantity_allocated: '5' }]);
       purchaseOrdersService.getQuantitiesOnOrder.mockResolvedValue(new Map([['mat-1', 8]]));

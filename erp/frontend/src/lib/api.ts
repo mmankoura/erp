@@ -1332,7 +1332,7 @@ export interface OrderWipDetails {
 
 // ==================== Kitting ====================
 
-export type KittingListStatus = "DRAFT" | "PRINTED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED"
+export type KittingListStatus = "DRAFT" | "PRINTED" | "IN_PROGRESS" | "AWAITING_MATERIALS" | "COMPLETED" | "CANCELLED"
 
 export interface KittingList {
   id: string

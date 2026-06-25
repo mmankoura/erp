@@ -109,6 +109,7 @@ export function createMockDataSource(
   return {
     transaction: jest.fn(async (cb: any) => cb(manager)),
     query: jest.fn(),
+    getRepository: jest.fn(),
     manager,
   } as any;
 }

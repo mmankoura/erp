@@ -14,6 +14,10 @@ export enum KittingListStatus {
   DRAFT = 'DRAFT',
   PRINTED = 'PRINTED',
   IN_PROGRESS = 'IN_PROGRESS',
+  // Operator hit Complete but items are still short. The kit is parked here
+  // (shortage report -> buyer -> purchase -> receive) until it is resumed and
+  // the received material is scanned in against this kit for traceability.
+  AWAITING_MATERIALS = 'AWAITING_MATERIALS',
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
 }

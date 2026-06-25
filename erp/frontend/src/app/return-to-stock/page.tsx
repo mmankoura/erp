@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -15,8 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { RotateCcw, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { RotateCcw, CheckCircle, AlertCircle, Loader2, FileDown, Undo2 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
+import { generateClientReturnPdf } from "@/lib/client-return-pdf"
 
 interface ReturnedItem {
   uid: string
@@ -24,6 +26,7 @@ interface ReturnedItem {
   description: string | null
   qty: number
   newLotQty: number
+  toClient: boolean
   timestamp: Date
 }
 
@@ -31,6 +34,7 @@ export default function ReturnToStockPage() {
   const { user } = useAuth()
   const [uid, setUid] = useState("")
   const [qty, setQty] = useState("")
+  const [toClient, setToClient] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [returnedItems, setReturnedItems] = useState<ReturnedItem[]>([])
@@ -48,8 +52,11 @@ export default function ReturnToStockPage() {
     setError(null)
 
     if (!uid.trim()) { setError("UID is required"); return }
-    if (qty === "" || qty === undefined) { setError("Quantity is required"); return }
-    if (parseFloat(qty) < 0) { setError("Quantity cannot be negative"); return }
+    // A client return removes the whole reel, so quantity is not required.
+    if (!toClient) {
+      if (qty === "" || qty === undefined) { setError("Quantity is required"); return }
+      if (parseFloat(qty) < 0) { setError("Quantity cannot be negative"); return }
+    }
 
     setSubmitting(true)
     try {
@@ -60,13 +67,15 @@ export default function ReturnToStockPage() {
           ipn: string
           description: string | null
           quantity: number
+          previous_quantity: number
           location: string
           status: string
         }
       }>("/inventory/return-to-stock", {
         uid: uid.trim(),
-        quantity: parseFloat(qty),
+        quantity: toClient ? 0 : parseFloat(qty),
         returned_by: user?.username ?? "operator",
+        to_client: toClient,
       })
 
       setReturnedItems((prev) => [
@@ -74,8 +83,10 @@ export default function ReturnToStockPage() {
           uid: result.lot.uid,
           ipn: result.lot.ipn,
           description: result.lot.description,
-          qty: parseFloat(qty),
+          // For a client return the whole reel leaves inventory.
+          qty: toClient ? result.lot.previous_quantity : parseFloat(qty),
           newLotQty: result.lot.quantity,
+          toClient,
           timestamp: new Date(),
         },
         ...prev,
@@ -88,6 +99,20 @@ export default function ReturnToStockPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const clientReturns = returnedItems.filter((i) => i.toClient)
+
+  const handleDownloadClientReport = () => {
+    generateClientReturnPdf(
+      clientReturns.map((i) => ({
+        uid: i.uid,
+        ipn: i.ipn,
+        description: i.description,
+        qty: i.qty,
+      })),
+      { returnedBy: user?.username ?? undefined },
+    )
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -143,7 +168,32 @@ export default function ReturnToStockPage() {
                 placeholder="0"
                 min="0"
                 step="any"
+                disabled={toClient}
               />
+              {toClient && (
+                <p className="text-xs text-muted-foreground">
+                  The entire reel is removed from inventory and returned to the
+                  client — quantity not needed.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3">
+              <Checkbox
+                id="to-client"
+                checked={toClient}
+                onCheckedChange={(c) => setToClient(c === true)}
+                className="mt-0.5"
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="to-client" className="cursor-pointer text-amber-900">
+                  Return to client
+                </Label>
+                <p className="text-xs text-amber-800">
+                  Completely removes the reel from our inventory. Download the
+                  client return report afterward to hand the customer a copy.
+                </p>
+              </div>
             </div>
 
             {error && (
@@ -164,6 +214,8 @@ export default function ReturnToStockPage() {
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Returning...
                 </>
+              ) : toClient ? (
+                "Return to Client (Ctrl+Enter)"
               ) : (
                 "Return to Stock (Ctrl+Enter)"
               )}
@@ -173,8 +225,14 @@ export default function ReturnToStockPage() {
 
         {/* Right: Return Log */}
         <Card className="lg:col-span-2">
-          <CardHeader className="pb-4">
+          <CardHeader className="pb-4 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-lg">Return Log</CardTitle>
+            {clientReturns.length > 0 && (
+              <Button variant="outline" size="sm" onClick={handleDownloadClientReport}>
+                <FileDown className="mr-1 h-4 w-4" />
+                Client Return Report ({clientReturns.length})
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {returnedItems.length === 0 ? (
@@ -207,10 +265,17 @@ export default function ReturnToStockPage() {
                         <TableCell className="text-right font-mono">{item.qty}</TableCell>
                         <TableCell className="text-right font-mono">{item.newLotQty}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1 text-green-600">
-                            <CheckCircle className="h-4 w-4" />
-                            <span className="text-xs">Returned</span>
-                          </div>
+                          {item.toClient ? (
+                            <div className="flex items-center gap-1 text-amber-700">
+                              <Undo2 className="h-4 w-4" />
+                              <span className="text-xs">To Client</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 text-green-600">
+                              <CheckCircle className="h-4 w-4" />
+                              <span className="text-xs">To Stock</span>
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

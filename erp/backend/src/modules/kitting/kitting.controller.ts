@@ -94,6 +94,20 @@ export class KittingController {
   }
 
   /**
+   * POST /kitting/:id/resume
+   * Resume a kit parked in AWAITING_MATERIALS (shortage received) so the
+   * operator can scan the new material against it.
+   */
+  @Post(':id/resume')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR)
+  async resume(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { resumed_by?: string },
+  ) {
+    return this.kittingService.resume(id, body?.resumed_by);
+  }
+
+  /**
    * DELETE /kitting/:id
    * Cancel a kitting list
    */

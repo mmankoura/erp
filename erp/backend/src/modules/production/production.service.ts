@@ -34,6 +34,12 @@ export interface MoveUnitsInput {
   quantity: number;
   notes?: string;
   created_by?: string;
+  /**
+   * Whether to auto-consume the stage's materials when moving OUT of SMT or TH
+   * (SMT -> TH, TH -> shipping). Defaults to true to preserve prior behavior;
+   * set false to move units without drawing down inventory.
+   */
+  auto_consume?: boolean;
 }
 
 export interface WipSummary {
@@ -206,9 +212,10 @@ export class ProductionService {
       // Save order
       await manager.save(Order, order);
 
-      // Consume materials when moving OUT of SMT or TH
+      // Consume materials when moving OUT of SMT or TH — unless the operator
+      // opted out via the auto-consume toggle.
       const consumeTypes = this.consumptionRules[input.from_stage];
-      if (consumeTypes) {
+      if (consumeTypes && input.auto_consume !== false) {
         await this.consumeMaterialsForStage(
           order,
           consumeTypes,

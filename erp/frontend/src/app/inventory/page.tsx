@@ -53,7 +53,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Plus,
-  ArrowUpDown,
   History,
   AlertTriangle,
   Package,
@@ -77,149 +76,6 @@ const transactionTypeConfig: Record<string, { label: string; color: string }> = 
   RETURN_FROM_WO: { label: "Return from WO", color: "text-teal-600" },
 }
 
-// Adjust Stock Dialog
-function AdjustStockDialog({
-  stock,
-  onSuccess,
-  trigger,
-}: {
-  stock: InventoryStock
-  onSuccess: () => void
-  trigger: React.ReactNode
-}) {
-  const [open, setOpen] = useState(false)
-  const [adjustmentType, setAdjustmentType] = useState<"set" | "add" | "subtract">("set")
-  const [quantity, setQuantity] = useState("")
-  const [reason, setReason] = useState("")
-
-  const adjustMutation = useMutation(
-    (data: { quantity: number; reason?: string }) =>
-      api.post(`/inventory/${stock.material_id}/set-stock`, data),
-    {
-      onSuccess: () => {
-        toast.success("Stock adjusted successfully")
-        setOpen(false)
-        setQuantity("")
-        setReason("")
-        onSuccess()
-      },
-      onError: (error) => {
-        toast.error(error.message || "Failed to adjust stock")
-      },
-    }
-  )
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const qty = parseFloat(quantity)
-    if (isNaN(qty)) return
-
-    let finalQuantity: number
-    switch (adjustmentType) {
-      case "add":
-        finalQuantity = stock.quantity_on_hand + qty
-        break
-      case "subtract":
-        finalQuantity = stock.quantity_on_hand - qty
-        break
-      default:
-        finalQuantity = qty
-    }
-
-    adjustMutation.mutate({
-      quantity: finalQuantity,
-      reason: reason || undefined,
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Adjust Stock</DialogTitle>
-            <DialogDescription>
-              Adjust inventory for {stock.material?.internal_part_number}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4">
-            <div className="text-sm">
-              <span className="text-muted-foreground">Current Stock: </span>
-              <span className="font-medium">{stock.quantity_on_hand}</span>
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Adjustment Type</Label>
-              <Select
-                value={adjustmentType}
-                onValueChange={(v) => setAdjustmentType(v as "set" | "add" | "subtract")}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="set">Set to specific quantity</SelectItem>
-                  <SelectItem value="add">Add to current stock</SelectItem>
-                  <SelectItem value="subtract">Subtract from stock</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="quantity">
-                {adjustmentType === "set"
-                  ? "New Quantity"
-                  : adjustmentType === "add"
-                    ? "Quantity to Add"
-                    : "Quantity to Subtract"}
-              </Label>
-              <Input
-                id="quantity"
-                type="number"
-                min="0"
-                step="0.01"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                placeholder="0"
-                required
-              />
-              {quantity && adjustmentType !== "set" && (
-                <p className="text-sm text-muted-foreground">
-                  Result:{" "}
-                  {adjustmentType === "add"
-                    ? stock.quantity_on_hand + parseFloat(quantity || "0")
-                    : stock.quantity_on_hand - parseFloat(quantity || "0")}
-                </p>
-              )}
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="reason">Reason</Label>
-              <Textarea
-                id="reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Cycle count, damage, etc."
-                rows={2}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={adjustMutation.isLoading || !quantity}>
-              {adjustMutation.isLoading ? "Saving..." : "Adjust Stock"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 // Transaction History Dialog
 function TransactionHistoryDialog({
@@ -1009,15 +865,6 @@ export default function InventoryPage() {
               </Button>
             }
           />
-          <AdjustStockDialog
-            stock={stock}
-            onSuccess={refetch}
-            trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowUpDown className="h-4 w-4" />
-              </Button>
-            }
-          />
         </div>
       ),
     },
@@ -1033,7 +880,7 @@ export default function InventoryPage() {
     { id: "allocated", header: "Allocated", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_allocated, cell: (s) => <AllocationPopover materialId={s.material_id} quantity={s.quantity_allocated} /> },
     { id: "available", header: "Available", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_available, cell: (s) => <span className={`font-mono text-sm font-medium ${s.quantity_available <= 0 ? "text-red-600" : s.quantity_available < 10 ? "text-yellow-600" : "text-green-600"}`}>{s.quantity_available.toLocaleString()}</span> },
     { id: "on_order", header: "On Order", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_order, cell: (s) => <span className={`font-mono text-sm ${s.quantity_on_order > 0 ? "text-blue-600" : ""}`}>{s.quantity_on_order.toLocaleString()}</span> },
-    { id: "actions", header: "", size: 120, sortable: false, filterable: false, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /><AdjustStockDialog stock={s} onSuccess={refetch} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><ArrowUpDown className="h-4 w-4" /></Button>} /></div>) },
+    { id: "actions", header: "", size: 120, sortable: false, filterable: false, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /></div>) },
   ]
 
   // VirtualGrid columns for Lots/Reels

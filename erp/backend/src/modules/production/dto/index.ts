@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -37,6 +38,10 @@ export class MoveUnitsDto {
   @IsOptional()
   @IsString()
   created_by?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  auto_consume?: boolean;
 }
 
 export class ShipUnitsDto {

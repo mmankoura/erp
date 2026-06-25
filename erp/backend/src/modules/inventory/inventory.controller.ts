@@ -305,24 +305,6 @@ export class InventoryController {
     return this.inventoryService.createTransaction(createTransactionDto);
   }
 
-  /**
-   * POST /inventory/:materialId/set-stock
-   * Set stock to a specific level (convenience endpoint)
-   */
-  @Post(':materialId/set-stock')
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
-  async setStockLevel(
-    @Param('materialId', ParseUUIDPipe) materialId: string,
-    @Body() body: { quantity: number; reason?: string; created_by?: string },
-  ) {
-    return this.inventoryService.setStockLevel(
-      materialId,
-      body.quantity,
-      body.reason,
-      body.created_by,
-    );
-  }
-
   // ==================== ALLOCATION ENDPOINTS ====================
 
   /**
@@ -557,12 +539,19 @@ export class InventoryController {
   @Post('return-to-stock')
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async returnToStock(
-    @Body() body: { uid: string; quantity: number; returned_by?: string },
+    @Body()
+    body: {
+      uid: string;
+      quantity: number;
+      returned_by?: string;
+      to_client?: boolean;
+    },
   ) {
     return this.inventoryService.returnToStockByUid(
       body.uid,
       body.quantity,
       body.returned_by,
+      body.to_client ?? false,
     );
   }
 }

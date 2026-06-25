@@ -12,6 +12,7 @@ import {
   type Order,
 } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
+import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,6 +28,7 @@ import {
   Printer,
   ScanBarcode,
   CheckCircle,
+  Play,
   AlertTriangle,
   ArrowLeft,
   Download,
@@ -38,6 +40,7 @@ const statusConfig: Record<KittingListStatus, { label: string; variant: "default
   DRAFT: { label: "Draft", variant: "outline" },
   PRINTED: { label: "Printed", variant: "secondary" },
   IN_PROGRESS: { label: "In Progress", variant: "default" },
+  AWAITING_MATERIALS: { label: "Awaiting Materials", variant: "secondary" },
   COMPLETED: { label: "Completed", variant: "default" },
   CANCELLED: { label: "Cancelled", variant: "destructive" },
 }
@@ -398,8 +401,23 @@ function KittingDetail({
   const completeMutation = useMutation<KittingList, void>(
     () => api.post(`/kitting/${kittingListId}/complete`, {}),
     {
+      onSuccess: (data) => {
+        toast.success(
+          data.status === "AWAITING_MATERIALS"
+            ? "Kit parked — awaiting materials. Resume once shortages are received."
+            : "Kitting list completed",
+        )
+        refetch()
+      },
+      onError: (err) => toast.error(err.message),
+    },
+  )
+
+  const resumeMutation = useMutation<KittingList, void>(
+    () => api.post(`/kitting/${kittingListId}/resume`, {}),
+    {
       onSuccess: () => {
-        toast.success("Kitting list completed")
+        toast.success("Kitting resumed — scan in the received material")
         refetch()
       },
       onError: (err) => toast.error(err.message),
@@ -465,6 +483,8 @@ function KittingDetail({
   const canComplete = isActive
   const canPrint = isActive
   const canCancel = kittingList.status === "DRAFT" || kittingList.status === "PRINTED"
+  // Kit was completed short and parked; resume to scan in received material.
+  const canResume = kittingList.status === "AWAITING_MATERIALS"
 
   // Shortage summary
   const allItems = [
@@ -531,6 +551,16 @@ function KittingDetail({
               Shortage Report
             </Button>
           )}
+          {canResume && (
+            <Button
+              size="sm"
+              onClick={() => resumeMutation.mutate()}
+              disabled={resumeMutation.isLoading}
+            >
+              <Play className="mr-1 h-4 w-4" />
+              Resume Kitting
+            </Button>
+          )}
           {canComplete && (
             <Button size="sm" onClick={() => completeMutation.mutate()}>
               <CheckCircle className="mr-1 h-4 w-4" />
@@ -539,6 +569,21 @@ function KittingDetail({
           )}
         </div>
       </div>
+
+      {/* Awaiting-materials banner — kit was completed short and parked. */}
+      {canResume && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="flex items-center gap-3 py-3 text-sm text-amber-900">
+            <AlertTriangle className="h-5 w-5 shrink-0" />
+            <span>
+              This kit was completed with shortages and is parked awaiting
+              materials. Once the purchased shortage is received, click{" "}
+              <strong>Resume Kitting</strong> and scan the new material in
+              against this kit for traceability.
+            </span>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Orders summary */}
       <Card>
@@ -647,55 +692,64 @@ function KittingDetail({
 // ==================== Kitting Items Table ====================
 
 function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
-  const columns: Column<KittingItemWithStock>[] = [
+  const columns: VirtualGridColumn<KittingItemWithStock>[] = [
     {
-      key: "ipn",
+      id: "ipn",
       header: "IPN",
+      size: 140,
+      accessorFn: (item) => item.material?.internal_part_number ?? "",
       cell: (item) => (
         <span className="font-mono text-sm">{item.material?.internal_part_number}</span>
       ),
-      sortable: true,
-      sortAccessor: (item) => item.material?.internal_part_number ?? "",
     },
     {
-      key: "mpn",
+      id: "mpn",
       header: "MPN",
+      size: 150,
+      accessorFn: (item) => item.material?.manufacturer_pn ?? "",
       cell: (item) => (
         <span className="font-mono text-sm">{item.material?.manufacturer_pn ?? "-"}</span>
       ),
-      sortable: true,
-      sortAccessor: (item) => item.material?.manufacturer_pn ?? "",
     },
     {
-      key: "description",
+      id: "description",
       header: "Description",
+      size: 220,
+      sortable: false,
+      accessorFn: (item) => item.material?.description ?? "",
       cell: (item) => (
-        <span className="text-sm truncate max-w-[200px] block">
+        <span className="text-sm truncate max-w-[220px] block">
           {item.material?.description ?? "-"}
         </span>
       ),
     },
     {
-      key: "qty_required",
+      id: "qty_required",
       header: "Qty Required",
+      size: 110,
+      align: "right",
+      accessorFn: (item) => parseFloat(String(item.total_qty_required)),
       cell: (item) => (
         <span className="font-medium">
           {parseFloat(String(item.total_qty_required)).toLocaleString()}
         </span>
       ),
-      sortable: true,
-      sortAccessor: (item) => parseFloat(String(item.total_qty_required)),
     },
     {
-      key: "qty_on_hand",
+      id: "qty_on_hand",
       header: "On Hand",
+      size: 100,
+      align: "right",
+      accessorFn: (item) => item.quantity_on_hand,
       cell: (item) => parseFloat(String(item.quantity_on_hand)).toLocaleString(),
-      sortable: true,
-      sortAccessor: (item) => item.quantity_on_hand,
     },
     {
-      key: "alternate",
+      id: "alternate",
       header: "Pick Instruction",
+      size: 200,
+      sortable: false,
+      filterable: false,
+      accessorFn: (item) => (item.use_alternate ? 1 : 0),
       cell: (item) => {
         if (!item.use_alternate || !item.alternates?.length) return <span className="text-muted-foreground">—</span>
         return (
@@ -715,8 +769,12 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
       },
     },
     {
-      key: "location",
+      id: "location",
       header: "Location",
+      size: 160,
+      sortable: false,
+      filterable: false,
+      accessorFn: (item) => item.uid_locations?.[0]?.location ?? "",
       cell: (item) => (
         <div className="text-xs space-y-0.5">
           {item.uid_locations?.slice(0, 3).map((u, i) => (
@@ -731,8 +789,11 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
       ),
     },
     {
-      key: "qty_verified",
+      id: "qty_verified",
       header: "Verified",
+      size: 100,
+      align: "right",
+      accessorFn: (item) => parseFloat(String(item.qty_verified)),
       cell: (item) => {
         const verified = parseFloat(String(item.qty_verified))
         const required = parseFloat(String(item.total_qty_required))
@@ -743,12 +804,14 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
           </span>
         )
       },
-      sortable: true,
-      sortAccessor: (item) => parseFloat(String(item.qty_verified)),
     },
     {
-      key: "status",
+      id: "status",
       header: "Status",
+      size: 100,
+      sortable: false,
+      filterable: false,
+      accessorFn: (item) => parseFloat(String(item.qty_verified)),
       cell: (item) => {
         const verified = parseFloat(String(item.qty_verified))
         const required = parseFloat(String(item.total_qty_required))
@@ -759,8 +822,12 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
       },
     },
     {
-      key: "scans",
+      id: "scans",
       header: "Scanned UIDs",
+      size: 180,
+      sortable: false,
+      filterable: false,
+      accessorFn: (item) => item.scans?.length ?? 0,
       cell: (item) => (
         <div className="text-xs space-y-0.5">
           {item.scans?.map((s) => (
@@ -774,19 +841,15 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
   ]
 
   return (
-    <DataTable
+    <VirtualGrid
       data={items}
       columns={columns}
       searchPlaceholder="Search materials..."
-      storageKey="kitting-items"
-      searchFilter={(item, query) => {
-        const q = query.toLowerCase()
-        return (
-          (item.material?.internal_part_number ?? "").toLowerCase().includes(q) ||
-          (item.material?.manufacturer_pn ?? "").toLowerCase().includes(q) ||
-          (item.material?.description ?? "").toLowerCase().includes(q)
-        )
-      }}
+      searchFn={(item, q) =>
+        (item.material?.internal_part_number ?? "").toLowerCase().includes(q) ||
+        (item.material?.manufacturer_pn ?? "").toLowerCase().includes(q) ||
+        (item.material?.description ?? "").toLowerCase().includes(q)
+      }
     />
   )
 }
