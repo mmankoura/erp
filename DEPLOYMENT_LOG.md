@@ -398,3 +398,19 @@ PM2 boot persistence was attempted via three approaches, all failed:
   - **`net stop` can leave orphaned `node.exe`** that holds `current\`; `taskkill /F /IM node.exe` before the rotate. The patched `switch-release.bat` now waits for STOPPED first.
   - **`switch-release.bat` now aborts on rotate failure** (no more silent `previous\` destruction) — Issues 1 & 2 from REV-006 are addressed in the script itself.
   - **Don't skip the migration step** in the manual switch — run it before `net start`. `migration:run` is idempotent, so re-running to verify is safe.
+
+---
+
+## REV-008 Deployment — June 26, 2026
+
+- **Changes**: Pause/Resume for Physical Count (count can be paused mid-session and resumed; new `PAUSED` status, IN_PROGRESS↔PAUSED, Pause button on the scan page, Resume on the detail page; existing in-progress counts are pausable immediately — no backfill needed, unlike kitting).
+- **Migration**: Yes — 1 migration (`AddPausedPhysicalCountStatus1769200000000`, enum add, ran as `postgres`).
+- **Backup**: `C:\erp-backups\pre-REV-008.dump` + `manual-snapshot-rev007`.
+- **Issues during deploy**:
+  - **node_modules junction self-references on a 2nd consecutive smart-skip deploy.** REV-007's `node_modules` were junctions → REV-006; this rotation deletes REV-006, so junctioning REV-008 → "previous" (REV-007) would chain to a deleted/self-referential target → backend can't load modules. **Fix**: instead of junctioning, **materialized real `node_modules` with `npm ci`/`npm install` on the server** (backend `npm ci --omit=dev` ~4 min; frontend below). REV-008 is now self-contained → next deploy can junction to it for one cycle. Lesson: junctions only survive ONE rotation past a release with real `node_modules`.
+  - **Frontend `npm ci` failed: `package.json` and `package-lock.json` out of sync** (`@emnapi/*` optional-dep drift, EUSAGE). `npm ci` is strict and refused. **Fix**: `npm install --omit=dev` (lenient; reconciles the lock) — ~7 min, installed 537 packages. Frontend ran fine. **Follow-up**: the repo's `frontend/package-lock.json` needs regenerating so `npm ci` works; until then, frontend deploys should use `npm install`, not `npm ci`.
+  - The `taskkill /F /IM node.exe` after `net stop` cleared two orphaned node processes again (REV-007 pattern) — rotate then succeeded with no lock.
+- **Result**: REV-008 live. `current\` = REV-008 (real `node_modules`, self-contained), `previous\` = REV-007 (its `node_modules` junctions are now broken → rollback to REV-007 needs `npm ci` first; `pre-REV-008.dump` is the DB safety net). Migration applied. Backend + frontend healthy.
+- **Lessons** (memory `deployment_known_issues.md` updated):
+  - **node_modules junctions survive only one rotation.** After two consecutive smart-skip deploys, junctions self-reference. Materialize with `npm ci` (backend) / `npm install` (frontend) on the server, or force `deploy.bat --full` (slow network copy). A release with real `node_modules` resets the chain.
+  - **Frontend `npm ci` is currently broken** (lock out of sync) — use `npm install --omit=dev` until the lock is regenerated in the repo.
