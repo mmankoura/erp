@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useApi } from "@/hooks/use-api"
 import {
@@ -22,7 +22,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
-import { ArrowLeft, Trash2 } from "lucide-react"
+import { ArrowLeft, Pause, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import Link from "next/link"
 
@@ -43,6 +43,13 @@ export default function ScanPage() {
 
   const { data: count, refetch: refetchCount } = useApi<PhysicalCount>(`/physical-counts/${id}`)
   const { data: scans, refetch: refetchScans } = useApi<ScanWithId[]>(`/physical-counts/${id}/scans`)
+
+  // A paused count blocks scanning — send the user to the detail page to resume.
+  useEffect(() => {
+    if (count?.status === "PAUSED") {
+      router.replace(`/physical-count/${id}`)
+    }
+  }, [count?.status, id, router])
 
   const [uid, setUid] = useState("")
   const [qty, setQty] = useState("")
@@ -113,6 +120,16 @@ export default function ScanPage() {
       router.push(`/physical-count/${id}/review`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to complete")
+    }
+  }
+
+  const pauseCount = async () => {
+    try {
+      await api.post(`/physical-counts/${id}/pause`, {})
+      toast.success("Count paused — resume from the count page to continue")
+      router.push(`/physical-count/${id}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to pause")
     }
   }
 
@@ -248,7 +265,12 @@ export default function ScanPage() {
             <CardDescription>All scans for this count, newest first.</CardDescription>
           </div>
           {isOwner && (
-            <Button onClick={completeCount}>Complete count</Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={pauseCount}>
+                <Pause className="h-4 w-4 mr-1" /> Pause
+              </Button>
+              <Button onClick={completeCount}>Complete count</Button>
+            </div>
           )}
         </CardHeader>
         <CardContent className="p-0">

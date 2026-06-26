@@ -14,6 +14,9 @@ import { Customer } from './customer.entity';
 export enum PhysicalCountStatus {
   PLANNED = 'PLANNED',
   IN_PROGRESS = 'IN_PROGRESS',
+  // Counting paused mid-session; resume returns it to IN_PROGRESS. Scanning is
+  // blocked while paused. Still counts as an "active" count for the customer.
+  PAUSED = 'PAUSED',
   PENDING_REVIEW = 'PENDING_REVIEW',
   APPROVED = 'APPROVED',
   CANCELLED = 'CANCELLED',

@@ -26,6 +26,7 @@ type PhysicalCountWithId = PhysicalCount & { id: string }
 const statusVariant: Record<PhysicalCountStatus, "default" | "secondary" | "outline" | "destructive"> = {
   PLANNED: "outline",
   IN_PROGRESS: "default",
+  PAUSED: "secondary",
   PENDING_REVIEW: "secondary",
   APPROVED: "default",
   CANCELLED: "destructive",

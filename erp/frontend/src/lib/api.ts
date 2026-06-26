@@ -979,6 +979,7 @@ export interface InventoryLot {
 export type PhysicalCountStatus =
   | "PLANNED"
   | "IN_PROGRESS"
+  | "PAUSED"
   | "PENDING_REVIEW"
   | "APPROVED"
   | "CANCELLED"

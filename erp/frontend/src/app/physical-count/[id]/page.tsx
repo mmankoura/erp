@@ -8,7 +8,7 @@ import { useAuth, UserRole } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { ArrowLeft, FileDown, FileSpreadsheet, XCircle } from "lucide-react"
+import { ArrowLeft, FileDown, FileSpreadsheet, Play, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import Link from "next/link"
 
@@ -40,6 +40,18 @@ export default function PhysicalCountDetailPage() {
         refetch()
       },
       onError: (err) => toast.error(err.message || "Failed to cancel"),
+    }
+  )
+
+  const resumeMutation = useMutation<PhysicalCount, void>(
+    () => api.post(`/physical-counts/${id}/resume`, {}),
+    {
+      onSuccess: () => {
+        toast.success("Count resumed")
+        refetch()
+        router.push(`/physical-count/${id}/scan`)
+      },
+      onError: (err) => toast.error(err.message || "Failed to resume count"),
     }
   )
 
@@ -88,7 +100,12 @@ export default function PhysicalCountDetailPage() {
               Start Count
             </Button>
           )}
-          {(count.status === "PLANNED" || count.status === "IN_PROGRESS" || count.status === "PENDING_REVIEW") &&
+          {count.status === "PAUSED" && (
+            <Button onClick={() => resumeMutation.mutate(undefined)} disabled={resumeMutation.isLoading}>
+              <Play className="h-4 w-4 mr-1" /> Resume Count
+            </Button>
+          )}
+          {(count.status === "PLANNED" || count.status === "IN_PROGRESS" || count.status === "PAUSED" || count.status === "PENDING_REVIEW") &&
             hasRole(UserRole.ADMIN, UserRole.MANAGER) && (
               <Button
                 variant="destructive"

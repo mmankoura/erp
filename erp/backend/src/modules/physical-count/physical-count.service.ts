@@ -81,6 +81,7 @@ export class PhysicalCountService {
     const active = await this.countRepository.findOne({
       where: [
         { customer_id: dto.customer_id, status: PhysicalCountStatus.IN_PROGRESS },
+        { customer_id: dto.customer_id, status: PhysicalCountStatus.PAUSED },
         { customer_id: dto.customer_id, status: PhysicalCountStatus.PENDING_REVIEW },
         { customer_id: dto.customer_id, status: PhysicalCountStatus.PLANNED },
       ],
@@ -213,6 +214,53 @@ export class PhysicalCountService {
       entity_id: id,
       actor,
       new_value: { count_number: count.count_number, total_expected_lots: count.total_expected_lots },
+    });
+
+    return this.findById(id);
+  }
+
+  /**
+   * Pause an in-progress count. Scanning is blocked until it is resumed; the
+   * snapshot taken at start is preserved.
+   */
+  async pauseCount(id: string, actor?: string): Promise<PhysicalCount> {
+    const count = await this.findById(id);
+    if (count.status !== PhysicalCountStatus.IN_PROGRESS) {
+      throw new BadRequestException(`Cannot pause count with status "${count.status}"`);
+    }
+
+    count.status = PhysicalCountStatus.PAUSED;
+    await this.countRepository.save(count);
+
+    await this.auditService.emit({
+      event_type: AuditEventType.PHYSICAL_COUNT_PAUSED,
+      entity_type: AuditEntityType.PHYSICAL_COUNT,
+      entity_id: id,
+      actor,
+      new_value: { count_number: count.count_number },
+    });
+
+    return this.findById(id);
+  }
+
+  /**
+   * Resume a paused count back to IN_PROGRESS so scanning can continue.
+   */
+  async resumeCount(id: string, actor?: string): Promise<PhysicalCount> {
+    const count = await this.findById(id);
+    if (count.status !== PhysicalCountStatus.PAUSED) {
+      throw new BadRequestException(`Cannot resume count with status "${count.status}"`);
+    }
+
+    count.status = PhysicalCountStatus.IN_PROGRESS;
+    await this.countRepository.save(count);
+
+    await this.auditService.emit({
+      event_type: AuditEventType.PHYSICAL_COUNT_RESUMED,
+      entity_type: AuditEntityType.PHYSICAL_COUNT,
+      entity_id: id,
+      actor,
+      new_value: { count_number: count.count_number },
     });
 
     return this.findById(id);

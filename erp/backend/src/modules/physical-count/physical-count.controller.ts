@@ -77,6 +77,24 @@ export class PhysicalCountController {
     return this.service.startCount(id, req.user?.username);
   }
 
+  @Post(':id/pause')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
+  async pause(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user?: { username?: string } },
+  ) {
+    return this.service.pauseCount(id, req.user?.username);
+  }
+
+  @Post(':id/resume')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
+  async resume(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user?: { username?: string } },
+  ) {
+    return this.service.resumeCount(id, req.user?.username);
+  }
+
   @Post(':id/scan')
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
   async scan(
