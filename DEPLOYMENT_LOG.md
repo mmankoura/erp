@@ -414,3 +414,14 @@ PM2 boot persistence was attempted via three approaches, all failed:
 - **Lessons** (memory `deployment_known_issues.md` updated):
   - **node_modules junctions survive only one rotation.** After two consecutive smart-skip deploys, junctions self-reference. Materialize with `npm ci` (backend) / `npm install` (frontend) on the server, or force `deploy.bat --full` (slow network copy). A release with real `node_modules` resets the chain.
   - **Frontend `npm ci` is currently broken** (lock out of sync) — use `npm install --omit=dev` until the lock is regenerated in the repo.
+
+---
+
+## REV-009 Deployment — July 1, 2026
+
+- **Changes**: Kitting Print Pick Sheet (and Shortage Report) sorted by IPN; shortages moved from a top card into a "Shortages" tab; delete a kitting job (`DELETE /kitting/:id/permanent`, hard delete with FK cascade + WIP→STOCK reset, distinct from Cancel); one-kitting-per-order guard in create(); assign-customer multi-select now follows the grid's sort order (new `VirtualGrid.onVisibleRowsChange`).
+- **Migration**: None.
+- **Backup**: `pre-REV-009.dump` + `manual-snapshot-rev008`.
+- **node_modules**: **Junctioned** (fast) — safe this time because REV-008 (→ `previous`) had **real** node_modules from being materialized last deploy. Junction to a real release is good for exactly one rotation.
+- **Result**: Clean deploy, no issues. `taskkill` cleared the two orphaned node procs, rotate/junction/start all succeeded first try, health green. `current\` = REV-009 (backend/frontend node_modules junctioned → REV-008), `previous\` = REV-008 (real node_modules — solid rollback target).
+- **Lesson**: **REV-010 MUST materialize** (`npm ci`/`npm install`), not junction — REV-009's node_modules are junctions, so a second consecutive junction hop would self-reference. Rule of thumb: junction only when `previous` has real node_modules (i.e. the deploy right after a materialized one); otherwise materialize.
