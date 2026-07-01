@@ -85,6 +85,7 @@ export default function AssignCustomerPage() {
   const [search, setSearch] = useState("")
   const [anchorId, setAnchorId] = useState<string | null>(null)
   const [focusedIndex, setFocusedIndex] = useState<number>(-1)
+  const [orderedLots, setOrderedLots] = useState<LotWithId[]>([])
   const shiftHeldRef = useRef(false)
   const tableAreaRef = useRef<HTMLDivElement>(null)
 
@@ -105,6 +106,15 @@ export default function AssignCustomerPage() {
       (l.bin?.toLowerCase().includes(q) ?? false)
     )
   }, [unassignedLots, search])
+
+  // The on-screen order, reported by VirtualGrid after its sort. Selection
+  // (shift-range, select-all anchor, keyboard nav) must follow what the user
+  // sees, not the unsorted `visibleLots`. Fall back to visibleLots until the
+  // grid has reported its order (and whenever the two are out of sync).
+  const order = useMemo<LotWithId[]>(
+    () => (orderedLots.length === visibleLots.length ? orderedLots : visibleLots),
+    [orderedLots, visibleLots],
+  )
 
   // Prune stale selections after the dataset changes.
   useEffect(() => {
@@ -127,7 +137,7 @@ export default function AssignCustomerPage() {
       const next = new Set(prev)
       // Shift-click range: (de)select every visible row between the anchor and this one
       if (shiftHeld && anchorId && anchorId !== id) {
-        const ids = visibleLots.map((l) => l.id)
+        const ids = order.map((l) => l.id)
         const ai = ids.indexOf(anchorId)
         const ci = ids.indexOf(id)
         if (ai !== -1 && ci !== -1) {
@@ -142,13 +152,13 @@ export default function AssignCustomerPage() {
       return next
     })
     setAnchorId(id)
-    const idx = visibleLots.findIndex((l) => l.id === id)
+    const idx = order.findIndex((l) => l.id === id)
     if (idx !== -1) setFocusedIndex(idx)
   }
 
   const selectAllVisible = () => {
-    setSelectedIds(new Set(visibleLots.map((l) => l.id)))
-    setAnchorId(visibleLots[0]?.id ?? null)
+    setSelectedIds(new Set(order.map((l) => l.id)))
+    setAnchorId(order[0]?.id ?? null)
     setFocusedIndex(0)
   }
 
@@ -173,9 +183,9 @@ export default function AssignCustomerPage() {
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.getAttribute("role") === "combobox") {
       return
     }
-    const max = visibleLots.length - 1
+    const max = order.length - 1
     if (max < 0) return
-    const ids = visibleLots.map((l) => l.id)
+    const ids = order.map((l) => l.id)
 
     const extendSelectionTo = (newIndex: number) => {
       const anchorIdx = anchorId ? ids.indexOf(anchorId) : (focusedIndex < 0 ? newIndex : focusedIndex)
@@ -225,7 +235,7 @@ export default function AssignCustomerPage() {
     }
   }
 
-  const focusedId = focusedIndex >= 0 && focusedIndex < visibleLots.length ? visibleLots[focusedIndex].id : null
+  const focusedId = focusedIndex >= 0 && focusedIndex < order.length ? order[focusedIndex].id : null
 
   const bulkMutation = useMutation<{ assigned: number }, void>(
     () =>
@@ -388,7 +398,7 @@ export default function AssignCustomerPage() {
               <X className="h-4 w-4 mr-1" /> Clear
             </Button>
             <Button variant="outline" size="sm" onClick={selectAllVisible}>
-              Select all visible ({visibleLots.length})
+              Select all visible ({order.length})
             </Button>
             <div className="flex-1" />
             <Select value={bulkCustomerId} onValueChange={setBulkCustomerId}>
@@ -446,6 +456,7 @@ export default function AssignCustomerPage() {
               data={visibleLots}
               columns={columns}
               isLoading={lotsLoading}
+              onVisibleRowsChange={setOrderedLots}
             />
           </CardContent>
         </Card>

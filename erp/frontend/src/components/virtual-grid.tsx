@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useMemo, type ReactNode } from "react"
+import { useState, useRef, useMemo, useEffect, type ReactNode } from "react"
 import {
   useReactTable,
   getCoreRowModel,
@@ -137,6 +137,12 @@ interface VirtualGridProps<T> {
   headerActions?: ReactNode
   /** Optional per-row className for tinting (e.g., status backgrounds). */
   rowClassName?: (row: T) => string
+  /**
+   * Fires with the rows in their current displayed order (after the grid's own
+   * sorting/filtering). Use this when the parent needs the on-screen order —
+   * e.g. shift-click range selection that must match what the user sees.
+   */
+  onVisibleRowsChange?: (rows: T[]) => void
 }
 
 // =============== VirtualGrid Component ===============
@@ -152,6 +158,7 @@ export function VirtualGrid<T>({
   rowHeight = 44,
   headerActions,
   rowClassName,
+  onVisibleRowsChange,
 }: VirtualGridProps<T>) {
   const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([])
@@ -213,6 +220,18 @@ export function VirtualGrid<T>({
 
   const { rows } = table.getRowModel()
   const parentRef = useRef<HTMLDivElement>(null)
+
+  // Report the on-screen row order to the parent (for selection logic that must
+  // follow the sort). Keyed on the ordered ids so it only fires when the
+  // displayed order actually changes; a ref keeps the callback fresh without
+  // re-firing on every render.
+  const onVisibleRowsChangeRef = useRef(onVisibleRowsChange)
+  onVisibleRowsChangeRef.current = onVisibleRowsChange
+  const orderSignature = useMemo(() => rows.map((r) => r.id).join(","), [rows])
+  useEffect(() => {
+    onVisibleRowsChangeRef.current?.(rows.map((r) => r.original))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderSignature])
 
   const virtualizer = useVirtualizer({
     count: rows.length,
