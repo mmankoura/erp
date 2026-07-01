@@ -116,4 +116,15 @@ export class KittingController {
   async cancel(@Param('id', ParseUUIDPipe) id: string) {
     return this.kittingService.cancel(id);
   }
+
+  /**
+   * DELETE /kitting/:id/permanent
+   * Permanently delete a kitting list (removes orders/items/scans)
+   */
+  @Delete(':id/permanent')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    await this.kittingService.remove(id);
+    return { deleted: true };
+  }
 }

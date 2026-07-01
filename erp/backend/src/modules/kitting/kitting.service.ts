@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -72,6 +73,30 @@ export class KittingService {
     if (invalidOrders.length > 0) {
       throw new BadRequestException(
         `Orders must be in ENTERED or KITTING status. Invalid: ${invalidOrders.map((o) => o.order_number).join(', ')}`,
+      );
+    }
+
+    // One kitting per order: reject if any order is already on a kitting list
+    // that isn't cancelled (a cancelled list frees its orders to be re-kitted).
+    const existingLinks = await this.dataSource
+      .getRepository(KittingListOrder)
+      .createQueryBuilder('klo')
+      .innerJoinAndSelect('klo.kitting_list', 'kl')
+      .innerJoinAndSelect('klo.order', 'order')
+      .where('klo.order_id IN (:...orderIds)', { orderIds: dto.order_ids })
+      .andWhere('kl.status != :cancelled', {
+        cancelled: KittingListStatus.CANCELLED,
+      })
+      .getMany();
+    if (existingLinks.length > 0) {
+      const details = existingLinks
+        .map(
+          (l) =>
+            `${l.order?.order_number} (already on ${l.kitting_list?.list_number}, ${l.kitting_list?.status})`,
+        )
+        .join(', ');
+      throw new ConflictException(
+        `These orders already have a kitting list: ${details}. Cancel or delete that list first.`,
       );
     }
 
@@ -586,6 +611,41 @@ export class KittingService {
     });
 
     return this.findOne(id);
+  }
+
+  /**
+   * Permanently delete a kitting list. FK ON DELETE CASCADE removes its orders,
+   * items, and scans; any lots scanned into the kit are moved out of WIP back to
+   * STOCK so inventory isn't left tagged to a deleted kit.
+   */
+  async remove(id: string, actor?: string): Promise<void> {
+    const kittingList = await this.findOne(id);
+
+    await this.dataSource.transaction(async (manager) => {
+      const uidIds = (kittingList.items ?? [])
+        .flatMap((i) => i.scans ?? [])
+        .map((s) => s.uid_id)
+        .filter((x): x is string => !!x);
+      if (uidIds.length > 0) {
+        await manager.update(
+          InventoryLot,
+          { id: In(uidIds) },
+          { location: 'STOCK' },
+        );
+      }
+      await manager.delete(KittingList, id);
+    });
+
+    await this.auditService.emit({
+      event_type: AuditEventType.KITTING_LIST_DELETED,
+      entity_type: AuditEntityType.KITTING_LIST,
+      entity_id: id,
+      actor,
+      old_value: {
+        list_number: kittingList.list_number,
+        status: kittingList.status,
+      },
+    });
   }
 
   // ==================== Private Helpers ====================

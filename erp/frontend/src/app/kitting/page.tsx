@@ -29,6 +29,7 @@ import {
   ScanBarcode,
   CheckCircle,
   Play,
+  Trash2,
   AlertTriangle,
   ArrowLeft,
   Download,
@@ -435,6 +436,17 @@ function KittingDetail({
     },
   )
 
+  const deleteMutation = useMutation<{ deleted: boolean }, void>(
+    () => api.delete(`/kitting/${kittingListId}/permanent`),
+    {
+      onSuccess: () => {
+        toast.success("Kitting list deleted")
+        onBack()
+      },
+      onError: (err) => toast.error(err.message),
+    },
+  )
+
   const handleScan = () => {
     if (!scanInput.trim()) return
     scanMutation.mutate({ uid: scanInput.trim() })
@@ -521,6 +533,23 @@ function KittingDetail({
               Cancel
             </Button>
           )}
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={deleteMutation.isLoading}
+            onClick={() => {
+              if (
+                confirm(
+                  `Permanently delete ${kittingList.list_number}? This removes the kit and all its scans and cannot be undone.`,
+                )
+              ) {
+                deleteMutation.mutate()
+              }
+            }}
+          >
+            <Trash2 className="mr-1 h-4 w-4" />
+            Delete
+          </Button>
           {stockData && (
             <Button
               variant="outline"
@@ -640,37 +669,23 @@ function KittingDetail({
         </Card>
       )}
 
-      {/* Shortage summary — visible at any status when there are shortages.
-          For active lists the values are live (based on current on-hand vs.
-          required); for completed lists they reflect the snapshot at completion. */}
-      {kittingList.status !== "CANCELLED" && shortItems.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-amber-800">
-              <AlertTriangle className="h-4 w-4" />
-              Shortages ({shortItems.length} items)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {shortItems.map((item) => (
-                <div key={item.id} className="flex justify-between text-sm text-amber-800">
-                  <span className="font-mono">{item.material?.internal_part_number}</span>
-                  <span>Short {parseFloat(String(item.shortage_qty)).toLocaleString()} pcs</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Material items by resource type */}
+      {/* Material items by resource type. Shortages (live for active lists,
+          snapshot for completed) are nested in their own tab. */}
       <Tabs defaultValue="smt">
         <TabsList>
           <TabsTrigger value="smt">SMT ({stockData?.smt_items?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="th">TH ({stockData?.th_items?.length ?? 0})</TabsTrigger>
           {(stockData?.other_items?.length ?? 0) > 0 && (
             <TabsTrigger value="other">Other ({stockData?.other_items?.length ?? 0})</TabsTrigger>
+          )}
+          {kittingList.status !== "CANCELLED" && shortItems.length > 0 && (
+            <TabsTrigger
+              value="shortages"
+              className="text-amber-700 data-[state=active]:text-amber-800"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+              Shortages ({shortItems.length})
+            </TabsTrigger>
           )}
         </TabsList>
         <TabsContent value="smt">
@@ -682,6 +697,28 @@ function KittingDetail({
         {(stockData?.other_items?.length ?? 0) > 0 && (
           <TabsContent value="other">
             <KittingItemsTable items={stockData?.other_items ?? []} />
+          </TabsContent>
+        )}
+        {kittingList.status !== "CANCELLED" && shortItems.length > 0 && (
+          <TabsContent value="shortages">
+            <Card className="border-amber-200 bg-amber-50">
+              <CardContent className="pt-4">
+                <div className="space-y-1">
+                  {[...shortItems]
+                    .sort((a, b) =>
+                      (a.material?.internal_part_number ?? "").localeCompare(
+                        b.material?.internal_part_number ?? "",
+                      ),
+                    )
+                    .map((item) => (
+                      <div key={item.id} className="flex justify-between text-sm text-amber-800">
+                        <span className="font-mono">{item.material?.internal_part_number}</span>
+                        <span>Short {parseFloat(String(item.shortage_qty)).toLocaleString()} pcs</span>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
       </Tabs>
@@ -939,6 +976,12 @@ function PrintSection({
   title: string
   items: KittingItemWithStock[]
 }) {
+  // Pick sheet is sorted by IPN so pickers walk the list in part-number order.
+  const sortedItems = [...items].sort((a, b) =>
+    (a.material?.internal_part_number ?? "").localeCompare(
+      b.material?.internal_part_number ?? "",
+    ),
+  )
   return (
     <div>
       <h2 className="text-lg font-bold border-b-2 border-black pb-1 mb-2">{title}</h2>
@@ -956,7 +999,7 @@ function PrintSection({
           </tr>
         </thead>
         <tbody>
-          {items.map((item, idx) => (
+          {sortedItems.map((item, idx) => (
             <tr key={item.id} className="border-b border-gray-200">
               <td className="py-1 pr-2 text-gray-500">{idx + 1}</td>
               <td className="py-1 pr-2 font-mono">{item.material?.internal_part_number}</td>
@@ -1001,7 +1044,13 @@ function KittingShortagePrintView({
     ...stockData.th_items,
     ...stockData.other_items,
   ]
-  const shortItems = allItems.filter((i) => i.is_short)
+  const shortItems = allItems
+    .filter((i) => i.is_short)
+    .sort((a, b) =>
+      (a.material?.internal_part_number ?? "").localeCompare(
+        b.material?.internal_part_number ?? "",
+      ),
+    )
 
   const handlePrint = () => {
     window.print()
