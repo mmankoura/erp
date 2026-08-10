@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { PhysicalCountResolutionAction } from '../../../entities/physical-count-discrepancy.entity';
 
 export class ResolveDiscrepancyDto {
@@ -8,4 +8,10 @@ export class ResolveDiscrepancyDto {
   @IsOptional()
   @IsString()
   resolution_note?: string;
+
+  /** Required when resolution_action is RECOUNT. Becomes the lot's quantity on approve. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  recount_qty?: number;
 }

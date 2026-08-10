@@ -11,6 +11,7 @@ const HEADERS = [
   "MPN",
   "Expected Qty",
   "Scanned Qty",
+  "Recounted Qty",
   "Variance",
   "Variance $",
   "Resolution",
@@ -59,6 +60,7 @@ export function exportPhysicalCountToExcel(report: PhysicalCountVarianceReport):
         r.mpn ?? "",
         r.expected_qty,
         r.scanned_qty,
+        r.recount_qty,
         r.variance,
         r.variance_value,
         r.resolution_action ?? "",
@@ -71,7 +73,7 @@ export function exportPhysicalCountToExcel(report: PhysicalCountVarianceReport):
   const ws = XLSX.utils.aoa_to_sheet(rows)
   ws["!cols"] = [
     { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 22 },
-    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 },
+    { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
     { wch: 16 }, { wch: 32 }, { wch: 16 },
   ]
 

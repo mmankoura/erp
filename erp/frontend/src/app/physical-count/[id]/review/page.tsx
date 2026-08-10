@@ -50,9 +50,12 @@ export default function ReviewPage() {
   const canApprove = hasRole(UserRole.ADMIN, UserRole.MANAGER)
 
   const { data: count, refetch: refetchCount } = useApi<PhysicalCount>(`/physical-counts/${id}`)
-  const { data: discrepancies, refetch: refetchDiscrepancies } = useApi<DiscrepancyWithId[]>(
-    `/physical-counts/${id}/discrepancies`,
-  )
+  const {
+    data: discrepancies,
+    isLoading: discrepanciesLoading,
+    error: discrepanciesError,
+    refetch: refetchDiscrepancies,
+  } = useApi<DiscrepancyWithId[]>(`/physical-counts/${id}/discrepancies`)
 
   const [openSections, setOpenSections] = useState<Record<PhysicalCountDiscrepancyType, boolean>>({
     SHORTAGE: true,
@@ -76,7 +79,12 @@ export default function ReviewPage() {
   for (const d of allDiscrepancies) byType[d.type].push(d)
 
   const resolvedCount = allDiscrepancies.filter((d) => d.resolution_action).length
-  const allResolved = allDiscrepancies.length > 0 && resolvedCount === allDiscrepancies.length
+  const cleanCount = allDiscrepancies.length === 0
+  // A count with zero discrepancies is immediately approvable — scans matched the
+  // system exactly. Gate on the fetch having actually succeeded, since `data` is
+  // null both while loading and on error, which would otherwise read as "clean".
+  const discrepanciesLoaded = !discrepanciesLoading && !discrepanciesError && discrepancies !== null
+  const allResolved = discrepanciesLoaded && resolvedCount === allDiscrepancies.length
 
   const approve = async () => {
     if (!confirm("Approve count? This creates inventory transactions and cannot be undone.")) return
@@ -101,7 +109,13 @@ export default function ReviewPage() {
         <div>
           <h1 className="text-2xl font-bold">{count.count_number} — Review</h1>
           <p className="text-muted-foreground text-sm">
-            {resolvedCount} of {allDiscrepancies.length} resolved
+            {discrepanciesError
+              ? "Could not load discrepancies"
+              : discrepanciesLoading
+                ? "Loading discrepancies..."
+                : cleanCount
+                  ? "No discrepancies — every scan matched the system"
+                  : `${resolvedCount} of ${allDiscrepancies.length} resolved`}
             {count.status === "APPROVED" && " · APPROVED"}
           </p>
         </div>
@@ -194,18 +208,42 @@ function DiscrepancyRow({
     discrepancy.resolution_action ?? ""
   )
   const [note, setNote] = useState<string>(discrepancy.resolution_note ?? "")
+  const [recountQty, setRecountQty] = useState<string>(
+    discrepancy.recount_qty != null ? String(discrepancy.recount_qty) : ""
+  )
   const [saving, setSaving] = useState(false)
+
+  const isRecount = action === "RECOUNT"
+  // ORPHAN rows may have no lot to write the recount back to.
+  const recountHasNoLot = isRecount && !discrepancy.lot_id
+  const showRecountInput = isRecount && !recountHasNoLot
+  const parsedRecountQty = recountQty.trim() === "" ? null : Number(recountQty)
+  const recountQtyInvalid =
+    isRecount &&
+    !recountHasNoLot &&
+    (parsedRecountQty === null || !Number.isFinite(parsedRecountQty) || parsedRecountQty < 0)
 
   const save = async () => {
     if (!action) {
       toast.error("Pick a resolution action")
       return
     }
+    if (isRecount && !recountHasNoLot) {
+      if (parsedRecountQty === null) {
+        toast.error("Enter the recounted quantity — a recount can't be saved without it")
+        return
+      }
+      if (!Number.isFinite(parsedRecountQty) || parsedRecountQty < 0) {
+        toast.error("Recounted quantity must be a number of 0 or more")
+        return
+      }
+    }
     setSaving(true)
     try {
       await api.patch(`/physical-counts/${countId}/discrepancies/${discrepancy.id}`, {
         resolution_action: action,
         resolution_note: note || undefined,
+        recount_qty: isRecount && !recountHasNoLot ? parsedRecountQty : undefined,
       })
       toast.success("Resolved")
       onResolved()
@@ -220,7 +258,7 @@ function DiscrepancyRow({
 
   return (
     <div className="border rounded-md p-3 space-y-2">
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-2 text-sm">
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-2 text-sm">
         <div>
           <div className="text-xs text-muted-foreground">UID / IPN</div>
           <div className="font-mono font-medium">{discrepancy.uid ?? discrepancy.lot?.uid ?? "—"}</div>
@@ -232,6 +270,10 @@ function DiscrepancyRow({
         <div>
           <div className="text-xs text-muted-foreground">Scanned</div>
           <div className="font-mono">{discrepancy.scanned_qty ?? "—"}</div>
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground">Recounted</div>
+          <div className="font-mono">{discrepancy.recount_qty ?? "—"}</div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">Variance</div>
@@ -249,7 +291,7 @@ function DiscrepancyRow({
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
-        <div className="md:col-span-4">
+        <div className={showRecountInput ? "md:col-span-3" : "md:col-span-4"}>
           <Select value={action} onValueChange={(v) => setAction(v as PhysicalCountResolutionAction)} disabled={readOnly}>
             <SelectTrigger>
               <SelectValue placeholder="Resolution action" />
@@ -261,7 +303,26 @@ function DiscrepancyRow({
             </SelectContent>
           </Select>
         </div>
-        <div className="md:col-span-6">
+        {showRecountInput && (
+          <div className="md:col-span-2">
+            <Input
+              autoFocus
+              type="number"
+              min={0}
+              step="any"
+              inputMode="decimal"
+              value={recountQty}
+              onChange={(e) => setRecountQty(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") save() }}
+              placeholder="Recounted qty *"
+              aria-label="Recounted quantity"
+              aria-invalid={recountQtyInvalid}
+              disabled={readOnly}
+              className={recountQtyInvalid ? "border-destructive focus-visible:ring-destructive" : ""}
+            />
+          </div>
+        )}
+        <div className={showRecountInput ? "md:col-span-5" : "md:col-span-6"}>
           <Input
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -270,11 +331,28 @@ function DiscrepancyRow({
           />
         </div>
         <div className="md:col-span-2">
-          <Button onClick={save} disabled={readOnly || saving || !action} className="w-full">
+          <Button
+            onClick={save}
+            disabled={readOnly || saving || !action || recountQtyInvalid}
+            className="w-full"
+          >
             {saving ? "Saving..." : "Save"}
           </Button>
         </div>
       </div>
+      {showRecountInput && (
+        <p className={`text-xs ${recountQtyInvalid ? "text-destructive" : "text-muted-foreground"}`}>
+          {recountQtyInvalid
+            ? "A recounted quantity is required to save a recount."
+            : "Go count the physical stock, then enter the quantity. On approve the lot is set to this number."}
+        </p>
+      )}
+      {recountHasNoLot && (
+        <p className="text-xs text-destructive">
+          This scan matched no lot in the system, so there is nothing to adjust. Approving will
+          record the recount decision only — use Accept With Note instead if that is what you mean.
+        </p>
+      )}
     </div>
   )
 }

@@ -70,6 +70,15 @@ export class PhysicalCountDiscrepancy {
   @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true })
   scanned_qty: number | null;
 
+  /**
+   * Physically re-counted quantity, captured inline at review time when the
+   * resolution is RECOUNT. Authoritative: on approve the lot is adjusted to
+   * this value. Null only on RECOUNT rows resolved before this field existed,
+   * which fall back to spawning a child count.
+   */
+  @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true })
+  recount_qty: number | null;
+
   @Column({ type: 'decimal', precision: 12, scale: 4 })
   variance: number;
 

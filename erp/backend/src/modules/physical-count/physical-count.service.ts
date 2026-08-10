@@ -173,6 +173,22 @@ export class PhysicalCountService {
     }
 
     await this.dataSource.transaction(async (manager) => {
+      // A recount child is spawned with its snapshot already seeded (just the
+      // lots flagged on the parent). Re-snapshotting would both violate
+      // UQ_physical_count_lots_count_lot and widen a targeted recount into a
+      // full count, so a pre-seeded snapshot is left exactly as it is.
+      const existingSnapshot = await manager.count(PhysicalCountLot, {
+        where: { physical_count_id: count.id },
+      });
+      if (existingSnapshot > 0) {
+        count.status = PhysicalCountStatus.IN_PROGRESS;
+        count.started_at = new Date();
+        count.counted_by = actor ?? null;
+        count.total_expected_lots = existingSnapshot;
+        await manager.save(PhysicalCount, count);
+        return;
+      }
+
       const lotsQb = manager
         .createQueryBuilder(InventoryLot, 'lot')
         .leftJoin('lot.material', 'material')
@@ -633,8 +649,29 @@ export class PhysicalCountService {
       );
     }
 
+    // RECOUNT must carry the re-counted quantity — it is what the lot gets
+    // adjusted to on approve. Only enforceable where there is a lot to write
+    // back to; an ORPHAN scan that matched no lot has nothing to adjust.
+    if (
+      dto.resolution_action === PhysicalCountResolutionAction.RECOUNT &&
+      disc.lot_id
+    ) {
+      if (dto.recount_qty == null) {
+        throw new BadRequestException(
+          `A recounted quantity is required when resolving as RECOUNT`,
+        );
+      }
+      if (dto.recount_qty < 0) {
+        throw new BadRequestException(`Recounted quantity cannot be negative`);
+      }
+    }
+
     disc.resolution_action = dto.resolution_action;
     disc.resolution_note = dto.resolution_note ?? null;
+    disc.recount_qty =
+      dto.resolution_action === PhysicalCountResolutionAction.RECOUNT
+        ? (dto.recount_qty ?? null)
+        : null;
     disc.resolved_by = actor ?? null;
     disc.resolved_at = new Date();
     await this.discrepancyRepository.save(disc);
@@ -648,6 +685,7 @@ export class PhysicalCountService {
         type: disc.type,
         resolution_action: disc.resolution_action,
         resolution_note: disc.resolution_note,
+        recount_qty: disc.recount_qty,
       },
     });
 
@@ -679,15 +717,28 @@ export class PhysicalCountService {
         const action = disc.resolution_action!;
         if (action === PhysicalCountResolutionAction.ACCEPT_WITH_NOTE) {
           // No transaction
-        } else if (action === PhysicalCountResolutionAction.RECOUNT) {
+        } else if (
+          action === PhysicalCountResolutionAction.RECOUNT &&
+          disc.recount_qty == null
+        ) {
+          // Legacy rows resolved before recount_qty existed: defer to a child count.
           if (disc.lot_id) recountLotIds.push(disc.lot_id);
-        } else if (action === PhysicalCountResolutionAction.ADJUST_TO_SCAN) {
+        } else if (
+          action === PhysicalCountResolutionAction.ADJUST_TO_SCAN ||
+          action === PhysicalCountResolutionAction.RECOUNT
+        ) {
           if (!disc.lot_id) continue; // ORPHAN with no lot can't adjust; would have been ACCEPT
           const lot = await manager.findOne(InventoryLot, { where: { id: disc.lot_id } });
           if (!lot) continue;
-          const scanned = disc.scanned_qty != null ? parseFloat(String(disc.scanned_qty)) : 0;
+          const isRecount = action === PhysicalCountResolutionAction.RECOUNT;
+          // RECOUNT is authoritative over the scan — the reviewer physically re-counted.
+          const target = isRecount
+            ? parseFloat(String(disc.recount_qty))
+            : disc.scanned_qty != null
+              ? parseFloat(String(disc.scanned_qty))
+              : 0;
           const live = parseFloat(String(lot.quantity));
-          const adjustment = scanned - live;
+          const adjustment = target - live;
           if (adjustment === 0) continue;
 
           const unitCost = lot.unit_cost != null ? parseFloat(String(lot.unit_cost)) : 0;
@@ -698,14 +749,16 @@ export class PhysicalCountService {
             unit_cost: unitCost || null,
             reference_type: ReferenceType.CYCLE_COUNT,
             reference_id: count.id,
-            reason: `Physical count ${count.count_number}: adjust to scan`,
+            reason: `Physical count ${count.count_number}: ${
+              isRecount ? 'adjust to recount' : 'adjust to scan'
+            }`,
             created_by: actor ?? null,
             lot_id: lot.id,
             owner_type: lot.owner_type,
             owner_id: lot.owner_id,
           });
           const savedTx = await manager.save(InventoryTransaction, tx);
-          lot.quantity = scanned;
+          lot.quantity = target;
           await manager.save(InventoryLot, lot);
 
           disc.adjustment_transaction_id = savedTx.id;
@@ -720,7 +773,8 @@ export class PhysicalCountService {
               count_number: count.count_number,
               lot_id: lot.id,
               adjustment,
-              new_qty: scanned,
+              new_qty: target,
+              source: isRecount ? 'RECOUNT' : 'SCAN',
             },
           });
         } else if (action === PhysicalCountResolutionAction.SCRAP_MISSING) {
@@ -865,6 +919,7 @@ export class PhysicalCountService {
       mpn: string | null;
       expected_qty: number | null;
       scanned_qty: number | null;
+      recount_qty: number | null;
       variance: number;
       variance_value: number | null;
       resolution_action: PhysicalCountResolutionAction | null;
@@ -882,6 +937,7 @@ export class PhysicalCountService {
       mpn: d.material?.manufacturer_pn ?? null,
       expected_qty: d.expected_qty != null ? parseFloat(String(d.expected_qty)) : null,
       scanned_qty: d.scanned_qty != null ? parseFloat(String(d.scanned_qty)) : null,
+      recount_qty: d.recount_qty != null ? parseFloat(String(d.recount_qty)) : null,
       variance: parseFloat(String(d.variance)),
       variance_value: d.variance_value != null ? parseFloat(String(d.variance_value)) : null,
       resolution_action: d.resolution_action,

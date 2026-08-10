@@ -1067,6 +1067,7 @@ export interface PhysicalCountDiscrepancy {
   uid: string | null
   expected_qty: number | null
   scanned_qty: number | null
+  recount_qty: number | null
   variance: number
   variance_value: number | null
   resolution_action: PhysicalCountResolutionAction | null
@@ -1126,6 +1127,7 @@ export interface PhysicalCountDiscrepancyRow {
   mpn: string | null
   expected_qty: number | null
   scanned_qty: number | null
+  recount_qty: number | null
   variance: number
   variance_value: number | null
   resolution_action: PhysicalCountResolutionAction | null
