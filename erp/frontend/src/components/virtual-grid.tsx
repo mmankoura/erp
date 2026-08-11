@@ -48,6 +48,7 @@ import {
   gutterWidthFor,
   copyValueOf,
   cellKey,
+  parseCellKey,
   parseCellInput,
   type VirtualGridColumn,
   type SpreadsheetOptions,
@@ -255,14 +256,14 @@ export function VirtualGrid<T>({
   gutterWidthRef.current = gutterWidth
 
   const visibleLeafColumns = table.getVisibleLeafColumns()
-  const colSignature = visibleLeafColumns.map((c) => c.id).join(" ")
+  const colSignature = visibleLeafColumns.map((c) => c.id).join("|")
   const rowIds = useMemo(
     () => rows.map((r) => r.id),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [orderSignature]
   )
   const colIds = useMemo(
-    () => (colSignature ? colSignature.split(" ") : []),
+    () => (colSignature ? colSignature.split("|") : []),
     [colSignature]
   )
   const { activePos, rect, selectCell, selectRow, selectAll, clear, isInRect } =
@@ -498,9 +499,9 @@ export function VirtualGrid<T>({
     const next = new Map(pendingValues)
     let changed = false
     for (const [key, value] of pendingValues) {
-      const sep = key.indexOf(" ")
-      const row = byId.get(key.slice(0, sep))
-      const config = columnsById.get(key.slice(sep + 1))?.edit
+      const { rowId, colId } = parseCellKey(key)
+      const row = byId.get(rowId)
+      const config = columnsById.get(colId)?.edit
       if (!row || !config) {
         next.delete(key)
         changed = true
