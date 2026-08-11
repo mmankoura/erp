@@ -9,8 +9,9 @@
 ## REV-010 — 2026-08-11
 
 **Released by**: Mark Mankoura
-**Migration required**: Yes — 1 migration:
+**Migration required**: Yes — 2 migrations:
 1. `AddRecountQtyToDiscrepancies1769300000000` — adds `recount_qty numeric(12,4) NULL` to `physical_count_discrepancies`. Additive and nullable, so it is backward-compatible with the currently deployed build (TypeORM selects an explicit column list, so the running REV-009 code ignores the new column).
+2. `AddCaseInsensitiveUserUniqueness1769400000000` — unique indexes on `LOWER(username)` and `LOWER(email)` on `users`. **This one can fail the deploy**: if production holds two accounts differing only by case, the index cannot be built and the migration aborts. That is deliberate — the alternative is a login that silently resolves to either account. Check first with `SELECT lower(username), count(*) FROM users GROUP BY 1 HAVING count(*) > 1;` (and the same for `email`). Dev's Aug 10 copy of production was clean.
 
 **Backup taken**: [ ] (check before deploying)
 
@@ -27,12 +28,17 @@
 | 5 | Fix | Physical Count | **A count with zero discrepancies could never be approved.** The review page required `discrepancies.length > 0` before enabling Approve, so a count where every scan matched the system was permanently stuck in `PENDING_REVIEW`. The guard now also distinguishes a loaded-but-empty result from the loading and error states, which both surface as `null` data. |
 | 6 | Removal | Physical Count | Retired the auto-spawned child recount path. `approveCount` no longer creates a follow-up `PLANNED` count, snapshots lots onto it, or reports `recount_spawned` in its audit payload — the inline recount quantity replaces it. A `RECOUNT` row with no quantity is now an explicit no-op (only reachable for an `ORPHAN` scan that matched no lot), which also removes a latent `NaN` adjustment path. `physical_counts.parent_count_id` is retained for existing lineage but is never written. |
 | 7 | Enhancement | Physical Count | Excel variance report gains a "Recounted Qty" column. Review header text now distinguishes loading / error / "No discrepancies — every scan matched the system" / "N of M resolved". |
+| 8 | Feature | Auth | **Login is no longer case-sensitive on the username or email.** `validateUser` lower-cases the supplied identifier and matches on `LOWER(username)` / `LOWER(email)`. Stored casing is preserved for display — `Sylvie` stays `Sylvie` — and the **password remains case-sensitive**. |
+| 9 | Backend | Auth | User create/update now detect username and email conflicts case-insensitively, backed by unique indexes on `LOWER(username)` / `LOWER(email)`. Without this, an admin could create `sylvie` alongside `Sylvie` and make the login lookup ambiguous. Uses `Raw(LOWER(...))` rather than `ILike`, which would treat `_` and `%` in a username as wildcards. |
+| 10 | Fix | Auth | `updateUser` picked its conflict message with a case-sensitive `===` comparison, so a username colliding only by case would have been reported as "Email already exists". Now compared case-insensitively. |
 
 ### Known behavior changes (worth communicating to users)
 
 - `RECOUNT` no longer defers work to a separate count. Reviewers must go count the stock and enter the number during review; there is no "decide later" path.
 - **Auto-spawned child counts are gone entirely.** Approving a count no longer creates a follow-up `PLANNED` count under any circumstance. Verified safe before removal: production held no counts in `PENDING_REVIEW`, so no in-flight review depended on the old behaviour. Existing child counts keep their `parent_count_id` lineage — the column is retained as historical data and is simply never written any more.
 - A perfect count (no discrepancies) is now approvable immediately.
+- Users can sign in with any casing of their username or email (`Sylvie`, `sylvie`, `SYLVIE` all work). Passwords are unaffected and stay case-sensitive.
+- Two accounts can no longer be created differing only by case; the second attempt returns "Username already exists".
 
 ### Verification Steps
 
@@ -41,6 +47,9 @@
 - [ ] Approve a count whose scans all matched → Approve button is enabled and header reads "No discrepancies — every scan matched the system"
 - [ ] Start an auto-spawned recount child (`parent_count_id` set) → starts without a 500 and `total_expected_lots` stays at the flagged-lot count, not the full customer lot count
 - [ ] Variance report Excel → "Recounted Qty" column present and populated for recount rows
+- [ ] Login as `Sylvie` using `sylvie` and `SYLVIE` → both succeed; the wrong password still returns 401
+- [ ] Login by email in mixed case → succeeds
+- [ ] Settings → Users → create a user named `sylvie` while `Sylvie` exists → rejected with "Username already exists"
 
 ---
 

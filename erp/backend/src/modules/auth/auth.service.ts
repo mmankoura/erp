@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Raw } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole } from '../../entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto';
@@ -25,14 +25,19 @@ export class AuthService {
   /**
    * Validate user credentials for login.
    * Supports both username and email for the username field.
+   *
+   * The identifier is matched case-insensitively; the stored casing is kept for
+   * display. Unique indexes on lower(username) and lower(email) guarantee this
+   * can only ever match one row. The password itself stays case-sensitive.
    */
   async validateUser(username: string, password: string): Promise<User | null> {
     // Find user by username or email, including password_hash
+    const identifier = username.toLowerCase();
     const user = await this.userRepository
       .createQueryBuilder('user')
       .addSelect('user.password_hash')
-      .where('user.username = :username OR user.email = :username', {
-        username,
+      .where('LOWER(user.username) = :identifier OR LOWER(user.email) = :identifier', {
+        identifier,
       })
       .getOne();
 
@@ -80,9 +85,16 @@ export class AuthService {
    * Create a new user (admin only).
    */
   async createUser(dto: CreateUserDto, createdBy: User): Promise<User> {
-    // Check for existing username
+    // Case-insensitive, since login matches identifiers that way — allowing
+    // "sylvie" alongside "Sylvie" would make the login lookup ambiguous.
+    // Raw(LOWER(...)) rather than ILike: ILike would treat _ and % in a
+    // username as wildcards.
     const existingUsername = await this.userRepository.findOne({
-      where: { username: dto.username },
+      where: {
+        username: Raw((alias) => `LOWER(${alias}) = LOWER(:username)`, {
+          username: dto.username,
+        }),
+      },
     });
     if (existingUsername) {
       throw new ConflictException('Username already exists');
@@ -91,7 +103,11 @@ export class AuthService {
     // Check for existing email (only if email provided)
     if (dto.email) {
       const existingEmail = await this.userRepository.findOne({
-        where: { email: dto.email },
+        where: {
+          email: Raw((alias) => `LOWER(${alias}) = LOWER(:email)`, {
+            email: dto.email,
+          }),
+        },
       });
       if (existingEmail) {
         throw new ConflictException('Email already exists');
@@ -157,14 +173,22 @@ export class AuthService {
       const existing = await this.userRepository
         .createQueryBuilder('user')
         .where('user.id != :id', { id })
-        .andWhere('(user.username = :username OR user.email = :email)', {
-          username: dto.username || '',
-          email: dto.email || '',
-        })
+        .andWhere(
+          '(LOWER(user.username) = LOWER(:username) OR LOWER(user.email) = LOWER(:email))',
+          {
+            username: dto.username || '',
+            email: dto.email || '',
+          },
+        )
         .getOne();
 
       if (existing) {
-        if (existing.username === dto.username) {
+        // Compare case-insensitively too, or a username that collided only by
+        // case would be reported as an email conflict.
+        if (
+          dto.username &&
+          existing.username.toLowerCase() === dto.username.toLowerCase()
+        ) {
           throw new ConflictException('Username already exists');
         }
         throw new ConflictException('Email already exists');

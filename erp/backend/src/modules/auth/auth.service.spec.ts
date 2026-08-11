@@ -89,14 +89,41 @@ describe('AuthService', () => {
       expect(out).toBeNull();
     });
 
-    it('queries by username OR email', async () => {
+    it('queries by username OR email, case-insensitively', async () => {
       const qb = userRepo.createQueryBuilder();
       qb.getOne.mockResolvedValue(null);
       await service.validateUser('alice@example.com', 'pwd');
       expect(qb.where).toHaveBeenCalledWith(
-        'user.username = :username OR user.email = :username',
-        { username: 'alice@example.com' },
+        'LOWER(user.username) = :identifier OR LOWER(user.email) = :identifier',
+        { identifier: 'alice@example.com' },
       );
+    });
+
+    it('lower-cases the supplied identifier before matching', async () => {
+      const qb = userRepo.createQueryBuilder();
+      qb.getOne.mockResolvedValue(null);
+      await service.validateUser('SyLvIe', 'pwd');
+      expect(qb.where).toHaveBeenCalledWith(expect.any(String), {
+        identifier: 'sylvie',
+      });
+    });
+
+    it('authenticates when the username case does not match the stored casing', async () => {
+      const qb = userRepo.createQueryBuilder();
+      qb.getOne.mockResolvedValue(buildUser({ username: 'Sylvie' }));
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      const out = await service.validateUser('SYLVIE', 'pwd');
+      expect(out).not.toBeNull();
+      expect(out?.username).toBe('Sylvie');
+    });
+
+    it('keeps the password case-sensitive', async () => {
+      const qb = userRepo.createQueryBuilder();
+      qb.getOne.mockResolvedValue(buildUser({ username: 'Sylvie' }));
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      const out = await service.validateUser('sylvie', 'PWD');
+      expect(out).toBeNull();
+      expect(bcrypt.compare).toHaveBeenCalledWith('PWD', expect.any(String));
     });
   });
 
