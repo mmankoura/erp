@@ -9,7 +9,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager, IsNull, In } from 'typeorm';
+import { Repository, DataSource, IsNull } from 'typeorm';
 import {
   PhysicalCount,
   PhysicalCountStatus,
@@ -710,8 +710,6 @@ export class PhysicalCountService {
       );
     }
 
-    const recountLotIds: string[] = [];
-
     await this.dataSource.transaction(async (manager) => {
       for (const disc of discrepancies) {
         const action = disc.resolution_action!;
@@ -721,8 +719,10 @@ export class PhysicalCountService {
           action === PhysicalCountResolutionAction.RECOUNT &&
           disc.recount_qty == null
         ) {
-          // Legacy rows resolved before recount_qty existed: defer to a child count.
-          if (disc.lot_id) recountLotIds.push(disc.lot_id);
+          // Nothing to apply. Either an ORPHAN scan that matched no lot (exempt
+          // from the recount_qty requirement because there is nothing to write
+          // back to), or a row resolved before recount_qty was captured. The
+          // decision stays on the discrepancy for the variance report.
         } else if (
           action === PhysicalCountResolutionAction.ADJUST_TO_SCAN ||
           action === PhysicalCountResolutionAction.RECOUNT
@@ -829,38 +829,6 @@ export class PhysicalCountService {
       count.approved_at = new Date();
       count.approved_by = actor ?? null;
       await manager.save(PhysicalCount, count);
-
-      // Spawn child recount if needed and we aren't already a recount child
-      if (recountLotIds.length > 0 && !count.parent_count_id) {
-        const childNumber = await this.generateCountNumber(manager);
-        const child = manager.create(PhysicalCount, {
-          count_number: childNumber,
-          status: PhysicalCountStatus.PLANNED,
-          customer_id: count.customer_id,
-          parent_count_id: count.id,
-          created_by: actor ?? null,
-          notes: `Auto-spawned recount from ${count.count_number}`,
-        });
-        const savedChild = await manager.save(PhysicalCount, child);
-        // Snapshot just the recount lots
-        const recountLots = await manager.find(InventoryLot, {
-          where: { id: In(recountLotIds) },
-        });
-        for (const lot of recountLots) {
-          const snapshot = manager.create(PhysicalCountLot, {
-            physical_count_id: savedChild.id,
-            lot_id: lot.id,
-            material_id: lot.material_id,
-            customer_id: count.customer_id,
-            expected_qty: parseFloat(String(lot.quantity)),
-            unit_cost: lot.unit_cost != null ? parseFloat(String(lot.unit_cost)) : null,
-            bin_at_snapshot: lot.bin,
-          });
-          await manager.save(PhysicalCountLot, snapshot);
-        }
-        savedChild.total_expected_lots = recountLots.length;
-        await manager.save(PhysicalCount, savedChild);
-      }
     });
 
     await this.auditService.emit({
@@ -868,7 +836,7 @@ export class PhysicalCountService {
       entity_type: AuditEntityType.PHYSICAL_COUNT,
       entity_id: id,
       actor,
-      new_value: { count_number: count.count_number, recount_spawned: recountLotIds.length > 0 },
+      new_value: { count_number: count.count_number },
     });
 
     return this.findById(id);
@@ -1006,10 +974,10 @@ export class PhysicalCountService {
     }
   }
 
-  private async generateCountNumber(manager?: EntityManager): Promise<string> {
+  private async generateCountNumber(): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
     const prefix = `PC-${dateStr}-`;
-    return this.sequenceGenerator.next(prefix, 'physical_counts', 'count_number', 3, manager);
+    return this.sequenceGenerator.next(prefix, 'physical_counts', 'count_number', 3);
   }
 }

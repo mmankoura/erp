@@ -25,12 +25,13 @@
 | 3 | Backend | API | `PATCH /physical-counts/:id/discrepancies/:discId` rejects `RECOUNT` without `recount_qty` (`400`) where the discrepancy has a lot to write back to. An `ORPHAN` scan that matched no lot is exempt — there is nothing to adjust. Audit payload records `recount_qty`, and adjustment audits record `source: RECOUNT \| SCAN`. |
 | 4 | Fix | Physical Count | **Auto-spawned recount children were unstartable.** `startCount` re-snapshotted every active customer lot onto a count whose snapshot had already been seeded by the child spawn, violating `UQ_physical_count_lots_count_lot` and surfacing as a 500. It also would have widened a targeted recount into a full count. A pre-seeded snapshot is now left as-is. |
 | 5 | Fix | Physical Count | **A count with zero discrepancies could never be approved.** The review page required `discrepancies.length > 0` before enabling Approve, so a count where every scan matched the system was permanently stuck in `PENDING_REVIEW`. The guard now also distinguishes a loaded-but-empty result from the loading and error states, which both surface as `null` data. |
-| 6 | Enhancement | Physical Count | Excel variance report gains a "Recounted Qty" column. Review header text now distinguishes loading / error / "No discrepancies — every scan matched the system" / "N of M resolved". |
+| 6 | Removal | Physical Count | Retired the auto-spawned child recount path. `approveCount` no longer creates a follow-up `PLANNED` count, snapshots lots onto it, or reports `recount_spawned` in its audit payload — the inline recount quantity replaces it. A `RECOUNT` row with no quantity is now an explicit no-op (only reachable for an `ORPHAN` scan that matched no lot), which also removes a latent `NaN` adjustment path. `physical_counts.parent_count_id` is retained for existing lineage but is never written. |
+| 7 | Enhancement | Physical Count | Excel variance report gains a "Recounted Qty" column. Review header text now distinguishes loading / error / "No discrepancies — every scan matched the system" / "N of M resolved". |
 
 ### Known behavior changes (worth communicating to users)
 
 - `RECOUNT` no longer defers work to a separate count. Reviewers must go count the stock and enter the number during review; there is no "decide later" path.
-- Auto-spawned child counts are no longer created for new `RECOUNT` resolutions. `RECOUNT` rows resolved **before** this release carry a null `recount_qty` and keep the old spawn behaviour, so any count already sitting in `PENDING_REVIEW` still approves cleanly. Production had none at time of writing.
+- **Auto-spawned child counts are gone entirely.** Approving a count no longer creates a follow-up `PLANNED` count under any circumstance. Verified safe before removal: production held no counts in `PENDING_REVIEW`, so no in-flight review depended on the old behaviour. Existing child counts keep their `parent_count_id` lineage — the column is retained as historical data and is simply never written any more.
 - A perfect count (no discrepancies) is now approvable immediately.
 
 ### Verification Steps

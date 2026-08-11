@@ -73,8 +73,11 @@ export class PhysicalCountDiscrepancy {
   /**
    * Physically re-counted quantity, captured inline at review time when the
    * resolution is RECOUNT. Authoritative: on approve the lot is adjusted to
-   * this value. Null only on RECOUNT rows resolved before this field existed,
-   * which fall back to spawning a child count.
+   * this value.
+   *
+   * Null on a RECOUNT row only when there is no lot to write back to (an ORPHAN
+   * scan that matched nothing), or on rows resolved before this field existed.
+   * Both are no-ops at approve time.
    */
   @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true })
   recount_qty: number | null;

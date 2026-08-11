@@ -52,6 +52,12 @@ export class PhysicalCount {
   @Column({ type: 'varchar', length: 100, nullable: true })
   category_filter: string | null;
 
+  /**
+   * Historical only. Counts used to auto-spawn a child recount on approve;
+   * RECOUNT now captures the re-counted quantity inline instead, so nothing
+   * sets this any more. Retained because production holds child counts whose
+   * lineage would otherwise be lost.
+   */
   @Column({ type: 'uuid', nullable: true })
   parent_count_id: string | null;
 
