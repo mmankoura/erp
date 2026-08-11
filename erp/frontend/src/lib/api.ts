@@ -947,7 +947,15 @@ export interface BomImportCommitDto {
 
 // Inventory Lot types
 export type PackageType = "TR" | "REEL" | "TUBE" | "TRAY" | "BAG" | "BOX" | "BULK" | "OTHER"
-export type LotStatus = "ACTIVE" | "CONSUMED" | "EXPIRED" | "ON_HOLD" | "REJECTED" | "SCRAPPED" | "RTV"
+export type LotStatus =
+  | "ACTIVE"
+  | "CONSUMED"
+  | "EXPIRED"
+  | "ON_HOLD"
+  | "REJECTED"
+  | "SCRAPPED"
+  | "RTV"
+  | "RETURNED_TO_CLIENT"
 
 export interface InventoryLot {
   id: string

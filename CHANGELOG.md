@@ -31,6 +31,11 @@
 | 8 | Feature | Auth | **Login is no longer case-sensitive on the username or email.** `validateUser` lower-cases the supplied identifier and matches on `LOWER(username)` / `LOWER(email)`. Stored casing is preserved for display — `Sylvie` stays `Sylvie` — and the **password remains case-sensitive**. |
 | 9 | Backend | Auth | User create/update now detect username and email conflicts case-insensitively, backed by unique indexes on `LOWER(username)` / `LOWER(email)`. Without this, an admin could create `sylvie` alongside `Sylvie` and make the login lookup ambiguous. Uses `Raw(LOWER(...))` rather than `ILike`, which would treat `_` and `%` in a username as wildcards. |
 | 10 | Fix | Auth | `updateUser` picked its conflict message with a case-sensitive `===` comparison, so a username colliding only by case would have been reported as "Email already exists". Now compared case-insensitively. |
+| 11 | Feature | Inventory | **Lot / reel details are now editable on the fly.** New `PATCH /inventory/lots/:id` (ADMIN/MANAGER/WAREHOUSE_CLERK) edits **quantity, package type, PO reference and BIN**. A pencil action on the Lots/Reels and Receiving Log grids opens a dialog showing a live delta (`9,875 → 9,800 (-75)`) and an optional reason. Identity and structural fields (`uid`, `material_id`, `owner`, `status`, `unit_cost`) are deliberately not editable — the global `forbidNonWhitelisted` validation pipe rejects them outright. |
+| 12 | Backend | Inventory | A quantity edit writes a compensating `ADJUSTMENT` `InventoryTransaction` for the delta (`reference_type: MANUAL`) before updating the lot, so the ledger still explains the stock level — on-hand is derived from lot quantities, not from the ledger. Runs in one transaction under a `pessimistic_write` lock. No-op saves write nothing at all. New `INVENTORY_LOT_UPDATED` audit event records before/after plus the reason. |
+| 13 | Backend | Inventory | **Open kitting lists are auto-reconciled.** Kitting copies a reel's whole quantity into `kitting_list_items.qty_verified` at scan time, so editing that reel afterwards would leave the kit claiming stock that no longer exists. The edit now adjusts `qty_verified` and the scan's stored quantity by the same delta and reports the affected kit. (`is_short`/`shortage_qty` are untouched — kitting only writes those at completion and computes them live.) |
+| 14 | Backend | Inventory | Guard rails: only `ACTIVE` lots are editable at all, and a quantity change is refused (400, naming the count) while the lot sits in an open physical count, since the count snapshotted that quantity as `expected_qty`. The other three fields still save in that case. |
+| 15 | Fix | Types | `LotStatus` in the frontend API types was missing `RETURNED_TO_CLIENT`, a status held by 803 production lots. |
 
 ### Known behavior changes (worth communicating to users)
 
@@ -39,6 +44,9 @@
 - A perfect count (no discrepancies) is now approvable immediately.
 - Users can sign in with any casing of their username or email (`Sylvie`, `sylvie`, `SYLVIE` all work). Passwords are unaffected and stay case-sensitive.
 - Two accounts can no longer be created differing only by case; the second attempt returns "Username already exists".
+- Warehouse clerks can now change a reel's **quantity**, not just its BIN. Every change is audited and every quantity change writes an inventory transaction, but this is a wider power than before — it moves material on-hand for MRP and kitting.
+- Editing a reel's quantity silently updates any open kitting list it is scanned onto. The success toast names the affected kit, but the operator working that kit is not notified.
+- Reels that are not `ACTIVE` (CONSUMED, RETURNED_TO_CLIENT) show no edit action at all.
 
 ### Verification Steps
 
@@ -50,6 +58,12 @@
 - [ ] Login as `Sylvie` using `sylvie` and `SYLVIE` → both succeed; the wrong password still returns 401
 - [ ] Login by email in mixed case → succeeds
 - [ ] Settings → Users → create a user named `sylvie` while `Sylvie` exists → rejected with "Username already exists"
+- [ ] Inventory → Lots/Reels → pencil on an ACTIVE reel → change quantity → dialog shows the delta; save → grid and Stock Levels both move by that delta
+- [ ] Confirm an `ADJUSTMENT` row exists: `SELECT transaction_type, quantity, reason, created_by FROM inventory_transactions WHERE lot_id='<id>' ORDER BY created_at DESC LIMIT 1;`
+- [ ] Open the dialog and save without changing anything → no transaction and no audit event written
+- [ ] Edit the quantity of a reel scanned onto an IN_PROGRESS kit → toast names the kit, and `kitting_list_items.qty_verified` moves by the same delta
+- [ ] Try a quantity edit on a reel in an open count → 400 naming the count; changing its BIN on the same reel still succeeds
+- [ ] Confirm no pencil renders on a CONSUMED / RETURNED_TO_CLIENT reel
 
 ---
 

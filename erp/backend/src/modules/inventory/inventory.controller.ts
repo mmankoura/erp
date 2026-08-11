@@ -28,6 +28,7 @@ import {
 } from './dto';
 import { FilterInventoryDto } from './dto/filter-inventory.dto';
 import { UpdateLotOwnerDto } from './dto/update-lot-owner.dto';
+import { UpdateLotDto } from './dto/update-lot.dto';
 import { BulkAssignLotOwnerDto } from './dto/bulk-assign-lot-owner.dto';
 import { OwnerType } from '../../entities/inventory-transaction.entity';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
@@ -207,6 +208,21 @@ export class InventoryController {
     @Req() req: { user?: { username?: string } },
   ) {
     return this.inventoryImportService.updateLotOwner(id, dto, req.user?.username);
+  }
+
+  /**
+   * PATCH /inventory/lots/:id
+   * Correct a lot's details in place. A quantity change writes a compensating
+   * ADJUSTMENT transaction and reconciles any open kitting list.
+   */
+  @Patch('lots/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
+  async updateLot(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLotDto,
+    @Req() req: { user?: { username?: string } },
+  ) {
+    return this.inventoryService.updateLot(id, dto, req.user?.username);
   }
 
   /**

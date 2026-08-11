@@ -61,9 +61,12 @@ import {
   ChevronDown,
   ChevronUp,
   MapPin,
+  Pencil,
 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
 import { toast } from "sonner"
+import { useAuth, UserRole } from "@/contexts/auth-context"
+import { EditLotDialog } from "@/components/edit-lot-dialog"
 
 // Transaction type colors
 const transactionTypeConfig: Record<string, { label: string; color: string }> = {
@@ -553,6 +556,12 @@ export default function InventoryPage() {
     "/inventory/transactions/recent?limit=20"
   )
   const { data: lotsRaw, isLoading: lotsLoading, refetch: refetchLots } = useApi<InventoryLot[]>("/inventory/lots")
+  const { hasRole } = useAuth()
+  // Matches the @Roles on PATCH /inventory/lots/:id
+  const canEditLots = hasRole(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
+  // A quantity edit moves material on-hand, so the stock tab and summary cards
+  // have to refresh alongside the lot list.
+  const onLotSaved = () => { refetchLots(); refetch() }
   const [importWizardOpen, setImportWizardOpen] = useState(false)
   const [assignLocationOpen, setAssignLocationOpen] = useState(false)
 
@@ -894,7 +903,26 @@ export default function InventoryPage() {
     { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} /> },
     { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"}>{l.status}</Badge> },
     { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", cell: (l) => <span className="text-xs text-muted-foreground">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
-    { id: "actions", header: "", size: 60, sortable: false, filterable: false, accessorFn: () => "", cell: (l) => <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete lot ${l.uid}?`)) deleteLotMutation.mutate(l.id) }}><Trash2 className="h-4 w-4" /></Button> },
+    {
+      id: "actions", header: "", size: 100, sortable: false, filterable: false, accessorFn: () => "",
+      cell: (l) => (
+        <div className="flex items-center gap-1">
+          {/* Only ACTIVE lots are editable — the API rejects the rest. */}
+          {canEditLots && l.status === "ACTIVE" && (
+            <EditLotDialog
+              lot={l}
+              onSaved={onLotSaved}
+              trigger={
+                <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit lot">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              }
+            />
+          )}
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete lot ${l.uid}?`)) deleteLotMutation.mutate(l.id) }}><Trash2 className="h-4 w-4" /></Button>
+        </div>
+      ),
+    },
   ]
 
   // Receiving Log: lots sorted by created_at desc
@@ -914,6 +942,22 @@ export default function InventoryPage() {
     { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} /> },
     { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"} className="text-xs">{l.status}</Badge> },
     { id: "location", header: "Stage", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.location, accessorFn: (l) => l.location, cell: (l) => <span className="text-xs">{l.location}</span> },
+    {
+      id: "actions", header: "", size: 60, sortable: false, filterable: false, accessorFn: () => "",
+      cell: (l) => (
+        canEditLots && l.status === "ACTIVE" ? (
+          <EditLotDialog
+            lot={l}
+            onSaved={onLotSaved}
+            trigger={
+              <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit lot">
+                <Pencil className="h-4 w-4" />
+              </Button>
+            }
+          />
+        ) : null
+      ),
+    },
   ]
 
   return (

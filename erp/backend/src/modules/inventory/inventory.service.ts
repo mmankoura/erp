@@ -24,6 +24,17 @@ import {
   InventoryLot,
   LotStatus,
 } from '../../entities/inventory-lot.entity';
+import {
+  PhysicalCount,
+  PhysicalCountStatus,
+} from '../../entities/physical-count.entity';
+import { PhysicalCountLot } from '../../entities/physical-count-lot.entity';
+import {
+  KittingList,
+  KittingListStatus,
+} from '../../entities/kitting-list.entity';
+import { KittingListItem } from '../../entities/kitting-list-item.entity';
+import { KittingListScan } from '../../entities/kitting-list-scan.entity';
 import { Material } from '../../entities/material.entity';
 import { Order, OrderStatus } from '../../entities/order.entity';
 import { BomItem } from '../../entities/bom-item.entity';
@@ -31,6 +42,7 @@ import {
   CreateTransactionDto,
   CreateAllocationDto,
   UpdateAllocationDto,
+  UpdateLotDto,
 } from './dto';
 import { FilterInventoryDto } from './dto/filter-inventory.dto';
 import { AuditService } from '../audit/audit.service';
@@ -2029,6 +2041,192 @@ export class InventoryService {
           status: lot.status,
         },
       };
+    });
+  }
+
+  // ==================== LOT EDITING ====================
+
+  /**
+   * Correct a lot's details after receipt. Only quantity, package_type,
+   * po_reference and bin are editable — identity and structural fields are not,
+   * because nothing reconciles them (see the plan notes on material_id/uid).
+   *
+   * A quantity change writes a compensating ADJUSTMENT transaction, because
+   * on-hand is derived from lot quantities rather than the ledger; without it
+   * the stock level would move with nothing explaining why.
+   */
+  async updateLot(
+    id: string,
+    dto: UpdateLotDto,
+    actor?: string,
+  ): Promise<{ lot: InventoryLot; affected_kitting_lists: string[] }> {
+    return this.dataSource.transaction(async (manager) => {
+      // Locked for the duration: a concurrent kitting scan or count could
+      // otherwise read the quantity between our read and write.
+      const lot = await manager.findOne(InventoryLot, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lot) {
+        throw new NotFoundException(`Lot "${id}" not found`);
+      }
+
+      // Editing a non-ACTIVE lot has no effect on on-hand (only ACTIVE lots are
+      // summed) but would still write a transaction implying stock moved.
+      if (lot.status !== LotStatus.ACTIVE) {
+        throw new BadRequestException(
+          `Only ACTIVE lots can be edited (this lot is ${lot.status})`,
+        );
+      }
+
+      // quantity is normalized to a number on both sides — TypeORM hands
+      // decimals back as strings, which would otherwise make the audit diff
+      // read as a type change rather than a value change.
+      const before = {
+        quantity: parseFloat(String(lot.quantity)),
+        package_type: lot.package_type,
+        po_reference: lot.po_reference,
+        bin: lot.bin,
+      };
+
+      // Empty strings mean "clear this field" — same rule as updateLotBin.
+      const normalize = (v: string | null | undefined): string | null | undefined => {
+        if (v === undefined) return undefined;
+        const trimmed = v?.trim();
+        return trimmed ? trimmed : null;
+      };
+      const nextPoRef = normalize(dto.po_reference);
+      const nextBin = normalize(dto.bin);
+
+      const affectedKittingLists: string[] = [];
+      // quantity is a decimal column, so TypeORM hands it back as a string.
+      const currentQty = parseFloat(String(lot.quantity));
+      const newQty = dto.quantity != null ? dto.quantity : currentQty;
+      const delta = newQty - currentQty;
+
+      const changed =
+        delta !== 0 ||
+        (dto.package_type !== undefined && dto.package_type !== lot.package_type) ||
+        (nextPoRef !== undefined && nextPoRef !== lot.po_reference) ||
+        (nextBin !== undefined && nextBin !== lot.bin);
+
+      // Opening the dialog and saving without touching anything should not
+      // bump updated_at or write an audit event.
+      if (!changed) {
+        return { lot, affected_kitting_lists: [] };
+      }
+
+      if (delta !== 0) {
+        // An open count snapshotted this lot's quantity as expected_qty.
+        // Editing underneath it would manufacture a phantom discrepancy.
+        const openCount = await manager
+          .createQueryBuilder(PhysicalCountLot, 'pcl')
+          .innerJoin(PhysicalCount, 'pc', 'pc.id = pcl.physical_count_id')
+          .select('pc.count_number', 'count_number')
+          .where('pcl.lot_id = :id', { id })
+          .andWhere('pc.status IN (:...open)', {
+            open: [
+              PhysicalCountStatus.PLANNED,
+              PhysicalCountStatus.IN_PROGRESS,
+              PhysicalCountStatus.PAUSED,
+              PhysicalCountStatus.PENDING_REVIEW,
+            ],
+          })
+          .limit(1)
+          .getRawOne<{ count_number: string }>();
+
+        if (openCount) {
+          throw new BadRequestException(
+            `Cannot change quantity: this lot is part of open physical count ${openCount.count_number}. ` +
+              `Approve or cancel that count first. Other lot details can still be edited.`,
+          );
+        }
+
+        const unitCost = lot.unit_cost != null ? parseFloat(String(lot.unit_cost)) : 0;
+        const tx = manager.create(InventoryTransaction, {
+          material_id: lot.material_id,
+          transaction_type: TransactionType.ADJUSTMENT,
+          quantity: delta,
+          unit_cost: unitCost || null,
+          reference_type: ReferenceType.MANUAL,
+          reference_id: lot.id,
+          reason: dto.reason
+            ? `Manual lot edit: ${dto.reason}`
+            : `Manual lot edit on ${lot.uid}`,
+          created_by: actor ?? null,
+          lot_id: lot.id,
+          owner_type: lot.owner_type,
+          owner_id: lot.owner_id,
+        });
+        await manager.save(InventoryTransaction, tx);
+
+        lot.quantity = newQty;
+
+        // Kitting snapshots the whole reel quantity into qty_verified at scan
+        // time, so an edit would leave an open kit claiming stock that no
+        // longer exists. Correct it by the same delta.
+        // is_short/shortage_qty are deliberately left alone — kitting.service
+        // only writes those at completion and computes them live for display.
+        const scans = await manager
+          .createQueryBuilder(KittingListScan, 'kls')
+          .innerJoinAndSelect(
+            KittingListItem,
+            'kli',
+            'kli.id = kls.kitting_list_item_id',
+          )
+          .innerJoinAndSelect(KittingList, 'kl', 'kl.id = kli.kitting_list_id')
+          .where('kls.uid_id = :id', { id })
+          .andWhere('kl.status IN (:...open)', {
+            open: [
+              KittingListStatus.IN_PROGRESS,
+              KittingListStatus.AWAITING_MATERIALS,
+            ],
+          })
+          .getRawMany<{
+            kls_id: string;
+            kli_id: string;
+            kli_qty_verified: string;
+            kl_list_number: string;
+          }>();
+
+        for (const row of scans) {
+          const verified = parseFloat(String(row.kli_qty_verified)) + delta;
+          await manager.update(KittingListItem, row.kli_id, {
+            qty_verified: Math.max(0, verified),
+          });
+          await manager.update(KittingListScan, row.kls_id, {
+            quantity: newQty,
+          });
+          if (!affectedKittingLists.includes(row.kl_list_number)) {
+            affectedKittingLists.push(row.kl_list_number);
+          }
+        }
+      }
+
+      if (dto.package_type !== undefined) lot.package_type = dto.package_type;
+      if (nextPoRef !== undefined) lot.po_reference = nextPoRef;
+      if (nextBin !== undefined) lot.bin = nextBin;
+
+      const saved = await manager.save(InventoryLot, lot);
+
+      await this.auditService.emitStateChange(
+        AuditEventType.INVENTORY_LOT_UPDATED,
+        AuditEntityType.INVENTORY_LOT,
+        id,
+        before,
+        {
+          quantity: parseFloat(String(saved.quantity)),
+          package_type: saved.package_type,
+          po_reference: saved.po_reference,
+          bin: saved.bin,
+        },
+        actor,
+        affectedKittingLists.length > 0
+          ? { affected_kitting_lists: affectedKittingLists, reason: dto.reason }
+          : { reason: dto.reason },
+      );
+
+      return { lot: saved, affected_kitting_lists: affectedKittingLists };
     });
   }
 }

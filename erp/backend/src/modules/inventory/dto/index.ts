@@ -4,3 +4,6 @@ export * from './update-allocation.dto';
 export * from './allocate-for-order.dto';
 export * from './inventory-import.dto';
 export * from './return-workflow.dto';
+export * from './update-lot.dto';
+export * from './update-lot-owner.dto';
+export * from './bulk-assign-lot-owner.dto';
