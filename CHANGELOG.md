@@ -6,6 +6,65 @@
 
 ---
 
+## REV-011 — 2026-08-11
+
+**Released by**: Mark Mankoura
+**Migration required**: No — frontend only. No schema change, no new endpoint; cell editing goes through `PATCH /inventory/lots/:id`, shipped in REV-010.
+
+**Backup taken**: [ ] (check before deploying)
+
+**Deploy note**: Frontend build only, but re-read `deployment_known_issues.md` first — the deploy script's smart-skip breaks the documented migration-before-switch ordering, and `switch-release.bat` ignores rotate failures.
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | Inventory | **The Lots/Reels tab is now a spreadsheet.** 26px rows, gridlines on every cell, a row-number gutter down the left, and a filter box under every column header. Roughly twice as many reels fit on screen as before. |
+| 2 | Feature | Tables | Spreadsheet mode is an opt-in prop on the shared `VirtualGrid`. **Only Lots/Reels uses it** — the other 22 grids in the app are byte-identical to REV-010. It is drawn with the app's existing colours rather than Excel's greys. |
+| 3 | Feature | Tables | **Cell cursor and range selection.** Click a cell to focus it; arrows, Tab (wraps at the row end), Enter, Home/End, PageUp/PageDown and Ctrl+Arrow move it. Shift with any of those, or shift-click, or drag, extends the selection; Ctrl+A takes everything; clicking a row number takes the row. Sorting or filtering keeps the same *records* selected, not the same screen positions. |
+| 4 | Feature | Tables | **Ctrl+C copies the selection as a block that pastes straight into Excel.** Values copy raw — a quantity arrives as `9875`, not the string `9,875`, so Excel treats it as a number. Implemented on the browser's copy event rather than the clipboard API, which does not exist over plain http and would have silently done nothing in production. |
+| 5 | Feature | Tables | **Always-visible filter row**, toggled from the toolbar and remembered per grid. A column filtered from the header's funnel popover shows its selection as a chip in the row, so the two controls can't clobber each other. |
+| 6 | Feature | Inventory | **Type directly into a reel.** Quantity, package, PO reference and BIN are editable in place: type over a cell to start, F2 or double-click to edit the existing value, Enter commits and moves down, Tab moves right, Escape reverts, Delete clears. Saved values appear immediately and settle when the refetch lands. |
+| 7 | Feature | Inventory | The sheet is **read-only until unlocked** with the Locked/Editing button, which only appears for ADMIN / MANAGER / WAREHOUSE_CLERK. Quantity edits move on-hand stock for MRP and kitting, so a stray keystroke must not be enough to do it. |
+| 8 | Feature | Inventory | **Paste a block of values back in.** The block lands at the top-left of the selection, a single copied cell fills the whole selection, and anything past the last row is discarded and reported — a paste never creates reels. Bulk-assigning BINs or PO references from a spreadsheet is now one operation. |
+| 9 | Backend | API | No backend change. Edits are grouped into one `PATCH /inventory/lots/:id` per reel and sent four at a time, since that endpoint locks the lot and reconciles open kitting lists inside its transaction. |
+| 10 | Enhancement | Inventory | Client-side validation mirrors the API's rules, so a bad value is refused in the cell instead of coming back as a 400: quantity bounds and 4-decimal limit, package normalised to upper case, and the ACTIVE-only rule. An unchanged value is never sent at all. |
+| 11 | Refactor | Tables | `virtual-grid.tsx` was decomposed into `components/grid/` (types, filter popover, filter row, cell editor, selection hook, TSV, paste planning) ahead of the feature. The TSV and paste-planning modules are pure and unit-tested — 22 tests. |
+| 12 | Fix | Tables | The header's filter popover asserted its value was a list; it now checks, since the filter row can leave a substring there instead. |
+
+### Known behavior changes (worth communicating to users)
+
+- **BIN on the Lots/Reels tab now follows the same ACTIVE-only rule as the other editable fields.** It used to have its own endpoint that accepted any status, so a BIN could be set on a CONSUMED or RETURNED_TO_CLIENT reel from that grid. It no longer can. The Assign Stock Location dialog still uses the old endpoint and is unaffected.
+- **The Receiving Log tab is unchanged** — still 44px rows with the old always-on BIN input. So two tabs of the same page now look and behave differently. Deliberate for this pass: that grid renders IPN and description on two lines, which a fixed row height would clip.
+- **Cells clip instead of wrapping** on the Lots/Reels tab. Long descriptions are cut off rather than growing the row; widen the column or hover for the full value.
+- **Pasting into the quantity column always asks for confirmation**, however few cells, and **there is no undo**. Each write moves on-hand stock, writes an `ADJUSTMENT` transaction and silently adjusts `qty_verified` on any open kitting list the reel is scanned onto. Pastes over 50 cells ask regardless of column.
+- If part of a paste fails, **the successful rows stay saved** — they are not rolled back. Failed cells turn red and name the reason; the toast reports both counts.
+- Editing is locked by default every time the page loads; the toggle is not remembered.
+- The filter row is on by default and its state is remembered per grid, in the browser, per user.
+- Status and package no longer render as badges on this grid — they are plain text, to fit the row.
+
+### Verification Steps
+
+- [ ] Inventory → Lots/Reels → click a cell → it gets a focus ring; arrow around; shift-arrow extends the highlight
+- [ ] Sort by a column with a selection active → the same reels stay highlighted, not the same screen rows
+- [ ] Scroll right → the row-number gutter stays pinned to the left **and** the last column is still reachable
+- [ ] Type in the filter box under IPN → rows narrow; use the funnel on the same column → the filter box shows a chip instead; "Clear filters" clears both
+- [ ] Toggle Filters off, reload the page → still off
+- [ ] Select a 5×2 block → Ctrl+C → paste into Excel → five rows, two columns, quantities land as numbers
+- [ ] With editing locked, type over a cell → nothing happens
+- [ ] Unlock → type over a BIN → Enter → saves and the cursor moves down; check the grid still shows the new value after the refetch
+- [ ] Escape mid-edit → reverts
+- [ ] Edit the quantity of a reel that sits in an open physical count → that cell turns red and names the count; the same reel's BIN still saves
+- [ ] Confirm the ledger caught it: `SELECT transaction_type, quantity, reason, created_by FROM inventory_transactions WHERE lot_id='<id>' ORDER BY created_at DESC LIMIT 1;`
+- [ ] Retype a cell's existing value → no request is sent
+- [ ] Try to edit a CONSUMED reel → refused in the cell, without a round trip
+- [ ] Copy 5 BINs, select 5 different reels, Ctrl+V → saves all five; paste a block taller than the rows left below the cursor → the overflow is reported as ignored
+- [ ] Paste into the quantity column → confirmation dialog naming the row count → Apply → quantities move and an `ADJUSTMENT` row exists for each
+- [ ] Select a block spanning BIN and quantity → Delete → BINs clear, quantities are reported as rejected rather than zeroed
+- [ ] Open Receiving Log, Stock Levels, Purchase Orders, Products → BOM and Kitting → all unchanged from REV-010, with BOM's tall rows still not clipping
+
+---
+
 ## REV-010 — 2026-08-11
 
 **Released by**: Mark Mankoura
