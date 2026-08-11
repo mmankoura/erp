@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { useApi, useMutation } from "@/hooks/use-api"
 import { RecentTransactionsGrid } from "@/components/recent-transactions-grid"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
+import type { CellEdit, CellCommitResult } from "@/components/grid/types"
 import {
   api,
   type InventoryStock,
@@ -62,6 +63,8 @@ import {
   ChevronUp,
   MapPin,
   Pencil,
+  Lock,
+  LockOpen,
 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
 import { toast } from "sonner"
@@ -380,7 +383,7 @@ type InventoryStockWithId = InventoryStock & { id: string }
 // Extended type for lots DataTable
 type InventoryLotWithId = InventoryLot & { id: string }
 
-function BinCell({ lot, onSaved, dense }: { lot: InventoryLotWithId; onSaved: () => void; dense?: boolean }) {
+function BinCell({ lot, onSaved }: { lot: InventoryLotWithId; onSaved: () => void }) {
   const [value, setValue] = useState<string>(lot.bin ?? "")
   const [saving, setSaving] = useState(false)
   useEffect(() => { setValue(lot.bin ?? "") }, [lot.bin])
@@ -412,9 +415,7 @@ function BinCell({ lot, onSaved, dense }: { lot: InventoryLotWithId; onSaved: ()
       }}
       placeholder="—"
       disabled={saving}
-      // `dense` fits the 26px spreadsheet row; the default h-7 belongs to the
-      // 44px classic row on the Receiving Log tab.
-      className={dense ? "h-[22px] text-xs font-mono px-1 py-0" : "h-7 text-xs font-mono"}
+      className="h-7 text-xs font-mono"
     />
   )
 }
@@ -561,6 +562,9 @@ export default function InventoryPage() {
   const { hasRole } = useAuth()
   // Matches the @Roles on PATCH /inventory/lots/:id
   const canEditLots = hasRole(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_CLERK)
+  // The Lots/Reels sheet is read-only until this is turned on, so a stray
+  // keystroke can't move stock.
+  const [editUnlocked, setEditUnlocked] = useState(false)
   // A quantity edit moves material on-hand, so the stock tab and summary cards
   // have to refresh alongside the lot list.
   const onLotSaved = () => { refetchLots(); refetch() }
@@ -894,6 +898,47 @@ export default function InventoryPage() {
     { id: "actions", header: "", size: 120, sortable: false, filterable: false, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /></div>) },
   ]
 
+  const PACKAGE_TYPES = ["TR", "REEL", "TUBE", "TRAY", "BAG", "BOX", "BULK", "OTHER"] as const
+
+  /** Every editable field on a lot is gated the same way the API gates it. */
+  const lotIsEditable = (l: InventoryLotWithId): true | string =>
+    l.status === "ACTIVE" ? true : `Only ACTIVE lots can be edited (this one is ${l.status})`
+
+  /**
+   * Persist grid edits. Grouped by lot because PATCH /inventory/lots/:id takes
+   * all four editable fields at once — two cells on one row is one request, not
+   * two. A failure is reported against every cell in that row's group, which is
+   * how the open-physical-count refusal lands on the quantity cell naming the
+   * count rather than as an anonymous toast.
+   */
+  const commitLotEdits = async (
+    edits: CellEdit<InventoryLotWithId>[]
+  ): Promise<CellCommitResult[]> => {
+    const byLot = new Map<string, CellEdit<InventoryLotWithId>[]>()
+    for (const edit of edits) {
+      const group = byLot.get(edit.rowId) ?? []
+      group.push(edit)
+      byLot.set(edit.rowId, group)
+    }
+
+    const results: CellCommitResult[] = []
+    for (const [lotId, group] of byLot) {
+      // Only whitelisted fields — the API's validation pipe rejects the rest.
+      const payload: Record<string, unknown> = {}
+      for (const edit of group) payload[edit.field] = edit.value
+      if ("quantity" in payload) payload.reason = "Edited in the inventory sheet"
+
+      try {
+        await api.patch(`/inventory/lots/${lotId}`, payload)
+        group.forEach((e) => results.push({ rowId: lotId, columnId: e.columnId, ok: true }))
+      } catch (err) {
+        const error = err instanceof Error ? err.message : "Save failed"
+        group.forEach((e) => results.push({ rowId: lotId, columnId: e.columnId, ok: false, error }))
+      }
+    }
+    return results
+  }
+
   // VirtualGrid columns for Lots/Reels.
   // This grid runs in spreadsheet mode: 26px rows, so cells carry no font size
   // of their own (the grid sets text-xs) and no badges — a badge doesn't fit the
@@ -902,10 +947,20 @@ export default function InventoryPage() {
     { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.uid, accessorFn: (l) => l.uid, cell: (l) => <span className="font-mono font-medium">{l.uid}</span> },
     { id: "customer", header: "Customer", size: 140, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span>{l.material?.customer?.name || "\u2014"}</span> },
     { id: "ipn", header: "IPN", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.material?.internal_part_number || "", accessorFn: (l) => l.material?.internal_part_number || "", cell: (l) => <span className="font-medium">{l.material?.internal_part_number}</span> },
-    { id: "quantity", header: "Quantity", size: 100, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono tabular-nums">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
-    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => l.package_type },
-    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-muted-foreground">{l.po_reference || "\u2014"}</span> },
-    { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} dense /> },
+    // Bounds mirror UpdateLotDto's numeric(12,4) constraints, so a bad value is
+    // refused inline instead of coming back as a 400.
+    { id: "quantity", header: "Quantity", size: 100, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono tabular-nums">{parseFloat(String(l.quantity)).toLocaleString()}</span>,
+      edit: { field: "quantity", getValue: (l) => parseFloat(String(l.quantity)), isEditable: lotIsEditable, editor: { kind: "number", min: 0, max: 99999999.9999, decimals: 4 } } },
+    // package_type is an enum — a pasted "reel" has to be upper-cased or it 400s.
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => l.package_type,
+      edit: { field: "package_type", getValue: (l) => l.package_type, isEditable: lotIsEditable, editor: { kind: "select", options: PACKAGE_TYPES, normalize: (raw) => raw.trim().toUpperCase() } } },
+    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-muted-foreground">{l.po_reference || "\u2014"}</span>,
+      edit: { field: "po_reference", getValue: (l) => l.po_reference, isEditable: lotIsEditable, editor: { kind: "text", maxLength: 100 } } },
+    // BIN is now edited in place like any other cell, so the always-on input
+    // BinCell used to render here is gone. It stays on the Receiving Log tab,
+    // which is still a classic grid.
+    { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <span className="font-mono">{l.bin || "\u2014"}</span>,
+      edit: { field: "bin", getValue: (l) => l.bin, isEditable: lotIsEditable, editor: { kind: "text", maxLength: 50 } } },
     { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <span className={l.status === "ACTIVE" ? "" : "text-muted-foreground"}>{l.status}</span> },
     // The accessor is an ISO timestamp, which is no use in Excel — copy the
     // displayed date instead.
@@ -1095,9 +1150,32 @@ export default function InventoryPage() {
             title="Lots / Reels"
             isLoading={lotsLoading}
             spreadsheet
-            spreadsheetOptions={{ storageKey: "inventory-lots" }}
+            spreadsheetOptions={{
+              storageKey: "inventory-lots",
+              editable: canEditLots && editUnlocked,
+              onCommit: commitLotEdits,
+              onAfterCommit: onLotSaved,
+            }}
             getRowId={(l) => l.id}
             height={620}
+            headerActions={
+              canEditLots ? (
+                <Button
+                  variant={editUnlocked ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setEditUnlocked((on) => !on)}
+                  title={
+                    editUnlocked
+                      ? "Lock the sheet — cells become read-only"
+                      : "Unlock the sheet — type into quantity, package, PO ref and BIN"
+                  }
+                >
+                  {editUnlocked ? <LockOpen className="h-4 w-4 mr-1" /> : <Lock className="h-4 w-4 mr-1" />}
+                  {editUnlocked ? "Editing" : "Locked"}
+                </Button>
+              ) : undefined
+            }
             searchPlaceholder="Search by UID, IPN, customer, PO ref, or status..."
             searchFn={(lot, q) =>
               !!(lot.uid.toLowerCase().includes(q) ||

@@ -35,10 +35,15 @@ import {
   SHEET_FILTER_HEIGHT,
   gutterWidthFor,
   copyValueOf,
+  cellKey,
+  parseCellInput,
   type VirtualGridColumn,
   type SpreadsheetOptions,
   type GridFilterValue,
+  type CellEdit,
+  type CellCommitResult,
 } from "@/components/grid/types"
+import { CellEditor, type EditorExit } from "@/components/grid/cell-editor"
 
 export type { VirtualGridColumn } from "@/components/grid/types"
 
@@ -76,7 +81,7 @@ interface VirtualGridProps<T> {
    * for a grid whose cells rely on multi-line content.
    */
   spreadsheet?: boolean
-  spreadsheetOptions?: SpreadsheetOptions
+  spreadsheetOptions?: SpreadsheetOptions<T>
 }
 
 // =============== VirtualGrid Component ===============
@@ -332,6 +337,30 @@ export function VirtualGrid<T>({
     const page = Math.max(1, Math.floor(height / rowHeight) - 1)
     const jump = e.ctrlKey || e.metaKey
 
+    // Typing over a cell starts an edit seeded with that character, the way a
+    // spreadsheet does. F2 opens with the existing value instead.
+    if (editable && !editing) {
+      const row = rows[r]
+      const config = columnsById.get(colIds[c])?.edit
+      if (row && config && canEditCell(row.original, colIds[c])) {
+        if (e.key === "F2") {
+          e.preventDefault()
+          openEditor(r, c, String(config.getValue(row.original) ?? ""))
+          return
+        }
+        if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault()
+          applyCellInput(row.id, colIds[c], "")
+          return
+        }
+        if (e.key.length === 1 && !jump && !e.altKey) {
+          e.preventDefault()
+          openEditor(r, c, e.key)
+          return
+        }
+      }
+    }
+
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault()
@@ -417,6 +446,195 @@ export function VirtualGrid<T>({
 
   const handleCellMouseEnter = (rowIdx: number, colIdx: number) => {
     if (draggingRef.current) selectCell(rowIdx, colIdx, true)
+  }
+
+  // ---- Editing -----------------------------------------------------------
+
+  const columnsById = useMemo(
+    () => new Map(gridColumns.map((c) => [c.id, c])),
+    [gridColumns]
+  )
+  const editable = spreadsheet && !!spreadsheetOptions?.editable
+  const onCommitRef = useRef(spreadsheetOptions?.onCommit)
+  onCommitRef.current = spreadsheetOptions?.onCommit
+  const onAfterCommitRef = useRef(spreadsheetOptions?.onAfterCommit)
+  onAfterCommitRef.current = spreadsheetOptions?.onAfterCommit
+
+  const [editing, setEditing] = useState<{ rowId: string; colId: string; initial: string } | null>(null)
+  // Optimistic overlay: what a cell shows between a successful commit and the
+  // refetch that makes it true. Entries are pruned once the server agrees.
+  const [pendingValues, setPendingValues] = useState<Map<string, unknown>>(new Map())
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set())
+  const [cellErrors, setCellErrors] = useState<Map<string, string>>(new Map())
+
+  const canEditCell = useCallback(
+    (row: T, colId: string) => {
+      if (!editable) return false
+      const config = columnsById.get(colId)?.edit
+      if (!config) return false
+      return (config.isEditable?.(row) ?? true) === true
+    },
+    [editable, columnsById]
+  )
+
+  useEffect(() => {
+    if (!pendingValues.size) return
+    const byId = new Map(rows.map((r) => [r.id, r.original]))
+    const next = new Map(pendingValues)
+    let changed = false
+    for (const [key, value] of pendingValues) {
+      const sep = key.indexOf(" ")
+      const row = byId.get(key.slice(0, sep))
+      const config = columnsById.get(key.slice(sep + 1))?.edit
+      if (!row || !config) {
+        next.delete(key)
+        changed = true
+        continue
+      }
+      if (String(config.getValue(row) ?? "") === String(value ?? "")) {
+        next.delete(key)
+        changed = true
+      }
+    }
+    if (changed) setPendingValues(next)
+  }, [rows, pendingValues, columnsById])
+
+  // One refetch after a burst of edits, not one per cell. The optimistic
+  // overlay is what makes the delay invisible.
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current)
+  }, [])
+  const scheduleAfterCommit = useCallback(() => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current)
+    refetchTimer.current = setTimeout(() => onAfterCommitRef.current?.(), 300)
+  }, [])
+
+  const commitEdits = useCallback(
+    async (edits: CellEdit<T>[]) => {
+      const commit = onCommitRef.current
+      if (!commit || !edits.length) return
+      const keys = edits.map((e) => cellKey(e.rowId, e.columnId))
+
+      setPendingValues((prev) => {
+        const next = new Map(prev)
+        edits.forEach((e, i) => next.set(keys[i], e.value))
+        return next
+      })
+      setSavingKeys((prev) => {
+        const next = new Set(prev)
+        keys.forEach((k) => next.add(k))
+        return next
+      })
+      setCellErrors((prev) => {
+        const next = new Map(prev)
+        keys.forEach((k) => next.delete(k))
+        return next
+      })
+
+      let results: CellCommitResult[]
+      try {
+        results = await commit(edits)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Save failed"
+        results = edits.map((e) => ({
+          rowId: e.rowId,
+          columnId: e.columnId,
+          ok: false as const,
+          error: message,
+        }))
+      }
+
+      setSavingKeys((prev) => {
+        const next = new Set(prev)
+        keys.forEach((k) => next.delete(k))
+        return next
+      })
+
+      const failed = results.filter((r) => !r.ok) as Extract<CellCommitResult, { ok: false }>[]
+      if (failed.length) {
+        setCellErrors((prev) => {
+          const next = new Map(prev)
+          failed.forEach((f) => next.set(cellKey(f.rowId, f.columnId), f.error))
+          return next
+        })
+        // Drop the optimistic value so the cell snaps back to server truth.
+        setPendingValues((prev) => {
+          const next = new Map(prev)
+          failed.forEach((f) => next.delete(cellKey(f.rowId, f.columnId)))
+          return next
+        })
+      }
+      if (failed.length < results.length) scheduleAfterCommit()
+    },
+    [scheduleAfterCommit]
+  )
+
+  const openEditor = useCallback(
+    (rowIdx: number, colIdx: number, initial: string) => {
+      const row = rows[rowIdx]
+      const colId = colIds[colIdx]
+      if (!row || !colId || !canEditCell(row.original, colId)) return
+      setEditing({ rowId: row.id, colId, initial })
+    },
+    [rows, colIds, canEditCell]
+  )
+
+  const closeEditor = useCallback(() => {
+    setEditing(null)
+    parentRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  /** Apply one typed value to one cell. Shared by the editor and by Delete. */
+  const applyCellInput = useCallback(
+    (rowId: string, colId: string, raw: string) => {
+      const row = rows.find((r) => r.id === rowId)
+      const config = columnsById.get(colId)?.edit
+      if (!row || !config) return
+      const key = cellKey(rowId, colId)
+      const previous = config.getValue(row.original)
+      const parsed = config.parse ? config.parse(raw, row.original) : parseCellInput(config.editor, raw)
+
+      if ("error" in parsed) {
+        setCellErrors((prev) => new Map(prev).set(key, parsed.error))
+        return
+      }
+      setCellErrors((prev) => {
+        const next = new Map(prev)
+        next.delete(key)
+        return next
+      })
+      // The server treats an unchanged value as a no-op; no reason to ask it.
+      if (String(parsed.value ?? "") === String(previous ?? "")) return
+
+      void commitEdits([
+        {
+          rowId,
+          row: row.original,
+          columnId: colId,
+          field: config.field ?? colId,
+          raw,
+          value: parsed.value,
+          previous,
+        },
+      ])
+    },
+    [rows, columnsById, commitEdits]
+  )
+
+  const handleEditorCommit = (raw: string, exit: EditorExit) => {
+    if (!editing) return
+    const { rowId, colId } = editing
+    closeEditor()
+    applyCellInput(rowId, colId, raw)
+
+    const r = rowIds.indexOf(rowId)
+    const c = colIds.indexOf(colId)
+    if (r < 0 || c < 0) return
+    if (exit === "down") move(r + 1, c, false)
+    else if (exit === "up") move(r - 1, c, false)
+    else if (exit === "right") move(r, c + 1, false)
+    else if (exit === "left") move(r, c - 1, false)
   }
 
   /**
@@ -675,14 +893,21 @@ export function VirtualGrid<T>({
                     </div>
                   )}
                   {row.getVisibleCells().map((cell, colIdx) => {
-                    const colDef = gridColumns.find((c) => c.id === cell.column.id)
+                    const colId = cell.column.id
+                    const colDef = columnsById.get(colId)
                     const rendered = flexRender(cell.column.columnDef.cell, cell.getContext())
                     const selected = spreadsheet && isInRect(virtualRow.index, colIdx)
                     const isActive =
                       spreadsheet && activePos?.r === virtualRow.index && activePos?.c === colIdx
+                    const key = cellKey(row.id, colId)
+                    const isEditingCell = editing?.rowId === row.id && editing?.colId === colId
+                    const pendingValue = pendingValues.get(key)
+                    const error = cellErrors.get(key)
+                    const cellEditable = spreadsheet && canEditCell(row.original, colId)
                     return (
                       <div
                         key={cell.id}
+                        title={error}
                         className={cn(
                           "shrink-0 overflow-hidden",
                           spreadsheet
@@ -690,15 +915,43 @@ export function VirtualGrid<T>({
                             : "px-3 py-2 self-center",
                           colDef?.align === "right" && (spreadsheet ? "justify-end text-right" : "text-right"),
                           selected && "bg-accent",
-                          isActive && "relative z-[2] ring-2 ring-inset ring-primary"
+                          isActive && "relative z-[2] ring-2 ring-inset ring-primary",
+                          cellEditable && !isEditingCell && "cursor-cell",
+                          savingKeys.has(key) && "opacity-60",
+                          error && "relative bg-destructive/10 ring-1 ring-inset ring-destructive",
+                          isEditingCell && "px-0"
                         )}
                         style={{ width: cell.column.getSize(), minWidth: cell.column.getSize() }}
                         onMouseDown={spreadsheet ? (e) => handleCellMouseDown(e, virtualRow.index, colIdx) : undefined}
                         onMouseEnter={spreadsheet ? () => handleCellMouseEnter(virtualRow.index, colIdx) : undefined}
+                        onDoubleClick={
+                          cellEditable
+                            ? () =>
+                                openEditor(
+                                  virtualRow.index,
+                                  colIdx,
+                                  String(colDef?.edit?.getValue(row.original) ?? "")
+                                )
+                            : undefined
+                        }
                       >
-                        {/* truncate has to sit on a block child — on the flex
-                            container itself it does nothing. */}
-                        {spreadsheet ? <div className="truncate w-full">{rendered}</div> : rendered}
+                        {isEditingCell && colDef?.edit ? (
+                          <CellEditor
+                            spec={colDef.edit.editor}
+                            initial={editing.initial}
+                            align={colDef.align}
+                            onCommit={handleEditorCommit}
+                            onCancel={closeEditor}
+                          />
+                        ) : spreadsheet ? (
+                          /* truncate has to sit on a block child — on the flex
+                             container itself it does nothing. */
+                          <div className="truncate w-full">
+                            {pendingValue !== undefined ? String(pendingValue ?? "") : rendered}
+                          </div>
+                        ) : (
+                          rendered
+                        )}
                       </div>
                     )
                   })}
