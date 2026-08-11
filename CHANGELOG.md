@@ -6,6 +6,43 @@
 
 ---
 
+## REV-010 — 2026-08-11
+
+**Released by**: Mark Mankoura
+**Migration required**: Yes — 1 migration:
+1. `AddRecountQtyToDiscrepancies1769300000000` — adds `recount_qty numeric(12,4) NULL` to `physical_count_discrepancies`. Additive and nullable, so it is backward-compatible with the currently deployed build (TypeORM selects an explicit column list, so the running REV-009 code ignores the new column).
+
+**Backup taken**: [ ] (check before deploying)
+
+**Deploy note**: REV-009's node_modules are **junctions**, so per that release's lesson REV-010 **must materialize** (`npm ci` / `npm install`) — a second consecutive junction hop would self-reference. Also re-read `deployment_known_issues.md` first: the deploy script's smart-skip breaks the documented migration-before-switch ordering, and `switch-release.bat` ignores rotate failures.
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | Physical Count | `RECOUNT` resolution now prompts for the re-counted quantity inline at review time instead of deferring to an auto-spawned child count. The entered number is authoritative: on approve the lot is adjusted to it via an `ADJUSTMENT` transaction with reason `"Physical count <#>: adjust to recount"`. Closes the discrepancy in one step. |
+| 2 | Feature | Physical Count | Review page shows an auto-focused, required numeric input when `RECOUNT` is selected. Enter submits; Save stays disabled while the value is empty or invalid; helper text explains that the lot will be set to this number. New "Recounted" column in the row summary. |
+| 3 | Backend | API | `PATCH /physical-counts/:id/discrepancies/:discId` rejects `RECOUNT` without `recount_qty` (`400`) where the discrepancy has a lot to write back to. An `ORPHAN` scan that matched no lot is exempt — there is nothing to adjust. Audit payload records `recount_qty`, and adjustment audits record `source: RECOUNT \| SCAN`. |
+| 4 | Fix | Physical Count | **Auto-spawned recount children were unstartable.** `startCount` re-snapshotted every active customer lot onto a count whose snapshot had already been seeded by the child spawn, violating `UQ_physical_count_lots_count_lot` and surfacing as a 500. It also would have widened a targeted recount into a full count. A pre-seeded snapshot is now left as-is. |
+| 5 | Fix | Physical Count | **A count with zero discrepancies could never be approved.** The review page required `discrepancies.length > 0` before enabling Approve, so a count where every scan matched the system was permanently stuck in `PENDING_REVIEW`. The guard now also distinguishes a loaded-but-empty result from the loading and error states, which both surface as `null` data. |
+| 6 | Enhancement | Physical Count | Excel variance report gains a "Recounted Qty" column. Review header text now distinguishes loading / error / "No discrepancies — every scan matched the system" / "N of M resolved". |
+
+### Known behavior changes (worth communicating to users)
+
+- `RECOUNT` no longer defers work to a separate count. Reviewers must go count the stock and enter the number during review; there is no "decide later" path.
+- Auto-spawned child counts are no longer created for new `RECOUNT` resolutions. `RECOUNT` rows resolved **before** this release carry a null `recount_qty` and keep the old spawn behaviour, so any count already sitting in `PENDING_REVIEW` still approves cleanly. Production had none at time of writing.
+- A perfect count (no discrepancies) is now approvable immediately.
+
+### Verification Steps
+
+- [ ] Physical Count → open a count in `PENDING_REVIEW` with a shortage → select `RECOUNT` → qty input appears focused; leave it blank → Save disabled and helper text turns red
+- [ ] Enter a quantity → Save → row shows it under "Recounted"; approve → lot quantity equals the recounted number, and an `ADJUSTMENT` transaction exists with reason ending `adjust to recount`
+- [ ] Approve a count whose scans all matched → Approve button is enabled and header reads "No discrepancies — every scan matched the system"
+- [ ] Start an auto-spawned recount child (`parent_count_id` set) → starts without a 500 and `total_expected_lots` stays at the flagged-lot count, not the full customer lot count
+- [ ] Variance report Excel → "Recounted Qty" column present and populated for recount rows
+
+---
+
 ## REV-006 — 2026-06-05
 
 **Released by**: Mark Mankoura
