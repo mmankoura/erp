@@ -28,11 +28,13 @@ import { cn } from "@/lib/utils"
 import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
 import { FilterRowCell } from "@/components/grid/filter-row"
 import { useCellSelection } from "@/components/grid/use-cell-selection"
+import { serializeTsv, toHtmlTable } from "@/components/grid/tsv"
 import {
   SHEET_ROW_HEIGHT,
   SHEET_HEADER_HEIGHT,
   SHEET_FILTER_HEIGHT,
   gutterWidthFor,
+  copyValueOf,
   type VirtualGridColumn,
   type SpreadsheetOptions,
   type GridFilterValue,
@@ -417,6 +419,40 @@ export function VirtualGrid<T>({
     if (draggingRef.current) selectCell(rowIdx, colIdx, true)
   }
 
+  /**
+   * Ctrl+C. This hooks the DOM copy event rather than calling
+   * navigator.clipboard, which does not exist on an insecure origin — and
+   * production is served over http, so a writeText implementation would pass
+   * every test on localhost and silently do nothing for users.
+   */
+  const handleCopy = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!spreadsheet || !rect) return
+    const target = e.target as HTMLElement
+    if (
+      target !== e.currentTarget &&
+      (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+    ) {
+      return
+    }
+
+    const matrix: string[][] = []
+    for (let r = rect.r0; r <= rect.r1; r++) {
+      const row = rows[r]
+      if (!row) continue
+      const line: string[] = []
+      for (let c = rect.c0; c <= rect.c1; c++) {
+        const col = gridColumns.find((g) => g.id === colIds[c])
+        line.push(col ? copyValueOf(col, row.original) : "")
+      }
+      matrix.push(line)
+    }
+    if (!matrix.length) return
+
+    e.clipboardData.setData("text/plain", serializeTsv(matrix))
+    e.clipboardData.setData("text/html", toHtmlTable(matrix))
+    e.preventDefault()
+  }
+
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
@@ -487,6 +523,7 @@ export function VirtualGrid<T>({
           style={{ height }}
           tabIndex={spreadsheet ? 0 : undefined}
           onKeyDown={spreadsheet ? handleGridKeyDown : undefined}
+          onCopy={spreadsheet ? handleCopy : undefined}
         >
           {/* The shim gives header and rows one shared width so they scroll
               together. The gutter is not a TanStack column, so its width has to

@@ -907,7 +907,9 @@ export default function InventoryPage() {
     { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-muted-foreground">{l.po_reference || "\u2014"}</span> },
     { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} dense /> },
     { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <span className={l.status === "ACTIVE" ? "" : "text-muted-foreground"}>{l.status}</span> },
-    { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", cell: (l) => <span className="text-muted-foreground tabular-nums">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
+    // The accessor is an ISO timestamp, which is no use in Excel — copy the
+    // displayed date instead.
+    { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", copyValue: (l) => l.received_date ? new Date(l.received_date).toLocaleDateString() : "", cell: (l) => <span className="text-muted-foreground tabular-nums">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
     {
       id: "actions", header: "", size: 70, sortable: false, filterable: false, accessorFn: () => "",
       // Icon buttons are shrunk to fit the 26px spreadsheet row.

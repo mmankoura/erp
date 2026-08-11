@@ -17,6 +17,21 @@ export interface VirtualGridColumn<T> {
   sortable?: boolean
   filterable?: boolean
   filterAccessor?: (row: T) => string
+  /**
+   * What Ctrl+C writes for this cell. Defaults to `accessorFn`, which is the
+   * raw value — `9875`, not `9,875`, so Excel receives a number and a
+   * copy-paste round trip inside the grid is lossless. Override where the
+   * display form is the meaningful one (a date, say, whose accessor is an ISO
+   * timestamp).
+   */
+  copyValue?: (row: T) => string
+}
+
+/** The value Ctrl+C writes for one cell. */
+export function copyValueOf<T>(col: VirtualGridColumn<T>, row: T): string {
+  if (col.copyValue) return col.copyValue(row)
+  const raw = col.accessorFn(row)
+  return raw === null || raw === undefined ? "" : String(raw)
 }
 
 /** Row, header and filter-row heights in spreadsheet mode. All fixed. */
