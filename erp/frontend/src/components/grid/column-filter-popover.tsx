@@ -12,6 +12,8 @@ import {
 import { Filter } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+const MAX_RENDERED_VALUES = 200
+
 /**
  * Excel-style distinct-value filter. The value list is built from the rows the
  * grid is currently showing (i.e. already narrowed by the search box), so the
@@ -36,9 +38,13 @@ export function ColumnFilterPopover<T>({
     return Array.from(vals).sort()
   }, [data, accessor])
 
-  const filteredValues = filterSearch
+  const matchingValues = filterSearch
     ? allValues.filter((v) => v.toLowerCase().includes(filterSearch.toLowerCase()))
     : allValues
+  // The list isn't virtualized, and a numeric column can hold a distinct value
+  // per row. Render a bounded slice and let the search box reach the rest.
+  const filteredValues = matchingValues.slice(0, MAX_RENDERED_VALUES)
+  const hiddenCount = matchingValues.length - filteredValues.length
 
   // The filter row can leave a {contains} value on this column, so the shape
   // has to be checked rather than asserted.
@@ -83,9 +89,14 @@ export function ColumnFilterPopover<T>({
               {val}
             </label>
           ))}
+          {hiddenCount > 0 && (
+            <p className="px-1 pt-1 text-[11px] text-muted-foreground">
+              +{hiddenCount.toLocaleString()} more — type to narrow
+            </p>
+          )}
         </div>
         <div className="flex gap-1 mt-2 pt-2 border-t">
-          <Button variant="ghost" size="sm" className="h-6 text-xs flex-1" onClick={() => column.setFilterValue(allValues)}>
+          <Button variant="ghost" size="sm" className="h-6 text-xs flex-1" onClick={() => column.setFilterValue(matchingValues)}>
             All
           </Button>
           <Button variant="ghost" size="sm" className="h-6 text-xs flex-1" onClick={() => column.setFilterValue(undefined)}>

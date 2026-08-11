@@ -874,29 +874,41 @@ export function VirtualGrid<T>({
                 style={{ width: header.getSize(), minWidth: header.getSize() }}
                 onClick={() => canSort && header.column.toggleSorting()}
               >
-                {align !== "right" && (
-                  <>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                    {canSort && header.column.getIsSorted() === "asc" && <ArrowUp className="h-3 w-3" />}
-                    {canSort && header.column.getIsSorted() === "desc" && <ArrowDown className="h-3 w-3" />}
-                    {canFilter && (
-                      <span onClick={(e) => e.stopPropagation()}>
-                        <ColumnFilterPopover
-                          column={header.column}
-                          data={filteredData}
-                          accessor={filterAccessor}
-                        />
-                      </span>
-                    )}
-                  </>
-                )}
-                {align === "right" && (
-                  <>
-                    {canSort && header.column.getIsSorted() === "asc" && <ArrowUp className="h-3 w-3" />}
-                    {canSort && header.column.getIsSorted() === "desc" && <ArrowDown className="h-3 w-3" />}
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </>
-                )}
+                {/* A right-aligned header reverses the order so the label
+                    still sits against the right edge. Both orders carry the
+                    same three pieces — keeping them in one expression is what
+                    stops the filter going missing from one of them. */}
+                {(() => {
+                  const label = flexRender(header.column.columnDef.header, header.getContext())
+                  const sorted = header.column.getIsSorted()
+                  const sortIcon = !canSort ? null : sorted === "asc" ? (
+                    <ArrowUp className="h-3 w-3" />
+                  ) : sorted === "desc" ? (
+                    <ArrowDown className="h-3 w-3" />
+                  ) : null
+                  const filterButton = canFilter ? (
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <ColumnFilterPopover
+                        column={header.column}
+                        data={filteredData}
+                        accessor={filterAccessor}
+                      />
+                    </span>
+                  ) : null
+                  return align === "right" ? (
+                    <>
+                      {filterButton}
+                      {sortIcon}
+                      {label}
+                    </>
+                  ) : (
+                    <>
+                      {label}
+                      {sortIcon}
+                      {filterButton}
+                    </>
+                  )
+                })()}
                 {/* Resize handle */}
                 <div
                   onMouseDown={(e) => {
