@@ -211,6 +211,18 @@ export class InventoryController {
   }
 
   /**
+   * GET /inventory/customer-report/:customerId
+   * Everything currently held for one customer, summarised per part and listed
+   * per reel — the inventory status update sent to the client.
+   */
+  @Get('customer-report/:customerId')
+  async getCustomerInventoryReport(
+    @Param('customerId', ParseUUIDPipe) customerId: string,
+  ) {
+    return this.inventoryService.getCustomerInventoryReport(customerId);
+  }
+
+  /**
    * PATCH /inventory/lots/:id
    * Correct a lot's details in place. A quantity change writes a compensating
    * ADJUSTMENT transaction and reconciles any open kitting list.

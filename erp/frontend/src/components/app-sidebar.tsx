@@ -106,6 +106,11 @@ const navigation = {
       url: "/mrp",
       icon: TrendingDown,
     },
+    {
+      title: "Customer Inventory",
+      url: "/reports/customer-inventory",
+      icon: FileText,
+    },
   ],
   quality: [
     {

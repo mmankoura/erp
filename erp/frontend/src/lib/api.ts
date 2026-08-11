@@ -983,6 +983,38 @@ export interface InventoryLot {
   updated_at: string
 }
 
+// Customer inventory report types
+export interface CustomerInventorySummaryRow {
+  material_id: string
+  ipn: string | null
+  mfr: string | null
+  mpn: string | null
+  description: string | null
+  quantity: number
+  reel_count: number
+}
+
+export interface CustomerInventoryDetailRow {
+  uid: string
+  ipn: string | null
+  mfr: string | null
+  mpn: string | null
+  description: string | null
+  quantity: number
+  package_type: PackageType
+  bin: string | null
+  po_reference: string | null
+  received_date: string | null
+}
+
+export interface CustomerInventoryReport {
+  customer: { id: string; code: string; name: string }
+  generated_at: string
+  totals: { distinct_parts: number; reels: number; total_quantity: number }
+  summary: CustomerInventorySummaryRow[]
+  detail: CustomerInventoryDetailRow[]
+}
+
 // Physical Count types
 export type PhysicalCountStatus =
   | "PLANNED"

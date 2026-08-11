@@ -36,6 +36,9 @@
 | 13 | Backend | Inventory | **Open kitting lists are auto-reconciled.** Kitting copies a reel's whole quantity into `kitting_list_items.qty_verified` at scan time, so editing that reel afterwards would leave the kit claiming stock that no longer exists. The edit now adjusts `qty_verified` and the scan's stored quantity by the same delta and reports the affected kit. (`is_short`/`shortage_qty` are untouched — kitting only writes those at completion and computes them live.) |
 | 14 | Backend | Inventory | Guard rails: only `ACTIVE` lots are editable at all, and a quantity change is refused (400, naming the count) while the lot sits in an open physical count, since the count snapshotted that quantity as `expected_qty`. The other three fields still save in that case. |
 | 15 | Fix | Types | `LotStatus` in the frontend API types was missing `RETURNED_TO_CLIENT`, a status held by 803 production lots. |
+| 16 | Fix | Physical Count | **Review rows showed only the UID.** The column was already labelled "UID / IPN" and the endpoint already loaded the material relation — the IPN was simply never rendered. Each row now shows the IPN and MPN beneath the UID, with the description on hover. A scan that matched no lot has no material, so it reads *"Not in system"* rather than a blank. |
+| 17 | Feature | Reports | **New Customer Inventory report** at `/reports/customer-inventory` (linked in the sidebar and navbar under Warehouse). Pick a customer to see everything AT&A currently holds for them: summary cards, a per-part summary tab and a reel-detail tab. Exports to **Excel** (two sheets — Summary and Reel Detail) and **PDF** (a printable statement in the same style as the client return document, with page breaks). Built for answering "what stock of ours do you hold". |
+| 18 | Backend | API | `GET /inventory/customer-report/:customerId` returns the customer, generation timestamp, totals (distinct parts / reels / total quantity), a per-material rollup and the reel-level detail. **ACTIVE lots only** — CONSUMED and RETURNED_TO_CLIENT reels have left the floor and reporting them as held stock would overstate what we owe the client. |
 
 ### Known behavior changes (worth communicating to users)
 
@@ -47,6 +50,8 @@
 - Warehouse clerks can now change a reel's **quantity**, not just its BIN. Every change is audited and every quantity change writes an inventory transaction, but this is a wider power than before — it moves material on-hand for MRP and kitting.
 - Editing a reel's quantity silently updates any open kitting list it is scanned onto. The success toast names the affected kit, but the operator working that kit is not notified.
 - Reels that are not `ACTIVE` (CONSUMED, RETURNED_TO_CLIENT) show no edit action at all.
+- The Customer Inventory report counts **ACTIVE reels only**, including any with a zero quantity. INTROSPECT currently has 6 empty reels still flagged ACTIVE, which appear as 0-qty lines; this keeps the report reconciling with the Inventory page's reel count, but it is worth tidying those lots before sending a statement to a client.
+- The report is always "as of now". There is no point-in-time / month-end view — lot quantities are current-state only.
 
 ### Verification Steps
 
@@ -64,6 +69,10 @@
 - [ ] Edit the quantity of a reel scanned onto an IN_PROGRESS kit → toast names the kit, and `kitting_list_items.qty_verified` moves by the same delta
 - [ ] Try a quantity edit on a reel in an open count → 400 naming the count; changing its BIN on the same reel still succeeds
 - [ ] Confirm no pencil renders on a CONSUMED / RETURNED_TO_CLIENT reel
+- [ ] Physical Count → review a count → each discrepancy row shows the IPN under the UID; an ORPHAN scan reads "Not in system"
+- [ ] Warehouse → Customer Inventory → pick INTROSPECT → totals read 301 parts / 372 reels / 131,994 qty (as of the Aug 10 data)
+- [ ] Export Excel → two sheets, Summary and Reel Detail, summary quantities sum to the header total
+- [ ] Export PDF → summary table then reel detail, page breaks intact, header repeats on each page
 
 ---
 

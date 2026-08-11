@@ -36,6 +36,7 @@ import {
 import { KittingListItem } from '../../entities/kitting-list-item.entity';
 import { KittingListScan } from '../../entities/kitting-list-scan.entity';
 import { Material } from '../../entities/material.entity';
+import { Customer } from '../../entities/customer.entity';
 import { Order, OrderStatus } from '../../entities/order.entity';
 import { BomItem } from '../../entities/bom-item.entity';
 import {
@@ -2228,5 +2229,96 @@ export class InventoryService {
 
       return { lot: saved, affected_kitting_lists: affectedKittingLists };
     });
+  }
+
+  // ==================== CUSTOMER INVENTORY REPORT ====================
+
+  /**
+   * Everything we currently hold for one customer — what gets sent to them when
+   * they ask for an inventory status update.
+   *
+   * ACTIVE lots only: CONSUMED / RETURNED_TO_CLIENT reels have left our floor
+   * and reporting them as held stock would overstate what we owe them.
+   */
+  async getCustomerInventoryReport(customerId: string) {
+    const customer = await this.dataSource
+      .getRepository(Customer)
+      .findOne({ where: { id: customerId } });
+    if (!customer) {
+      throw new NotFoundException(`Customer "${customerId}" not found`);
+    }
+
+    const lots = await this.dataSource
+      .getRepository(InventoryLot)
+      .find({
+        where: {
+          owner_type: OwnerType.CUSTOMER,
+          owner_id: customerId,
+          status: LotStatus.ACTIVE,
+        },
+        relations: ['material'],
+        order: { uid: 'ASC' },
+      });
+
+    const detail = lots.map((l) => ({
+      uid: l.uid,
+      ipn: l.material?.internal_part_number ?? null,
+      mfr: l.material?.manufacturer ?? null,
+      mpn: l.material?.manufacturer_pn ?? null,
+      description: l.material?.description ?? null,
+      quantity: parseFloat(String(l.quantity)),
+      package_type: l.package_type,
+      bin: l.bin,
+      po_reference: l.po_reference,
+      received_date: l.received_date,
+    }));
+
+    // Roll up per material so the customer sees one line per part number.
+    const byMaterial = new Map<
+      string,
+      {
+        material_id: string;
+        ipn: string | null;
+        mfr: string | null;
+        mpn: string | null;
+        description: string | null;
+        quantity: number;
+        reel_count: number;
+      }
+    >();
+    for (const l of lots) {
+      const key = l.material_id;
+      const existing = byMaterial.get(key);
+      const qty = parseFloat(String(l.quantity));
+      if (existing) {
+        existing.quantity += qty;
+        existing.reel_count += 1;
+      } else {
+        byMaterial.set(key, {
+          material_id: key,
+          ipn: l.material?.internal_part_number ?? null,
+          mfr: l.material?.manufacturer ?? null,
+          mpn: l.material?.manufacturer_pn ?? null,
+          description: l.material?.description ?? null,
+          quantity: qty,
+          reel_count: 1,
+        });
+      }
+    }
+    const summary = Array.from(byMaterial.values()).sort((a, b) =>
+      (a.ipn ?? '').localeCompare(b.ipn ?? ''),
+    );
+
+    return {
+      customer: { id: customer.id, code: customer.code, name: customer.name },
+      generated_at: new Date().toISOString(),
+      totals: {
+        distinct_parts: summary.length,
+        reels: detail.length,
+        total_quantity: detail.reduce((s, d) => s + d.quantity, 0),
+      },
+      summary,
+      detail,
+    };
   }
 }

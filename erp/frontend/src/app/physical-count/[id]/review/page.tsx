@@ -258,10 +258,22 @@ function DiscrepancyRow({
 
   return (
     <div className="border rounded-md p-3 space-y-2">
-      <div className="grid grid-cols-1 md:grid-cols-7 gap-2 text-sm">
-        <div>
+      <div className="grid grid-cols-1 md:grid-cols-8 gap-2 text-sm">
+        <div className="md:col-span-2">
           <div className="text-xs text-muted-foreground">UID / IPN</div>
           <div className="font-mono font-medium">{discrepancy.uid ?? discrepancy.lot?.uid ?? "—"}</div>
+          {/* A scan that matched no lot has no material, so there is no IPN to
+              show — say so rather than rendering an ambiguous dash. */}
+          {discrepancy.material?.internal_part_number ? (
+            <div className="text-xs truncate" title={discrepancy.material.description ?? undefined}>
+              {discrepancy.material.internal_part_number}
+              {discrepancy.material.manufacturer_pn
+                ? ` · ${discrepancy.material.manufacturer_pn}`
+                : ""}
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground italic">Not in system</div>
+          )}
         </div>
         <div>
           <div className="text-xs text-muted-foreground">Expected</div>
