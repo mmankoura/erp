@@ -31,6 +31,20 @@ export const SHEET_FILTER_HEIGHT = 24
  */
 export type GridFilterValue = string[] | { contains: string }
 
+/** A cell, addressed by identity rather than by position. */
+export interface CellAddr {
+  rowId: string
+  colId: string
+}
+
+/** The selected rectangle, in row/column indices within the current view. */
+export interface SelectionRect {
+  r0: number
+  r1: number
+  c0: number
+  c1: number
+}
+
 export interface SpreadsheetOptions {
   /** Row-number gutter down the left edge. Default true. */
   rowNumbers?: boolean

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useMemo, useEffect, type ReactNode } from "react"
+import { useState, useRef, useMemo, useEffect, useCallback, type ReactNode } from "react"
 import {
   useReactTable,
   getCoreRowModel,
@@ -27,6 +27,7 @@ import { ArrowUp, ArrowDown, Search, Columns, X, ListFilter } from "lucide-react
 import { cn } from "@/lib/utils"
 import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
 import { FilterRowCell } from "@/components/grid/filter-row"
+import { useCellSelection } from "@/components/grid/use-cell-selection"
 import {
   SHEET_ROW_HEIGHT,
   SHEET_HEADER_HEIGHT,
@@ -226,6 +227,196 @@ export function VirtualGrid<T>({
   const gutterWidth = showRowNumbers ? gutterWidthFor(rows.length) : 0
   const showFilterRow = spreadsheet && filterRowOpen
 
+  // ---- Cell cursor -------------------------------------------------------
+
+  // Refs so the scroll helper below can stay referentially stable.
+  const virtualizerRef = useRef(virtualizer)
+  virtualizerRef.current = virtualizer
+  const gutterWidthRef = useRef(gutterWidth)
+  gutterWidthRef.current = gutterWidth
+
+  const visibleLeafColumns = table.getVisibleLeafColumns()
+  const colSignature = visibleLeafColumns.map((c) => c.id).join(" ")
+  const rowIds = useMemo(
+    () => rows.map((r) => r.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orderSignature]
+  )
+  const colIds = useMemo(
+    () => (colSignature ? colSignature.split(" ") : []),
+    [colSignature]
+  )
+  const { activePos, rect, selectCell, selectRow, selectAll, clear, isInRect } =
+    useCellSelection(rowIds, colIds)
+
+  const columnSizes = visibleLeafColumns.map((c) => c.getSize())
+  const columnSizesRef = useRef(columnSizes)
+  columnSizesRef.current = columnSizes
+
+  /**
+   * Bring a cell into view. Vertically this goes through the virtualizer
+   * rather than the DOM, because the target row usually isn't mounted.
+   * Horizontally the sticky gutter covers the left edge of the scrollport, so
+   * a cell is only really visible once it clears the gutter.
+   */
+  const scrollCellIntoView = useCallback(
+    (rowIdx: number, colIdx: number) => {
+      virtualizerRef.current?.scrollToIndex(rowIdx, { align: "auto" })
+      const el = parentRef.current
+      if (!el) return
+      const sizes = columnSizesRef.current
+      let start = gutterWidthRef.current
+      for (let i = 0; i < colIdx; i++) start += sizes[i] ?? 0
+      const end = start + (sizes[colIdx] ?? 0)
+      if (start < el.scrollLeft + gutterWidthRef.current) {
+        el.scrollLeft = start - gutterWidthRef.current
+      } else if (end > el.scrollLeft + el.clientWidth) {
+        el.scrollLeft = end - el.clientWidth
+      }
+    },
+    []
+  )
+
+  const move = useCallback(
+    (rowIdx: number, colIdx: number, extend: boolean) => {
+      const r = Math.max(0, Math.min(rowIdx, rowIds.length - 1))
+      const c = Math.max(0, Math.min(colIdx, colIds.length - 1))
+      selectCell(r, c, extend)
+      scrollCellIntoView(r, c)
+    },
+    [rowIds.length, colIds.length, selectCell, scrollCellIntoView]
+  )
+
+  const handleGridKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!spreadsheet) return
+    // Never steal keystrokes from the filter row, or from anything else that
+    // takes typed input.
+    const target = e.target as HTMLElement
+    if (
+      target !== e.currentTarget &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable ||
+        target.getAttribute("role") === "combobox")
+    ) {
+      return
+    }
+
+    const rowCount = rowIds.length
+    const colCount = colIds.length
+    if (!rowCount || !colCount) return
+
+    if (e.key === "a" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      selectAll()
+      return
+    }
+    if (e.key === "Escape") {
+      clear()
+      return
+    }
+
+    // The first keypress with no cursor starts at the top-left.
+    if (!activePos) {
+      if (["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End", "Tab"].includes(e.key)) {
+        e.preventDefault()
+        move(0, 0, false)
+      }
+      return
+    }
+
+    const { r, c } = activePos
+    const page = Math.max(1, Math.floor(height / rowHeight) - 1)
+    const jump = e.ctrlKey || e.metaKey
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault()
+        move(jump ? rowCount - 1 : r + 1, c, e.shiftKey)
+        break
+      case "ArrowUp":
+        e.preventDefault()
+        move(jump ? 0 : r - 1, c, e.shiftKey)
+        break
+      case "ArrowRight":
+        e.preventDefault()
+        move(r, jump ? colCount - 1 : c + 1, e.shiftKey)
+        break
+      case "ArrowLeft":
+        e.preventDefault()
+        move(r, jump ? 0 : c - 1, e.shiftKey)
+        break
+      case "PageDown":
+        e.preventDefault()
+        move(r + page, c, e.shiftKey)
+        break
+      case "PageUp":
+        e.preventDefault()
+        move(r - page, c, e.shiftKey)
+        break
+      case "Home":
+        e.preventDefault()
+        move(jump ? 0 : r, 0, e.shiftKey)
+        break
+      case "End":
+        e.preventDefault()
+        move(jump ? rowCount - 1 : r, colCount - 1, e.shiftKey)
+        break
+      case "Tab": {
+        e.preventDefault()
+        // Tab walks the row and wraps, like a spreadsheet.
+        const forward = !e.shiftKey
+        let nc = c + (forward ? 1 : -1)
+        let nr = r
+        if (nc >= colCount) {
+          nc = 0
+          nr = Math.min(r + 1, rowCount - 1)
+        } else if (nc < 0) {
+          nc = colCount - 1
+          nr = Math.max(r - 1, 0)
+        }
+        move(nr, nc, false)
+        break
+      }
+      case "Enter":
+        e.preventDefault()
+        move(e.shiftKey ? r - 1 : r + 1, c, false)
+        break
+    }
+  }
+
+  // Drag to extend the selection.
+  const draggingRef = useRef(false)
+  useEffect(() => {
+    if (!spreadsheet) return
+    const stop = () => {
+      draggingRef.current = false
+    }
+    window.addEventListener("mouseup", stop)
+    return () => window.removeEventListener("mouseup", stop)
+  }, [spreadsheet])
+
+  const handleCellMouseDown = (
+    e: React.MouseEvent<HTMLDivElement>,
+    rowIdx: number,
+    colIdx: number
+  ) => {
+    if (!spreadsheet) return
+    const target = e.target as HTMLElement
+    const interactive = target.closest("a,button,input,select,textarea,[role=button]")
+    // Suppressing the default stops the browser drawing its own text selection
+    // over the top of ours — but not on a control, which needs its focus.
+    if (!interactive) e.preventDefault()
+    draggingRef.current = !interactive
+    selectCell(rowIdx, colIdx, e.shiftKey)
+    parentRef.current?.focus({ preventScroll: true })
+  }
+
+  const handleCellMouseEnter = (rowIdx: number, colIdx: number) => {
+    if (draggingRef.current) selectCell(rowIdx, colIdx, true)
+  }
+
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
@@ -287,7 +478,16 @@ export function VirtualGrid<T>({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div ref={parentRef} className="overflow-auto" style={{ height }}>
+        {/* The scroll container is also the keyboard host: focus stays here and
+            never moves to a cell, so the virtualizer unmounting the active row
+            can't strand it. */}
+        <div
+          ref={parentRef}
+          className={cn("overflow-auto", spreadsheet && "outline-none")}
+          style={{ height }}
+          tabIndex={spreadsheet ? 0 : undefined}
+          onKeyDown={spreadsheet ? handleGridKeyDown : undefined}
+        >
           {/* The shim gives header and rows one shared width so they scroll
               together. The gutter is not a TanStack column, so its width has to
               be added here or the last column clips at the right edge. */}
@@ -405,7 +605,7 @@ export function VirtualGrid<T>({
                   ref={spreadsheet ? undefined : virtualizer.measureElement}
                   className={cn(
                     "flex border-b hover:bg-muted/30 transition-colors",
-                    spreadsheet ? "border-border items-center" : "items-stretch",
+                    spreadsheet ? "border-border items-center select-none" : "items-stretch",
                     rowClassName?.(row.original),
                   )}
                   style={{
@@ -421,15 +621,28 @@ export function VirtualGrid<T>({
                 >
                   {showRowNumbers && (
                     <div
-                      className="sticky left-0 z-[1] shrink-0 bg-muted border-r border-border h-full flex items-center justify-end px-1.5 text-[11px] text-muted-foreground tabular-nums select-none"
+                      className={cn(
+                        "sticky left-0 z-[1] shrink-0 border-r border-border h-full flex items-center justify-end px-1.5 text-[11px] text-muted-foreground tabular-nums select-none cursor-pointer",
+                        rect && virtualRow.index >= rect.r0 && virtualRow.index <= rect.r1
+                          ? "bg-accent text-accent-foreground"
+                          : "bg-muted"
+                      )}
                       style={{ width: gutterWidth, minWidth: gutterWidth }}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        selectRow(virtualRow.index, e.shiftKey)
+                        parentRef.current?.focus({ preventScroll: true })
+                      }}
                     >
                       {virtualRow.index + 1}
                     </div>
                   )}
-                  {row.getVisibleCells().map((cell) => {
+                  {row.getVisibleCells().map((cell, colIdx) => {
                     const colDef = gridColumns.find((c) => c.id === cell.column.id)
                     const rendered = flexRender(cell.column.columnDef.cell, cell.getContext())
+                    const selected = spreadsheet && isInRect(virtualRow.index, colIdx)
+                    const isActive =
+                      spreadsheet && activePos?.r === virtualRow.index && activePos?.c === colIdx
                     return (
                       <div
                         key={cell.id}
@@ -438,9 +651,13 @@ export function VirtualGrid<T>({
                           spreadsheet
                             ? "px-2 h-full flex items-center border-r border-border text-xs"
                             : "px-3 py-2 self-center",
-                          colDef?.align === "right" && (spreadsheet ? "justify-end text-right" : "text-right")
+                          colDef?.align === "right" && (spreadsheet ? "justify-end text-right" : "text-right"),
+                          selected && "bg-accent",
+                          isActive && "relative z-[2] ring-2 ring-inset ring-primary"
                         )}
                         style={{ width: cell.column.getSize(), minWidth: cell.column.getSize() }}
+                        onMouseDown={spreadsheet ? (e) => handleCellMouseDown(e, virtualRow.index, colIdx) : undefined}
+                        onMouseEnter={spreadsheet ? () => handleCellMouseEnter(virtualRow.index, colIdx) : undefined}
                       >
                         {/* truncate has to sit on a block child — on the flex
                             container itself it does nothing. */}
