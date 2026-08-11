@@ -28,7 +28,19 @@ import { cn } from "@/lib/utils"
 import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
 import { FilterRowCell } from "@/components/grid/filter-row"
 import { useCellSelection } from "@/components/grid/use-cell-selection"
-import { serializeTsv, toHtmlTable } from "@/components/grid/tsv"
+import { serializeTsv, toHtmlTable, parseTsv } from "@/components/grid/tsv"
+import { planPaste, describePlan, type PastePlan } from "@/components/grid/paste"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { toast } from "sonner"
 import {
   SHEET_ROW_HEIGHT,
   SHEET_HEADER_HEIGHT,
@@ -349,8 +361,11 @@ export function VirtualGrid<T>({
           return
         }
         if (e.key === "Delete" || e.key === "Backspace") {
+          // Clearing is a paste of one empty cell over the selection. Columns
+          // that can't hold an empty value simply reject it and are reported.
           e.preventDefault()
-          applyCellInput(row.id, colIds[c], "")
+          const plan = buildPlan([[""]])
+          if (plan) applyPlan(plan)
           return
         }
         if (e.key.length === 1 && !jump && !e.altKey) {
@@ -513,7 +528,7 @@ export function VirtualGrid<T>({
   const commitEdits = useCallback(
     async (edits: CellEdit<T>[]) => {
       const commit = onCommitRef.current
-      if (!commit || !edits.length) return
+      if (!commit || !edits.length) return [] as CellCommitResult[]
       const keys = edits.map((e) => cellKey(e.rowId, e.columnId))
 
       setPendingValues((prev) => {
@@ -566,6 +581,7 @@ export function VirtualGrid<T>({
         })
       }
       if (failed.length < results.length) scheduleAfterCommit()
+      return results
     },
     [scheduleAfterCommit]
   )
@@ -671,6 +687,82 @@ export function VirtualGrid<T>({
     e.preventDefault()
   }
 
+  // ---- Paste -------------------------------------------------------------
+
+  const [pasteConfirm, setPasteConfirm] = useState<PastePlan<T> | null>(null)
+
+  const runPlan = useCallback(
+    async (plan: PastePlan<T>) => {
+      const results = await commitEdits(plan.edits)
+      const failed = results.filter((r) => !r.ok).length
+      const savedRows = new Set(results.filter((r) => r.ok).map((r) => r.rowId)).size
+
+      if (failed) {
+        // Successes are not rolled back: there is no transactional bulk
+        // endpoint, and undoing a quantity would write further adjustments.
+        toast.error(`${savedRows} row${savedRows === 1 ? "" : "s"} updated · ${failed} cell${failed === 1 ? "" : "s"} failed`)
+      } else {
+        toast.success(`${plan.edits.length} cell${plan.edits.length === 1 ? "" : "s"} updated`)
+      }
+
+      const notes: string[] = []
+      if (plan.clipped) notes.push(`${plan.clipped} fell outside the grid`)
+      if (plan.skipped) notes.push(`${plan.skipped} in read-only columns`)
+      if (plan.blocked.length) notes.push(`${plan.blocked.length} on locked rows — ${plan.blocked[0]}`)
+      if (plan.invalid.length) notes.push(`${plan.invalid.length} rejected — ${plan.invalid[0]}`)
+      if (notes.length) toast.warning(`Ignored: ${notes.join("; ")}`)
+    },
+    [commitEdits]
+  )
+
+  const applyPlan = useCallback(
+    (plan: PastePlan<T>) => {
+      if (!plan.edits.length) {
+        toast.error(`Nothing to write — ${describePlan(plan)}`)
+        return
+      }
+      const threshold = spreadsheetOptions?.pasteConfirmThreshold ?? 50
+      const needsConfirm =
+        plan.edits.length > threshold ||
+        plan.columns.some((id) => columnsById.get(id)?.edit?.confirmOnPaste)
+      if (needsConfirm) setPasteConfirm(plan)
+      else void runPlan(plan)
+    },
+    [spreadsheetOptions?.pasteConfirmThreshold, columnsById, runPlan]
+  )
+
+  const buildPlan = useCallback(
+    (matrix: string[][]) => {
+      if (!rect) return null
+      return planPaste<T>({
+        matrix,
+        rect,
+        rows: rows.map((r) => ({ id: r.id, original: r.original })),
+        colIds,
+        columns: columnsById,
+        isEditable: canEditCell,
+      })
+    },
+    [rect, rows, colIds, columnsById, canEditCell]
+  )
+
+  /** Ctrl+V. Same reasoning as copy: the DOM event, not navigator.clipboard. */
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!spreadsheet || !editable || !rect) return
+    const target = e.target as HTMLElement
+    if (
+      target !== e.currentTarget &&
+      (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+    ) {
+      return
+    }
+    const text = e.clipboardData.getData("text/plain")
+    if (!text) return
+    e.preventDefault()
+    const plan = buildPlan(parseTsv(text))
+    if (plan) applyPlan(plan)
+  }
+
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
@@ -742,6 +834,7 @@ export function VirtualGrid<T>({
           tabIndex={spreadsheet ? 0 : undefined}
           onKeyDown={spreadsheet ? handleGridKeyDown : undefined}
           onCopy={spreadsheet ? handleCopy : undefined}
+          onPaste={spreadsheet ? handlePaste : undefined}
         >
           {/* The shim gives header and rows one shared width so they scroll
               together. The gutter is not a TanStack column, so its width has to
@@ -976,6 +1069,40 @@ export function VirtualGrid<T>({
           {search && ` matching "${search}"`}
         </div>
       </CardContent>
+
+      <AlertDialog open={!!pasteConfirm} onOpenChange={(open) => !open && setPasteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apply this paste?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>{pasteConfirm ? describePlan(pasteConfirm) : null}</p>
+                {pasteConfirm && pasteConfirm.columns.length > 0 && (
+                  <p>
+                    Columns:{" "}
+                    {pasteConfirm.columns
+                      .map((id) => columnsById.get(id)?.header || id)
+                      .join(", ")}
+                  </p>
+                )}
+                <p>This is saved immediately and cannot be undone.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const plan = pasteConfirm
+                setPasteConfirm(null)
+                if (plan) void runPlan(plan)
+              }}
+            >
+              Apply
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

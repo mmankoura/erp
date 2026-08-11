@@ -921,8 +921,7 @@ export default function InventoryPage() {
       byLot.set(edit.rowId, group)
     }
 
-    const results: CellCommitResult[] = []
-    for (const [lotId, group] of byLot) {
+    const saveLot = async ([lotId, group]: [string, CellEdit<InventoryLotWithId>[]]): Promise<CellCommitResult[]> => {
       // Only whitelisted fields — the API's validation pipe rejects the rest.
       const payload: Record<string, unknown> = {}
       for (const edit of group) payload[edit.field] = edit.value
@@ -930,12 +929,26 @@ export default function InventoryPage() {
 
       try {
         await api.patch(`/inventory/lots/${lotId}`, payload)
-        group.forEach((e) => results.push({ rowId: lotId, columnId: e.columnId, ok: true }))
+        return group.map((e) => ({ rowId: lotId, columnId: e.columnId, ok: true as const }))
       } catch (err) {
         const error = err instanceof Error ? err.message : "Save failed"
-        group.forEach((e) => results.push({ rowId: lotId, columnId: e.columnId, ok: false, error }))
+        return group.map((e) => ({ rowId: lotId, columnId: e.columnId, ok: false as const, error }))
       }
     }
+
+    // Four at a time. The endpoint takes a pessimistic_write lock per lot and
+    // reconciles open kitting lists inside the same transaction, so a wide
+    // paste firing every request at once would just fight for the pool.
+    const queue = Array.from(byLot.entries())
+    const results: CellCommitResult[] = []
+    let cursor = 0
+    const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+      while (cursor < queue.length) {
+        const entry = queue[cursor++]
+        results.push(...(await saveLot(entry)))
+      }
+    })
+    await Promise.all(workers)
     return results
   }
 
@@ -950,7 +963,10 @@ export default function InventoryPage() {
     // Bounds mirror UpdateLotDto's numeric(12,4) constraints, so a bad value is
     // refused inline instead of coming back as a 400.
     { id: "quantity", header: "Quantity", size: 100, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono tabular-nums">{parseFloat(String(l.quantity)).toLocaleString()}</span>,
-      edit: { field: "quantity", getValue: (l) => parseFloat(String(l.quantity)), isEditable: lotIsEditable, editor: { kind: "number", min: 0, max: 99999999.9999, decimals: 4 } } },
+      // A pasted quantity moves on-hand stock, writes an ADJUSTMENT
+      // transaction and silently adjusts open kitting lists, with no undo —
+      // so it always asks first, however small the paste.
+      edit: { field: "quantity", getValue: (l) => parseFloat(String(l.quantity)), isEditable: lotIsEditable, confirmOnPaste: true, editor: { kind: "number", min: 0, max: 99999999.9999, decimals: 4 } } },
     // package_type is an enum — a pasted "reel" has to be upper-cased or it 400s.
     { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => l.package_type,
       edit: { field: "package_type", getValue: (l) => l.package_type, isEditable: lotIsEditable, editor: { kind: "select", options: PACKAGE_TYPES, normalize: (raw) => raw.trim().toUpperCase() } } },
