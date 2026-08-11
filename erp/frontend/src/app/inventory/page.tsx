@@ -380,7 +380,7 @@ type InventoryStockWithId = InventoryStock & { id: string }
 // Extended type for lots DataTable
 type InventoryLotWithId = InventoryLot & { id: string }
 
-function BinCell({ lot, onSaved }: { lot: InventoryLotWithId; onSaved: () => void }) {
+function BinCell({ lot, onSaved, dense }: { lot: InventoryLotWithId; onSaved: () => void; dense?: boolean }) {
   const [value, setValue] = useState<string>(lot.bin ?? "")
   const [saving, setSaving] = useState(false)
   useEffect(() => { setValue(lot.bin ?? "") }, [lot.bin])
@@ -412,7 +412,9 @@ function BinCell({ lot, onSaved }: { lot: InventoryLotWithId; onSaved: () => voi
       }}
       placeholder="—"
       disabled={saving}
-      className="h-7 text-xs font-mono"
+      // `dense` fits the 26px spreadsheet row; the default h-7 belongs to the
+      // 44px classic row on the Receiving Log tab.
+      className={dense ? "h-[22px] text-xs font-mono px-1 py-0" : "h-7 text-xs font-mono"}
     />
   )
 }
@@ -892,34 +894,38 @@ export default function InventoryPage() {
     { id: "actions", header: "", size: 120, sortable: false, filterable: false, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /></div>) },
   ]
 
-  // VirtualGrid columns for Lots/Reels
+  // VirtualGrid columns for Lots/Reels.
+  // This grid runs in spreadsheet mode: 26px rows, so cells carry no font size
+  // of their own (the grid sets text-xs) and no badges — a badge doesn't fit the
+  // row, and it reads as a web table rather than a sheet.
   const lotsVgColumns: VirtualGridColumn<InventoryLotWithId>[] = [
-    { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.uid, accessorFn: (l) => l.uid, cell: (l) => <span className="font-mono font-medium text-sm">{l.uid}</span> },
-    { id: "customer", header: "Customer", size: 140, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span className="text-sm">{l.material?.customer?.name || "\u2014"}</span> },
-    { id: "ipn", header: "IPN", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.material?.internal_part_number || "", accessorFn: (l) => l.material?.internal_part_number || "", cell: (l) => <span className="font-medium text-sm">{l.material?.internal_part_number}</span> },
-    { id: "quantity", header: "Quantity", size: 100, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
-    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Badge variant="outline">{l.package_type}</Badge> },
-    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-sm text-muted-foreground">{l.po_reference || "\u2014"}</span> },
-    { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} /> },
-    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"}>{l.status}</Badge> },
-    { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", cell: (l) => <span className="text-xs text-muted-foreground">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
+    { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.uid, accessorFn: (l) => l.uid, cell: (l) => <span className="font-mono font-medium">{l.uid}</span> },
+    { id: "customer", header: "Customer", size: 140, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span>{l.material?.customer?.name || "\u2014"}</span> },
+    { id: "ipn", header: "IPN", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.material?.internal_part_number || "", accessorFn: (l) => l.material?.internal_part_number || "", cell: (l) => <span className="font-medium">{l.material?.internal_part_number}</span> },
+    { id: "quantity", header: "Quantity", size: 100, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono tabular-nums">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => l.package_type },
+    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-muted-foreground">{l.po_reference || "\u2014"}</span> },
+    { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} dense /> },
+    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <span className={l.status === "ACTIVE" ? "" : "text-muted-foreground"}>{l.status}</span> },
+    { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", cell: (l) => <span className="text-muted-foreground tabular-nums">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
     {
-      id: "actions", header: "", size: 100, sortable: false, filterable: false, accessorFn: () => "",
+      id: "actions", header: "", size: 70, sortable: false, filterable: false, accessorFn: () => "",
+      // Icon buttons are shrunk to fit the 26px spreadsheet row.
       cell: (l) => (
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {/* Only ACTIVE lots are editable — the API rejects the rest. */}
           {canEditLots && l.status === "ACTIVE" && (
             <EditLotDialog
               lot={l}
               onSaved={onLotSaved}
               trigger={
-                <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit lot">
-                  <Pencil className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="h-5 w-5" title="Edit lot">
+                  <Pencil className="h-3.5 w-3.5" />
                 </Button>
               }
             />
           )}
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete lot ${l.uid}?`)) deleteLotMutation.mutate(l.id) }}><Trash2 className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete lot ${l.uid}?`)) deleteLotMutation.mutate(l.id) }}><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>
       ),
     },
@@ -1086,6 +1092,9 @@ export default function InventoryPage() {
             columns={lotsVgColumns}
             title="Lots / Reels"
             isLoading={lotsLoading}
+            spreadsheet
+            getRowId={(l) => l.id}
+            height={620}
             searchPlaceholder="Search by UID, IPN, customer, PO ref, or status..."
             searchFn={(lot, q) =>
               !!(lot.uid.toLowerCase().includes(q) ||

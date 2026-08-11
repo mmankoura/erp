@@ -26,7 +26,13 @@ import {
 import { ArrowUp, ArrowDown, Search, Columns, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
-import type { VirtualGridColumn } from "@/components/grid/types"
+import {
+  SHEET_ROW_HEIGHT,
+  SHEET_HEADER_HEIGHT,
+  gutterWidthFor,
+  type VirtualGridColumn,
+  type SpreadsheetOptions,
+} from "@/components/grid/types"
 
 export type { VirtualGridColumn } from "@/components/grid/types"
 
@@ -58,6 +64,13 @@ interface VirtualGridProps<T> {
   getRowId?: (row: T) => string
   /** Applied to the outer Card — several pages nest this grid in their own. */
   className?: string
+  /**
+   * Excel-like presentation: fixed 26px rows, gridlines on every cell and a
+   * row-number gutter. Cells clip instead of wrapping, so don't turn this on
+   * for a grid whose cells rely on multi-line content.
+   */
+  spreadsheet?: boolean
+  spreadsheetOptions?: SpreadsheetOptions
 }
 
 // =============== VirtualGrid Component ===============
@@ -70,13 +83,17 @@ export function VirtualGrid<T>({
   searchPlaceholder = "Search...",
   searchFn,
   height = 560,
-  rowHeight = 44,
+  rowHeight: rowHeightProp,
   headerActions,
   rowClassName,
   onVisibleRowsChange,
   getRowId,
   className,
+  spreadsheet = false,
+  spreadsheetOptions,
 }: VirtualGridProps<T>) {
+  const rowHeight = rowHeightProp ?? (spreadsheet ? SHEET_ROW_HEIGHT : 44)
+  const showRowNumbers = spreadsheet && (spreadsheetOptions?.rowNumbers ?? true)
   const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
@@ -164,14 +181,18 @@ export function VirtualGrid<T>({
     // neighbours.
     getItemKey: (index) => rows[index]?.id ?? index,
     // Dynamic row heights: measure each rendered row so cells with wrapping
-    // content (e.g. multi-line ref designators) aren't clipped.
+    // content (e.g. multi-line ref designators) aren't clipped. Spreadsheet
+    // mode is deliberately fixed-height, so measuring is switched off there —
+    // this has to go together with dropping the measureElement ref on the row,
+    // since attaching that ref is what triggers a measurement.
     measureElement:
-      typeof window !== "undefined"
+      !spreadsheet && typeof window !== "undefined"
         ? (el) => el?.getBoundingClientRect().height ?? rowHeight
         : undefined,
   })
 
   const activeFilterCount = columnFilters.length
+  const gutterWidth = showRowNumbers ? gutterWidthFor(rows.length) : 0
 
   return (
     <Card className={className}>
@@ -223,9 +244,21 @@ export function VirtualGrid<T>({
       </CardHeader>
       <CardContent className="p-0">
         <div ref={parentRef} className="overflow-auto" style={{ height }}>
-          <div style={{ minWidth: `${table.getTotalSize()}px` }}>
+          {/* The shim gives header and rows one shared width so they scroll
+              together. The gutter is not a TanStack column, so its width has to
+              be added here or the last column clips at the right edge. */}
+          <div style={{ minWidth: `${table.getTotalSize() + gutterWidth}px` }}>
         {/* Header */}
-        <div className="border-t border-b bg-muted flex sticky top-0 z-10">
+        <div
+          className="border-t border-b bg-muted flex sticky top-0 z-10"
+          style={spreadsheet ? { height: SHEET_HEADER_HEIGHT } : undefined}
+        >
+          {showRowNumbers && (
+            <div
+              className="sticky left-0 z-20 shrink-0 bg-muted border-r border-border h-full"
+              style={{ width: gutterWidth, minWidth: gutterWidth }}
+            />
+          )}
           {table.getHeaderGroups()[0]?.headers.map((header) => {
             const col = gridColumns.find((c) => c.id === header.column.id)
             const align = col?.align
@@ -238,7 +271,10 @@ export function VirtualGrid<T>({
               <div
                 key={header.id}
                 className={cn(
-                  "px-3 py-2 text-xs font-medium text-muted-foreground flex items-center gap-0.5 select-none shrink-0 relative",
+                  "text-muted-foreground flex items-center gap-0.5 select-none shrink-0 relative",
+                  spreadsheet
+                    ? "px-2 h-full text-[11px] font-semibold border-r border-border"
+                    : "px-3 py-2 text-xs font-medium",
                   canSort && "cursor-pointer hover:text-foreground",
                   align === "right" && "justify-end"
                 )}
@@ -297,9 +333,10 @@ export function VirtualGrid<T>({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
+                  ref={spreadsheet ? undefined : virtualizer.measureElement}
                   className={cn(
-                    "flex border-b hover:bg-muted/30 transition-colors items-stretch",
+                    "flex border-b hover:bg-muted/30 transition-colors",
+                    spreadsheet ? "border-border items-center" : "items-stretch",
                     rowClassName?.(row.original),
                   )}
                   style={{
@@ -307,22 +344,38 @@ export function VirtualGrid<T>({
                     top: 0,
                     left: 0,
                     width: "100%",
-                    minHeight: `${rowHeight}px`,
+                    ...(spreadsheet
+                      ? { height: `${rowHeight}px` }
+                      : { minHeight: `${rowHeight}px` }),
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
+                  {showRowNumbers && (
+                    <div
+                      className="sticky left-0 z-[1] shrink-0 bg-muted border-r border-border h-full flex items-center justify-end px-1.5 text-[11px] text-muted-foreground tabular-nums select-none"
+                      style={{ width: gutterWidth, minWidth: gutterWidth }}
+                    >
+                      {virtualRow.index + 1}
+                    </div>
+                  )}
                   {row.getVisibleCells().map((cell) => {
                     const colDef = gridColumns.find((c) => c.id === cell.column.id)
+                    const rendered = flexRender(cell.column.columnDef.cell, cell.getContext())
                     return (
                       <div
                         key={cell.id}
                         className={cn(
-                          "px-3 py-2 shrink-0 self-center overflow-hidden",
-                          colDef?.align === "right" && "text-right"
+                          "shrink-0 overflow-hidden",
+                          spreadsheet
+                            ? "px-2 h-full flex items-center border-r border-border text-xs"
+                            : "px-3 py-2 self-center",
+                          colDef?.align === "right" && (spreadsheet ? "justify-end text-right" : "text-right")
                         )}
                         style={{ width: cell.column.getSize(), minWidth: cell.column.getSize() }}
                       >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        {/* truncate has to sit on a block child — on the flex
+                            container itself it does nothing. */}
+                        {spreadsheet ? <div className="truncate w-full">{rendered}</div> : rendered}
                       </div>
                     )
                   })}
