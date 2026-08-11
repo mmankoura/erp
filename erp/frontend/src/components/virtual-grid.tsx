@@ -23,15 +23,18 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ArrowUp, ArrowDown, Search, Columns, X } from "lucide-react"
+import { ArrowUp, ArrowDown, Search, Columns, X, ListFilter } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
+import { FilterRowCell } from "@/components/grid/filter-row"
 import {
   SHEET_ROW_HEIGHT,
   SHEET_HEADER_HEIGHT,
+  SHEET_FILTER_HEIGHT,
   gutterWidthFor,
   type VirtualGridColumn,
   type SpreadsheetOptions,
+  type GridFilterValue,
 } from "@/components/grid/types"
 
 export type { VirtualGridColumn } from "@/components/grid/types"
@@ -94,6 +97,8 @@ export function VirtualGrid<T>({
 }: VirtualGridProps<T>) {
   const rowHeight = rowHeightProp ?? (spreadsheet ? SHEET_ROW_HEIGHT : 44)
   const showRowNumbers = spreadsheet && (spreadsheetOptions?.rowNumbers ?? true)
+  const filterRowStorageKey = spreadsheetOptions?.storageKey
+  const [filterRowOpen, setFilterRowOpen] = useState(spreadsheetOptions?.filterRow ?? true)
   const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
@@ -117,10 +122,17 @@ export function VirtualGrid<T>({
           cell: ({ row }) => col.cell(row.original),
           enableSorting: col.sortable ?? true,
           filterFn: filterable
-            ? (row: { original: T }, _id: string, filterValue: string[]) => {
-                if (!filterValue?.length) return true
+            ? (row: { original: T }, _id: string, filterValue: GridFilterValue) => {
                 const accessor = col.filterAccessor ?? ((r: T) => String(col.accessorFn(r) ?? ""))
-                return filterValue.includes(accessor(row.original))
+                // A list of exact values from the header popover…
+                if (Array.isArray(filterValue)) {
+                  if (!filterValue.length) return true
+                  return filterValue.includes(accessor(row.original))
+                }
+                // …or a substring from the filter row.
+                const needle = filterValue?.contains?.trim().toLowerCase()
+                if (!needle) return true
+                return accessor(row.original).toLowerCase().includes(needle)
               }
             : undefined,
           meta: { align: col.align },
@@ -191,8 +203,28 @@ export function VirtualGrid<T>({
         : undefined,
   })
 
+  // Read the saved toggle after mount, not in the useState initializer —
+  // localStorage isn't there during SSR and reading it inline mismatches the
+  // hydrated markup.
+  useEffect(() => {
+    if (!filterRowStorageKey) return
+    const saved = window.localStorage.getItem(`vgrid:${filterRowStorageKey}:filterRow`)
+    if (saved !== null) setFilterRowOpen(saved === "1")
+  }, [filterRowStorageKey])
+
+  const toggleFilterRow = () => {
+    setFilterRowOpen((open) => {
+      const next = !open
+      if (filterRowStorageKey) {
+        window.localStorage.setItem(`vgrid:${filterRowStorageKey}:filterRow`, next ? "1" : "0")
+      }
+      return next
+    })
+  }
+
   const activeFilterCount = columnFilters.length
   const gutterWidth = showRowNumbers ? gutterWidthFor(rows.length) : 0
+  const showFilterRow = spreadsheet && filterRowOpen
 
   return (
     <Card className={className}>
@@ -218,6 +250,18 @@ export function VirtualGrid<T>({
                   className="pl-8 h-8 text-sm"
                 />
               </div>
+            )}
+            {spreadsheet && (
+              <Button
+                variant={filterRowOpen ? "secondary" : "outline"}
+                size="sm"
+                className="h-8"
+                onClick={toggleFilterRow}
+                title={filterRowOpen ? "Hide the filter row" : "Show the filter row"}
+              >
+                <ListFilter className="h-4 w-4 mr-1" />
+                Filters
+              </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -324,6 +368,31 @@ export function VirtualGrid<T>({
             )
           })}
         </div>
+
+        {/* Filter row — a second sticky band, offset by the header's fixed
+            height. Opaque for the same reason the header is: rows scroll
+            underneath it. */}
+        {showFilterRow && (
+          <div
+            className="flex sticky z-10 bg-background border-b border-border"
+            style={{ top: SHEET_HEADER_HEIGHT, height: SHEET_FILTER_HEIGHT }}
+          >
+            {showRowNumbers && (
+              <div
+                className="sticky left-0 z-20 shrink-0 bg-muted border-r border-border h-full"
+                style={{ width: gutterWidth, minWidth: gutterWidth }}
+              />
+            )}
+            {table.getHeaderGroups()[0]?.headers.map((header) => (
+              <FilterRowCell
+                key={header.id}
+                column={header.column}
+                width={header.getSize()}
+                disabled={!header.column.getFilterFn()}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Virtualized rows */}
         <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>

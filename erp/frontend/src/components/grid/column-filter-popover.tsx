@@ -40,7 +40,10 @@ export function ColumnFilterPopover<T>({
     ? allValues.filter((v) => v.toLowerCase().includes(filterSearch.toLowerCase()))
     : allValues
 
-  const selectedValues = (column.getFilterValue() as string[] | undefined) ?? []
+  // The filter row can leave a {contains} value on this column, so the shape
+  // has to be checked rather than asserted.
+  const rawFilterValue = column.getFilterValue()
+  const selectedValues = Array.isArray(rawFilterValue) ? (rawFilterValue as string[]) : []
   const isFiltered = selectedValues.length > 0
 
   const toggleValue = (val: string) => {

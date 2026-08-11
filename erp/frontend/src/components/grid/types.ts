@@ -19,13 +19,25 @@ export interface VirtualGridColumn<T> {
   filterAccessor?: (row: T) => string
 }
 
-/** Row height and header height in spreadsheet mode. Both are fixed. */
+/** Row, header and filter-row heights in spreadsheet mode. All fixed. */
 export const SHEET_ROW_HEIGHT = 26
 export const SHEET_HEADER_HEIGHT = 26
+export const SHEET_FILTER_HEIGHT = 24
+
+/**
+ * A column filter is either a set of exact values (what the header's funnel
+ * popover writes) or a substring (what the filter row writes). One column holds
+ * one or the other, never both.
+ */
+export type GridFilterValue = string[] | { contains: string }
 
 export interface SpreadsheetOptions {
   /** Row-number gutter down the left edge. Default true. */
   rowNumbers?: boolean
+  /** Initial state of the filter row. Default true; a saved choice wins. */
+  filterRow?: boolean
+  /** Namespace for remembering the filter-row toggle in localStorage. */
+  storageKey?: string
 }
 
 /** Width of the row-number gutter, sized to fit the largest row number. */

@@ -1093,6 +1093,7 @@ export default function InventoryPage() {
             title="Lots / Reels"
             isLoading={lotsLoading}
             spreadsheet
+            spreadsheetOptions={{ storageKey: "inventory-lots" }}
             getRowId={(l) => l.id}
             height={620}
             searchPlaceholder="Search by UID, IPN, customer, PO ref, or status..."
