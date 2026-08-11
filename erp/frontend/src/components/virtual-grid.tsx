@@ -17,113 +17,20 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { ArrowUp, ArrowDown, Search, Columns, Filter, X } from "lucide-react"
+import { ArrowUp, ArrowDown, Search, Columns, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
+import type { VirtualGridColumn } from "@/components/grid/types"
 
-// =============== Column Filter Popover ===============
-
-function ColumnFilterPopover<T>({
-  column,
-  data,
-  accessor,
-}: {
-  column: { getFilterValue: () => unknown; setFilterValue: (val: unknown) => void }
-  data: T[]
-  accessor: (row: T) => string
-}) {
-  const [filterSearch, setFilterSearch] = useState("")
-  const allValues = useMemo(() => {
-    const vals = new Set<string>()
-    data.forEach((row) => {
-      const v = accessor(row)
-      if (v) vals.add(v)
-    })
-    return Array.from(vals).sort()
-  }, [data, accessor])
-
-  const filteredValues = filterSearch
-    ? allValues.filter((v) => v.toLowerCase().includes(filterSearch.toLowerCase()))
-    : allValues
-
-  const selectedValues = (column.getFilterValue() as string[] | undefined) ?? []
-  const isFiltered = selectedValues.length > 0
-
-  const toggleValue = (val: string) => {
-    const current = selectedValues
-    if (current.includes(val)) {
-      const next = current.filter((v) => v !== val)
-      column.setFilterValue(next.length > 0 ? next : undefined)
-    } else {
-      column.setFilterValue([...current, val])
-    }
-  }
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button className={cn("ml-1", isFiltered ? "text-primary" : "text-muted-foreground/50 hover:text-muted-foreground")}>
-          <Filter className="h-3 w-3" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[220px] p-2" align="start">
-        {allValues.length > 8 && (
-          <Input
-            placeholder="Search..."
-            value={filterSearch}
-            onChange={(e) => setFilterSearch(e.target.value)}
-            className="h-7 text-xs mb-2"
-          />
-        )}
-        <div className="max-h-[200px] overflow-auto space-y-1">
-          {filteredValues.map((val) => (
-            <label key={val} className="flex items-center gap-2 px-1 py-0.5 text-xs hover:bg-muted rounded cursor-pointer">
-              <Checkbox
-                checked={selectedValues.includes(val)}
-                onCheckedChange={() => toggleValue(val)}
-                className="h-3.5 w-3.5"
-              />
-              {val}
-            </label>
-          ))}
-        </div>
-        <div className="flex gap-1 mt-2 pt-2 border-t">
-          <Button variant="ghost" size="sm" className="h-6 text-xs flex-1" onClick={() => column.setFilterValue(allValues)}>
-            All
-          </Button>
-          <Button variant="ghost" size="sm" className="h-6 text-xs flex-1" onClick={() => column.setFilterValue(undefined)}>
-            Clear
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
-}
+export type { VirtualGridColumn } from "@/components/grid/types"
 
 // =============== VirtualGrid Props ===============
-
-export interface VirtualGridColumn<T> {
-  id: string
-  header: string
-  size?: number
-  align?: "left" | "right"
-  accessorFn: (row: T) => unknown
-  cell: (row: T) => ReactNode
-  sortable?: boolean
-  filterable?: boolean
-  filterAccessor?: (row: T) => string
-}
 
 interface VirtualGridProps<T> {
   data: T[] | null
@@ -143,6 +50,14 @@ interface VirtualGridProps<T> {
    * e.g. shift-click range selection that must match what the user sees.
    */
   onVisibleRowsChange?: (rows: T[]) => void
+  /**
+   * Stable identity for a row. Without it TanStack falls back to the row's
+   * index in the current data array, which changes as rows are sorted or
+   * filtered.
+   */
+  getRowId?: (row: T) => string
+  /** Applied to the outer Card — several pages nest this grid in their own. */
+  className?: string
 }
 
 // =============== VirtualGrid Component ===============
@@ -159,6 +74,8 @@ export function VirtualGrid<T>({
   headerActions,
   rowClassName,
   onVisibleRowsChange,
+  getRowId,
+  className,
 }: VirtualGridProps<T>) {
   const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([])
@@ -211,6 +128,9 @@ export function VirtualGrid<T>({
     onColumnVisibilityChange: setColumnVisibility,
     onColumnFiltersChange: setColumnFilters,
     onColumnSizingChange: setColumnSizing,
+    // Only override TanStack's index-based default when the caller supplies a
+    // real identity — row.id feeds the virtualizer's height cache below.
+    ...(getRowId ? { getRowId: (row: T) => getRowId(row) } : {}),
     enableColumnResizing: true,
     columnResizeMode: "onChange",
     getCoreRowModel: getCoreRowModel(),
@@ -254,7 +174,7 @@ export function VirtualGrid<T>({
   const activeFilterCount = columnFilters.length
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
