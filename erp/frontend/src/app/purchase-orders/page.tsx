@@ -12,6 +12,9 @@ import {
   type PoHistory,
 } from "@/lib/api"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
+import { dateCol } from "@/components/grid/columns"
+import { Chip, type ChipTone } from "@/components/grid/chip"
+import type { CellEdit, CellCommitResult } from "@/components/grid/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -660,14 +663,27 @@ export function PurchaseOrderDetailDialog({
 // remain visible.
 // ==================== Inline editor cells (Phase 1) ====================
 
-const statusRowTint: Record<PurchaseOrderStatus, string> = {
-  DRAFT: "bg-slate-100 border-l-4 border-l-slate-400",
-  SUBMITTED: "bg-amber-100 border-l-4 border-l-amber-500",
-  CONFIRMED: "bg-blue-100 border-l-4 border-l-blue-500",
-  PARTIALLY_RECEIVED: "bg-cyan-100 border-l-4 border-l-cyan-500",
-  RECEIVED: "bg-emerald-100 border-l-4 border-l-emerald-500",
-  CLOSED: "bg-zinc-200 border-l-4 border-l-zinc-500",
-  CANCELLED: "bg-rose-100 border-l-4 border-l-rose-500",
+// Status as a gutter stripe rather than a tint over the whole row: in a sheet
+// the cell background belongs to the selection, and the old `border-l-4` sat
+// under the sticky gutter and vanished as soon as the grid scrolled sideways.
+const statusStripe: Record<PurchaseOrderStatus, string> = {
+  DRAFT: "bg-slate-400",
+  SUBMITTED: "bg-amber-500",
+  CONFIRMED: "bg-blue-500",
+  PARTIALLY_RECEIVED: "bg-cyan-500",
+  RECEIVED: "bg-emerald-500",
+  CLOSED: "bg-zinc-500",
+  CANCELLED: "bg-rose-500",
+}
+
+const statusTone: Record<PurchaseOrderStatus, ChipTone> = {
+  DRAFT: "neutral",
+  SUBMITTED: "warning",
+  CONFIRMED: "info",
+  PARTIALLY_RECEIVED: "info",
+  RECEIVED: "success",
+  CLOSED: "muted",
+  CANCELLED: "danger",
 }
 
 function lineEditAllowed(status: PurchaseOrderStatus): boolean {
@@ -923,7 +939,7 @@ function InlineStatusCell({
   }
 
   if (disabled || transitions.length === 0) {
-    return <Badge variant={statusConfig[po.status].variant}>{statusConfig[po.status].label}</Badge>
+    return <Chip tone={statusTone[po.status]}>{statusConfig[po.status].label}</Chip>
   }
 
   return (
@@ -935,9 +951,9 @@ function InlineStatusCell({
           className="inline-flex items-center hover:opacity-80 transition-opacity cursor-pointer disabled:opacity-50"
           title="Change status"
         >
-          <Badge variant={statusConfig[po.status].variant}>
+          <Chip tone={statusTone[po.status]}>
             {pending ? "..." : statusConfig[po.status].label}
-          </Badge>
+          </Chip>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
@@ -1080,6 +1096,61 @@ export default function PurchaseOrdersPage() {
     return rows
   }, [purchaseOrders])
 
+  /**
+   * A line is editable only on a DRAFT PO, and a placeholder row has no line to
+   * edit. Refusing here means the cell says why instead of the API returning an
+   * anonymous 400 after a round trip.
+   */
+  const lineIsEditable = (r: PoLineRow): true | string => {
+    if (!r.line) return "This PO has no lines"
+    if (!lineEditAllowed(r.po.status)) {
+      return `Only DRAFT POs can be edited (this one is ${statusConfig[r.po.status].label})`
+    }
+    return true
+  }
+
+  /**
+   * Persist grid edits, one PATCH per line rather than per cell — quantity and
+   * unit cost changed on the same row is one request. Mirrors the Lots/Reels
+   * sheet, minus its concurrency limit: PATCH /purchase-orders/lines/:id takes
+   * no lock and reconciles nothing, so there is no pool to fight over.
+   */
+  const commitLineEdits = async (
+    edits: CellEdit<PoLineRow>[]
+  ): Promise<CellCommitResult[]> => {
+    const byLine = new Map<string, CellEdit<PoLineRow>[]>()
+    for (const edit of edits) {
+      const group = byLine.get(edit.rowId) ?? []
+      group.push(edit)
+      byLine.set(edit.rowId, group)
+    }
+
+    const results = await Promise.all(
+      Array.from(byLine.entries()).map(async ([rowId, group]) => {
+        const lineId = group[0].row.line?.id
+        if (!lineId) {
+          return group.map((e) => ({
+            rowId,
+            columnId: e.columnId,
+            ok: false as const,
+            error: "This PO has no lines",
+          }))
+        }
+        const payload: Record<string, unknown> = {}
+        for (const edit of group) payload[edit.field] = edit.value
+
+        try {
+          await api.patch(`/purchase-orders/lines/${lineId}`, payload)
+          return group.map((e) => ({ rowId, columnId: e.columnId, ok: true as const }))
+        } catch (err) {
+          const error = err instanceof Error ? err.message : "Save failed"
+          return group.map((e) => ({ rowId, columnId: e.columnId, ok: false as const, error }))
+        }
+      })
+    )
+    return results.flat()
+  }
+
   const columns: VirtualGridColumn<PoLineRow>[] = [
     {
       id: "po_number",
@@ -1114,34 +1185,30 @@ export default function PurchaseOrdersPage() {
       size: 140,
       accessorFn: (r) => r.po.status,
       filterAccessor: (r) => statusConfig[r.po.status].label,
+      // The status column stays a custom cell rather than an `edit:` config:
+      // it is not a field write but a workflow transition, POSTed to a
+      // per-transition endpoint with its own allowed set.
+      copyValue: (r) => statusConfig[r.po.status].label,
       cell: (r) =>
         editUnlocked ? (
           <InlineStatusCell po={r.po} onSaved={refetch} />
         ) : (
-          <Badge variant={statusConfig[r.po.status].variant}>{statusConfig[r.po.status].label}</Badge>
+          <Chip tone={statusTone[r.po.status]}>{statusConfig[r.po.status].label}</Chip>
         ),
     },
+    dateCol("order_date", "Order Date", (r) => r.po.order_date, { size: 110 }),
     {
-      id: "order_date",
-      header: "Order Date",
-      size: 110,
-      accessorFn: (r) => new Date(r.po.order_date).getTime(),
-      cell: (r) => new Date(r.po.order_date).toLocaleDateString(),
-    },
-    {
-      id: "expected_date",
-      header: "Expected",
-      size: 110,
-      accessorFn: (r) =>
-        r.po.expected_date ? new Date(r.po.expected_date).getTime() : 0,
+      ...dateCol<PoLineRow>("expected_date", "Expected", (r) => r.po.expected_date, { size: 110 }),
+      // Overdue is worth seeing at a glance, so this one keeps a custom cell
+      // rather than the factory's.
       cell: (r) => {
-        if (!r.po.expected_date) return "-"
+        if (!r.po.expected_date) return <span className="text-muted-foreground">—</span>
         const date = new Date(r.po.expected_date)
         const isOverdue =
           date < new Date() &&
           !["RECEIVED", "CLOSED", "CANCELLED"].includes(r.po.status)
         return (
-          <span className={isOverdue ? "text-destructive font-medium" : ""}>
+          <span className={`tabular-nums ${isOverdue ? "text-destructive font-medium" : ""}`}>
             {date.toLocaleDateString()}
           </span>
         )
@@ -1155,9 +1222,9 @@ export default function PurchaseOrdersPage() {
       accessorFn: (r) => r.line?.line_number ?? 0,
       cell: (r) =>
         r.line ? (
-          <span className="font-mono text-sm">{r.line.line_number}</span>
+          <span className="font-mono tabular-nums">{r.line.line_number}</span>
         ) : (
-          <span className="text-muted-foreground text-xs">—</span>
+          <span className="text-muted-foreground">—</span>
         ),
     },
     {
@@ -1168,11 +1235,12 @@ export default function PurchaseOrdersPage() {
       filterAccessor: (r) => r.line?.material?.internal_part_number || "—",
       cell: (r) =>
         r.line?.material?.internal_part_number ? (
-          <span className="font-mono text-sm">
+          <span className="font-mono font-medium">
             {r.line.material.internal_part_number}
           </span>
         ) : (
-          <span className="text-muted-foreground text-xs italic">no lines</span>
+          // A PO with no lines still gets a row, and this is the cell that says so.
+          <span className="text-muted-foreground italic">no lines</span>
         ),
     },
     {
@@ -1183,24 +1251,18 @@ export default function PurchaseOrdersPage() {
         r.line?.manufacturer || r.line?.material?.manufacturer || "",
       filterAccessor: (r) =>
         r.line?.manufacturer || r.line?.material?.manufacturer || "-",
-      cell: (r) => {
-        if (!r.line) return "-"
-        if (editUnlocked && lineEditAllowed(r.po.status)) {
-          return (
-            <InlineTextCell
-              lineId={r.line.id}
-              field="manufacturer"
-              initial={r.line.manufacturer || r.line.material?.manufacturer || ""}
-              onSaved={refetch}
-            />
-          )
-        }
-        return (
-          <span className="text-sm">
-            {r.line.manufacturer || r.line.material?.manufacturer || "-"}
-          </span>
-        )
-      },
+      cell: (r) =>
+        r.line ? (
+          <span>{r.line.manufacturer || r.line.material?.manufacturer || "—"}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+      // Not editable, deliberately. The inline editor this replaced PATCHed
+      // `manufacturer` to /purchase-orders/lines/:id, but UpdateLineDto
+      // whitelists only quantity_ordered, unit_cost and notes — and the app
+      // runs ValidationPipe with forbidNonWhitelisted, so every one of those
+      // saves was a 400. Making the cell typeable would just reproduce that;
+      // it needs the DTO widened first.
     },
     {
       id: "manufacturer_pn",
@@ -1208,24 +1270,15 @@ export default function PurchaseOrdersPage() {
       size: 150,
       accessorFn: (r) =>
         r.line?.manufacturer_pn || r.line?.material?.manufacturer_pn || "",
-      cell: (r) => {
-        if (!r.line) return "-"
-        if (editUnlocked && lineEditAllowed(r.po.status)) {
-          return (
-            <InlineTextCell
-              lineId={r.line.id}
-              field="manufacturer_pn"
-              initial={r.line.manufacturer_pn || r.line.material?.manufacturer_pn || ""}
-              onSaved={refetch}
-            />
-          )
-        }
-        return (
-          <span className="font-mono text-sm">
-            {r.line.manufacturer_pn || r.line.material?.manufacturer_pn || "-"}
+      cell: (r) =>
+        r.line ? (
+          <span className="font-mono">
+            {r.line.manufacturer_pn || r.line.material?.manufacturer_pn || "—"}
           </span>
-        )
-      },
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+      // Read-only for the same reason as MFR above.
     },
     {
       id: "qty_ordered",
@@ -1234,25 +1287,24 @@ export default function PurchaseOrdersPage() {
       align: "right",
       accessorFn: (r) =>
         r.line ? parseFloat(String(r.line.quantity_ordered)) : 0,
-      cell: (r) => {
-        if (!r.line) return "-"
-        if (editUnlocked && lineEditAllowed(r.po.status)) {
-          return (
-            <InlineNumberCell
-              lineId={r.line.id}
-              field="quantity_ordered"
-              initial={parseFloat(String(r.line.quantity_ordered))}
-              formatter={(n) => n.toLocaleString()}
-              step="any"
-              onSaved={refetch}
-            />
-          )
-        }
-        return (
-          <span className="font-mono">
+      // Raw on the clipboard so Excel receives a number, not "1,250".
+      copyValue: (r) => (r.line ? String(parseFloat(String(r.line.quantity_ordered))) : ""),
+      cell: (r) =>
+        r.line ? (
+          <span className="font-mono tabular-nums">
             {parseFloat(String(r.line.quantity_ordered)).toLocaleString()}
           </span>
-        )
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+      // Bounds mirror UpdateLineDto's @Min(0.0001) and the column's
+      // decimal(12,4) — note the minimum is not zero, so a 0 is refused in the
+      // cell rather than coming back as a 400.
+      edit: {
+        field: "quantity_ordered",
+        getValue: (r) => (r.line ? parseFloat(String(r.line.quantity_ordered)) : null),
+        isEditable: lineIsEditable,
+        editor: { kind: "number", min: 0.0001, max: 99999999.9999, decimals: 4 },
       },
     },
     {
@@ -1278,26 +1330,28 @@ export default function PurchaseOrdersPage() {
       align: "right",
       accessorFn: (r) =>
         r.line?.unit_cost != null ? parseFloat(String(r.line.unit_cost)) : 0,
+      // The currency is the PO's, not the cell's — it stays on screen but off
+      // the clipboard, or every pasted cost lands in Excel as text.
+      copyValue: (r) =>
+        r.line?.unit_cost != null ? String(parseFloat(String(r.line.unit_cost))) : "",
       cell: (r) => {
-        if (!r.line) return "-"
-        if (editUnlocked && lineEditAllowed(r.po.status)) {
-          return (
-            <InlineNumberCell
-              lineId={r.line.id}
-              field="unit_cost"
-              initial={r.line.unit_cost != null ? parseFloat(String(r.line.unit_cost)) : null}
-              formatter={(n) => `${r.po.currency} ${n.toFixed(4)}`}
-              step="0.0001"
-              onSaved={refetch}
-            />
-          )
+        if (!r.line || r.line.unit_cost == null) {
+          return <span className="text-muted-foreground">—</span>
         }
-        if (r.line.unit_cost == null) return "-"
         return (
-          <span className="font-mono text-sm">
+          <span className="font-mono tabular-nums">
             {r.po.currency} {parseFloat(String(r.line.unit_cost)).toFixed(4)}
           </span>
         )
+      },
+      // decimal(12,6) in the column, though the cell above still displays four
+      // places — as it did before this grid became a sheet.
+      edit: {
+        field: "unit_cost",
+        getValue: (r) =>
+          r.line?.unit_cost != null ? parseFloat(String(r.line.unit_cost)) : null,
+        isEditable: lineIsEditable,
+        editor: { kind: "number", min: 0, max: 999999.999999, decimals: 6 },
       },
     },
     {
@@ -1312,13 +1366,22 @@ export default function PurchaseOrdersPage() {
           parseFloat(String(r.line.quantity_ordered))
         )
       },
+      copyValue: (r) => {
+        if (!r.line || r.line.unit_cost == null) return ""
+        return (
+          parseFloat(String(r.line.unit_cost)) *
+          parseFloat(String(r.line.quantity_ordered))
+        ).toFixed(2)
+      },
       cell: (r) => {
-        if (!r.line || r.line.unit_cost == null) return "-"
+        if (!r.line || r.line.unit_cost == null) {
+          return <span className="text-muted-foreground">—</span>
+        }
         const total =
           parseFloat(String(r.line.unit_cost)) *
           parseFloat(String(r.line.quantity_ordered))
         return (
-          <span className="font-mono text-sm">
+          <span className="font-mono tabular-nums">
             {r.po.currency} {total.toFixed(2)}
           </span>
         )
@@ -1331,17 +1394,19 @@ export default function PurchaseOrdersPage() {
       sortable: false,
       filterable: false,
       accessorFn: () => "",
+      copyValue: () => "",
+      // Shrunk to fit the 26px sheet row.
       cell: (r) => (
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <Link href={`/purchase-orders/${r.po.id}`}>
-            <Button variant="ghost" size="icon" className="h-8 w-8" title="Open PO details">
-              <Eye className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="h-5 w-5" title="Open PO details">
+              <Eye className="h-3.5 w-3.5" />
             </Button>
           </Link>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
+              <Button variant="ghost" size="icon" className="h-5 w-5">
+                <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -1453,7 +1518,18 @@ export default function PurchaseOrdersPage() {
             data={flatLines}
             columns={columns}
             isLoading={isLoading}
-            rowClassName={(r) => statusRowTint[r.po.status]}
+            rowStripe={(r) => ({
+              color: statusStripe[r.po.status],
+              label: statusConfig[r.po.status].label,
+            })}
+            spreadsheet
+            spreadsheetOptions={{
+              editable: canEditTable && editUnlocked,
+              onCommit: commitLineEdits,
+              onAfterCommit: refetch,
+            }}
+            storageKey="po-lines"
+            getRowId={(r) => r.rowKey}
             searchPlaceholder="Search by PO #, supplier, IPN, MFR, or MPN..."
             searchFn={(r, q) =>
               r.po.po_number.toLowerCase().includes(q) ||
