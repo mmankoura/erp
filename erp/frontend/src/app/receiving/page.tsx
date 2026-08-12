@@ -11,8 +11,10 @@ import {
 } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
+import { partCols } from "@/components/grid/columns"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import {
   Dialog,
   DialogContent,
@@ -496,14 +498,18 @@ export default function ReceivingPage() {
   const { data: allLots, isLoading: lotsLoading } = useApi<ReceivingLogLot[]>("/inventory/lots")
 
   const receivingLogColumns: VirtualGridColumn<ReceivingLogLot>[] = [
-    { id: "date", header: "Date", size: 140, sortable: true, accessorFn: (l) => l.created_at, cell: (l) => <span className="text-sm tabular-nums">{new Date(l.created_at).toLocaleDateString()} {new Date(l.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span> },
+    { id: "date", header: "Date", size: 140, sortable: true, accessorFn: (l) => l.created_at, cell: (l) => <span className="tabular-nums">{new Date(l.created_at).toLocaleDateString()} {new Date(l.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span> },
     { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.uid, accessorFn: (l) => l.uid, cell: (l) => <span className="font-mono text-xs">{l.uid}</span> },
-    { id: "customer", header: "Customer", size: 130, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span className="text-sm">{l.material?.customer?.name || "\u2014"}</span> },
-    { id: "ipn", header: "IPN", size: 150, sortable: true, filterable: true, filterAccessor: (l) => l.material?.internal_part_number || "", accessorFn: (l) => l.material?.internal_part_number || "", cell: (l) => (<div><span className="font-medium text-sm">{l.material?.internal_part_number}</span>{l.material?.description && <p className="text-xs text-muted-foreground truncate">{l.material.description}</p>}</div>) },
-    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
-    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Badge variant="outline" className="text-xs">{l.package_type}</Badge> },
-    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-sm text-muted-foreground">{l.po_reference || "\u2014"}</span> },
-    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"} className="text-xs">{l.status}</Badge> },
+    { id: "customer", header: "Customer", size: 130, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span>{l.material?.customer?.name || "\u2014"}</span> },
+    ...partCols<ReceivingLogLot>({
+      ipn: (l) => l.material?.internal_part_number,
+      description: (l) => l.material?.description,
+      ipnSize: 150,
+    }),
+    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono tabular-nums">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Chip>{l.package_type}</Chip> },
+    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-muted-foreground">{l.po_reference || "\u2014"}</span> },
+    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Chip tone={l.status === "ACTIVE" ? "success" : l.status === "CONSUMED" ? "muted" : "warning"}>{l.status}</Chip> },
     { id: "location", header: "Location", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.location, accessorFn: (l) => l.location, cell: (l) => <span className="text-xs">{l.location}</span> },
   ]
 
@@ -972,6 +978,9 @@ export default function ReceivingPage() {
             l.status.toLowerCase().includes(q) ||
             l.package_type.toLowerCase().includes(q))
           }
+            spreadsheet
+            storageKey="receiving-log"
+            getRowId={(l) => l.id}
         />
       )}
     </div>

@@ -5,6 +5,7 @@ import { useApi, useMutation } from "@/hooks/use-api"
 import { RecentTransactionsGrid } from "@/components/recent-transactions-grid"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import type { CellEdit, CellCommitResult } from "@/components/grid/types"
+import { partCols } from "@/components/grid/columns"
 import {
   api,
   type InventoryStock,
@@ -16,6 +17,7 @@ import {
 import type { FilterGroup } from "@/components/relational-filter-builder"
 import { InventoryImportWizard } from "@/components/inventory-import-wizard"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import { Badge } from "@/components/ui/badge"
 import {
   Popover,
@@ -639,14 +641,21 @@ export default function InventoryPage() {
 
   // VirtualGrid columns for Stock Levels
   const stockVgColumns: VirtualGridColumn<InventoryStockWithId>[] = [
-    { id: "customer", header: "Customer", size: 140, sortable: true, filterable: true, filterAccessor: (s) => s.material?.customer?.name || "-", accessorFn: (s) => s.material?.customer?.name || "", cell: (s) => <span className="text-sm">{s.material?.customer?.name || "\u2014"}</span> },
-    { id: "material", header: "Material", size: 220, sortable: true, filterable: true, filterAccessor: (s) => s.material?.internal_part_number || "", accessorFn: (s) => s.material?.internal_part_number || "", cell: (s) => (<div><span className="font-medium text-sm">{s.material?.internal_part_number}</span>{s.material?.description && <p className="text-xs text-muted-foreground truncate">{s.material.description}</p>}</div>) },
-    { id: "resource_type", header: "Type", size: 80, sortable: true, filterable: true, filterAccessor: (s) => s.material?.resource_type || "-", accessorFn: (s) => s.material?.resource_type || "", cell: (s) => s.material?.resource_type ? <Badge variant="outline">{s.material.resource_type}</Badge> : <span className="text-muted-foreground">{"\u2014"}</span> },
-    { id: "on_hand", header: "On Hand", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_hand, cell: (s) => <span className="font-mono text-sm">{s.quantity_on_hand.toLocaleString()}</span> },
-    { id: "required", header: "Required", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_required, cell: (s) => <span className={`font-mono text-sm ${s.quantity_required > 0 ? "text-purple-600" : ""}`}>{s.quantity_required.toLocaleString()}</span> },
+    { id: "customer", header: "Customer", size: 140, sortable: true, filterable: true, filterAccessor: (s) => s.material?.customer?.name || "-", accessorFn: (s) => s.material?.customer?.name || "", cell: (s) => <span>{s.material?.customer?.name || "\u2014"}</span> },
+    // Two columns rather than one stacked cell: a fixed row height would clip
+    // the description, and split it also becomes sortable and hideable.
+    ...partCols<InventoryStockWithId>({
+      ipn: (s) => s.material?.internal_part_number,
+      description: (s) => s.material?.description,
+      ipnHeader: "Material",
+      ipnSize: 150,
+    }),
+    { id: "resource_type", header: "Type", size: 80, sortable: true, filterable: true, filterAccessor: (s) => s.material?.resource_type || "-", accessorFn: (s) => s.material?.resource_type || "", cell: (s) => s.material?.resource_type ? <Chip>{s.material.resource_type}</Chip> : <span className="text-muted-foreground">{"\u2014"}</span> },
+    { id: "on_hand", header: "On Hand", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_hand, cell: (s) => <span className="font-mono tabular-nums">{s.quantity_on_hand.toLocaleString()}</span> },
+    { id: "required", header: "Required", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_required, cell: (s) => <span className={`font-mono tabular-nums ${s.quantity_required > 0 ? "text-purple-600" : ""}`}>{s.quantity_required.toLocaleString()}</span> },
     { id: "allocated", header: "Allocated", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_allocated, cell: (s) => <AllocationPopover materialId={s.material_id} quantity={s.quantity_allocated} /> },
-    { id: "available", header: "Available", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_available, cell: (s) => <span className={`font-mono text-sm font-medium ${s.quantity_available <= 0 ? "text-red-600" : s.quantity_available < 10 ? "text-yellow-600" : "text-green-600"}`}>{s.quantity_available.toLocaleString()}</span> },
-    { id: "on_order", header: "On Order", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_order, cell: (s) => <span className={`font-mono text-sm ${s.quantity_on_order > 0 ? "text-blue-600" : ""}`}>{s.quantity_on_order.toLocaleString()}</span> },
+    { id: "available", header: "Available", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_available, cell: (s) => <span className={`font-mono tabular-nums font-medium ${s.quantity_available <= 0 ? "text-red-600" : s.quantity_available < 10 ? "text-yellow-600" : "text-green-600"}`}>{s.quantity_available.toLocaleString()}</span> },
+    { id: "on_order", header: "On Order", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_order, cell: (s) => <span className={`font-mono tabular-nums ${s.quantity_on_order > 0 ? "text-blue-600" : ""}`}>{s.quantity_on_order.toLocaleString()}</span> },
     { id: "actions", header: "", size: 120, sortable: false, filterable: false, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /></div>) },
   ]
 
@@ -763,15 +772,19 @@ export default function InventoryPage() {
   }, [lotsRaw])
 
   const receivingLogColumns: VirtualGridColumn<InventoryLotWithId>[] = [
-    { id: "date", header: "Date", size: 140, sortable: true, accessorFn: (l) => l.created_at, cell: (l) => <span className="text-sm tabular-nums">{new Date(l.created_at).toLocaleDateString()} {new Date(l.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span> },
+    { id: "date", header: "Date", size: 140, sortable: true, accessorFn: (l) => l.created_at, cell: (l) => <span className="tabular-nums">{new Date(l.created_at).toLocaleDateString()} {new Date(l.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span> },
     { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (l) => l.uid, accessorFn: (l) => l.uid, cell: (l) => <span className="font-mono text-xs">{l.uid}</span> },
-    { id: "customer", header: "Customer", size: 130, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span className="text-sm">{l.material?.customer?.name || "\u2014"}</span> },
-    { id: "ipn", header: "IPN", size: 150, sortable: true, filterable: true, filterAccessor: (l) => l.material?.internal_part_number || "", accessorFn: (l) => l.material?.internal_part_number || "", cell: (l) => (<div><span className="font-medium text-sm">{l.material?.internal_part_number}</span>{l.material?.description && <p className="text-xs text-muted-foreground truncate">{l.material.description}</p>}</div>) },
-    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
-    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Badge variant="outline" className="text-xs">{l.package_type}</Badge> },
-    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-sm text-muted-foreground">{l.po_reference || "\u2014"}</span> },
+    { id: "customer", header: "Customer", size: 130, sortable: true, filterable: true, filterAccessor: (l) => l.material?.customer?.name || "-", accessorFn: (l) => l.material?.customer?.name || "", cell: (l) => <span>{l.material?.customer?.name || "\u2014"}</span> },
+    ...partCols<InventoryLotWithId>({
+      ipn: (l) => l.material?.internal_part_number,
+      description: (l) => l.material?.description,
+      ipnSize: 150,
+    }),
+    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (l) => parseFloat(String(l.quantity)), cell: (l) => <span className="font-mono tabular-nums">{parseFloat(String(l.quantity)).toLocaleString()}</span> },
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.package_type, accessorFn: (l) => l.package_type, cell: (l) => <Chip>{l.package_type}</Chip> },
+    { id: "po_ref", header: "PO Ref", size: 120, sortable: true, filterable: true, filterAccessor: (l) => l.po_reference || "-", accessorFn: (l) => l.po_reference || "", cell: (l) => <span className="text-muted-foreground">{l.po_reference || "\u2014"}</span> },
     { id: "bin", header: "BIN", size: 110, sortable: true, filterable: true, filterAccessor: (l) => l.bin || "-", accessorFn: (l) => l.bin || "", cell: (l) => <BinCell lot={l} onSaved={refetchLots} /> },
-    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Badge variant={l.status === "ACTIVE" ? "default" : l.status === "CONSUMED" ? "secondary" : "destructive"} className="text-xs">{l.status}</Badge> },
+    { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Chip tone={l.status === "ACTIVE" ? "success" : l.status === "CONSUMED" ? "muted" : "warning"}>{l.status}</Chip> },
     { id: "location", header: "Stage", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.location, accessorFn: (l) => l.location, cell: (l) => <span className="text-xs">{l.location}</span> },
     {
       id: "actions", header: "", size: 60, sortable: false, filterable: false, accessorFn: () => "",
@@ -908,6 +921,9 @@ export default function InventoryPage() {
               stock.quantity_available.toString().includes(q) ||
               stock.quantity_on_order.toString().includes(q))
             }
+              spreadsheet
+              storageKey="inventory-stock-levels"
+              getRowId={(s) => s.id}
           />
         </TabsContent>
 
@@ -973,6 +989,9 @@ export default function InventoryPage() {
               l.package_type.toLowerCase().includes(q) ||
               l.location.toLowerCase().includes(q))
             }
+              spreadsheet
+              storageKey="inventory-receiving-log"
+              getRowId={(l) => l.id}
           />
         </TabsContent>
 
@@ -993,6 +1012,9 @@ export default function InventoryPage() {
               stock.material?.customer?.name?.toLowerCase().includes(q))
             }
             height={400}
+              spreadsheet
+              storageKey="inventory-low-stock"
+              getRowId={(s) => s.id}
           />
         </TabsContent>
       </Tabs>
