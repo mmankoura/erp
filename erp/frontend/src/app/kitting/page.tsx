@@ -13,6 +13,8 @@ import {
 } from "@/lib/api"
 import { DataTable, type Column } from "@/components/data-table"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
+import { textCol, monoCol, numCol } from "@/components/grid/columns"
+import { Chip, type ChipTone } from "@/components/grid/chip"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -728,58 +730,71 @@ function KittingDetail({
 
 // ==================== Kitting Items Table ====================
 
+/** A kitting line's verification state, as one value so the cell and the clipboard cannot disagree. */
+function kittingStatus(item: KittingItemWithStock): { label: string; tone: ChipTone } {
+  const verified = parseFloat(String(item.qty_verified))
+  const required = parseFloat(String(item.total_qty_required))
+  if (verified === 0) return { label: "Pending", tone: "neutral" }
+  if (verified >= required) return { label: "OK", tone: "success" }
+  if (item.is_short) return { label: "Short", tone: "warning" }
+  return { label: "Partial", tone: "info" }
+}
+
+/**
+ * The kitting sheet's three list-valued columns — pick instruction, location
+ * and scanned UIDs — are each 1..n entries that used to be stacked one per
+ * line, which is what kept this grid off a fixed row height.
+ *
+ * They collapse to a single line joined with "; ". Nothing is dropped: the
+ * whole list is the cell's tooltip and the whole list is what Ctrl+C writes, so
+ * the sheet shows what fits and the clipboard carries all of it. That is
+ * strictly more than the Location column used to give, which truncated to the
+ * first three and said "+N more".
+ */
+function ListCell({ entries }: { entries: string[] }) {
+  if (!entries.length) return <span className="text-muted-foreground">—</span>
+  const joined = entries.join("; ")
+  return (
+    <span className="font-mono" title={entries.join("\n")}>
+      {joined}
+    </span>
+  )
+}
+
 function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
+  const locationEntries = (item: KittingItemWithStock) =>
+    (item.uid_locations ?? []).map(
+      (u) => `${u.location} (${parseFloat(String(u.quantity)).toLocaleString()})`
+    )
+  const scanEntries = (item: KittingItemWithStock) =>
+    (item.scans ?? []).map(
+      (s) => `${s.uid_code} (${parseFloat(String(s.quantity)).toLocaleString()})`
+    )
+  const alternateEntries = (item: KittingItemWithStock) =>
+    !item.use_alternate || !item.alternates?.length
+      ? []
+      : item.alternates.map(
+          (alt) => `USE: ${alt.ipn} (${alt.use_quantity} of ${alt.quantity_on_hand} avail)`
+        )
+
   const columns: VirtualGridColumn<KittingItemWithStock>[] = [
-    {
-      id: "ipn",
-      header: "IPN",
+    monoCol("ipn", "IPN", (item) => item.material?.internal_part_number, {
       size: 140,
-      accessorFn: (item) => item.material?.internal_part_number ?? "",
       cell: (item) => (
-        <span className="font-mono text-sm">{item.material?.internal_part_number}</span>
+        <span className="font-mono font-medium">{item.material?.internal_part_number}</span>
       ),
-    },
-    {
-      id: "mpn",
-      header: "MPN",
-      size: 150,
-      accessorFn: (item) => item.material?.manufacturer_pn ?? "",
-      cell: (item) => (
-        <span className="font-mono text-sm">{item.material?.manufacturer_pn ?? "-"}</span>
-      ),
-    },
-    {
-      id: "description",
-      header: "Description",
+    }),
+    monoCol("mpn", "MPN", (item) => item.material?.manufacturer_pn, { size: 150 }),
+    textCol("description", "Description", (item) => item.material?.description, {
       size: 220,
       sortable: false,
-      accessorFn: (item) => item.material?.description ?? "",
-      cell: (item) => (
-        <span className="text-sm truncate max-w-[220px] block">
-          {item.material?.description ?? "-"}
-        </span>
-      ),
-    },
-    {
-      id: "qty_required",
-      header: "Qty Required",
+    }),
+    numCol("qty_required", "Qty Required", (item) => parseFloat(String(item.total_qty_required)), {
       size: 110,
-      align: "right",
-      accessorFn: (item) => parseFloat(String(item.total_qty_required)),
-      cell: (item) => (
-        <span className="font-medium">
-          {parseFloat(String(item.total_qty_required)).toLocaleString()}
-        </span>
-      ),
-    },
-    {
-      id: "qty_on_hand",
-      header: "On Hand",
+    }),
+    numCol("qty_on_hand", "On Hand", (item) => parseFloat(String(item.quantity_on_hand)), {
       size: 100,
-      align: "right",
-      accessorFn: (item) => item.quantity_on_hand,
-      cell: (item) => parseFloat(String(item.quantity_on_hand)).toLocaleString(),
-    },
+    }),
     {
       id: "alternate",
       header: "Pick Instruction",
@@ -787,21 +802,16 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
       sortable: false,
       filterable: false,
       accessorFn: (item) => (item.use_alternate ? 1 : 0),
+      copyValue: (item) => alternateEntries(item).join("; "),
+      // The amber is the signal that matters here: this line is not picked as
+      // the BOM says. It survives the row-height cut as a chip.
       cell: (item) => {
-        if (!item.use_alternate || !item.alternates?.length) return <span className="text-muted-foreground">—</span>
+        const entries = alternateEntries(item)
+        if (!entries.length) return <span className="text-muted-foreground">—</span>
         return (
-          <div className="space-y-0.5">
-            {item.alternates.map((alt) => (
-              <div key={alt.material_id} className="text-sm">
-                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
-                  USE: {alt.ipn}
-                </Badge>
-                <span className="text-muted-foreground ml-1 text-xs">
-                  ({alt.use_quantity} of {alt.quantity_on_hand} avail)
-                </span>
-              </div>
-            ))}
-          </div>
+          <Chip tone="warning" title={entries.join("\n")}>
+            {entries.join("; ")}
+          </Chip>
         )
       },
     },
@@ -812,31 +822,25 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
       sortable: false,
       filterable: false,
       accessorFn: (item) => item.uid_locations?.[0]?.location ?? "",
-      cell: (item) => (
-        <div className="text-xs space-y-0.5">
-          {item.uid_locations?.slice(0, 3).map((u, i) => (
-            <div key={i} className="font-mono">
-              {u.location} ({parseFloat(String(u.quantity)).toLocaleString()})
-            </div>
-          ))}
-          {(item.uid_locations?.length ?? 0) > 3 && (
-            <div className="text-muted-foreground">+{item.uid_locations.length - 3} more</div>
-          )}
-        </div>
-      ),
+      copyValue: (item) => locationEntries(item).join("; "),
+      cell: (item) => <ListCell entries={locationEntries(item)} />,
     },
     {
-      id: "qty_verified",
-      header: "Verified",
-      size: 100,
-      align: "right",
-      accessorFn: (item) => parseFloat(String(item.qty_verified)),
+      ...numCol<KittingItemWithStock>(
+        "qty_verified",
+        "Verified",
+        (item) => parseFloat(String(item.qty_verified)),
+        { size: 100 }
+      ),
+      // Fully-verified lines are the ones you stop looking at, so they get the
+      // colour rather than a separate column.
       cell: (item) => {
         const verified = parseFloat(String(item.qty_verified))
         const required = parseFloat(String(item.total_qty_required))
-        const isFull = verified >= required
         return (
-          <span className={isFull ? "text-green-600 font-medium" : ""}>
+          <span
+            className={`font-mono tabular-nums ${verified >= required ? "text-green-600 font-medium" : ""}`}
+          >
             {verified.toLocaleString()}
           </span>
         )
@@ -849,13 +853,10 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
       sortable: false,
       filterable: false,
       accessorFn: (item) => parseFloat(String(item.qty_verified)),
+      copyValue: (item) => kittingStatus(item).label,
       cell: (item) => {
-        const verified = parseFloat(String(item.qty_verified))
-        const required = parseFloat(String(item.total_qty_required))
-        if (verified === 0) return <Badge variant="outline">Pending</Badge>
-        if (verified >= required) return <Badge className="bg-green-100 text-green-800 border-0">OK</Badge>
-        if (item.is_short) return <Badge className="bg-amber-100 text-amber-800 border-0">Short</Badge>
-        return <Badge className="bg-blue-100 text-blue-800 border-0">Partial</Badge>
+        const { label, tone } = kittingStatus(item)
+        return <Chip tone={tone}>{label}</Chip>
       },
     },
     {
@@ -865,15 +866,8 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
       sortable: false,
       filterable: false,
       accessorFn: (item) => item.scans?.length ?? 0,
-      cell: (item) => (
-        <div className="text-xs space-y-0.5">
-          {item.scans?.map((s) => (
-            <div key={s.id} className="font-mono">
-              {s.uid_code} ({parseFloat(String(s.quantity)).toLocaleString()})
-            </div>
-          ))}
-        </div>
-      ),
+      copyValue: (item) => scanEntries(item).join("; "),
+      cell: (item) => <ListCell entries={scanEntries(item)} />,
     },
   ]
 
@@ -887,6 +881,9 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
         (item.material?.manufacturer_pn ?? "").toLowerCase().includes(q) ||
         (item.material?.description ?? "").toLowerCase().includes(q)
       }
+      spreadsheet
+      storageKey="kitting-items"
+      getRowId={(item) => item.id}
     />
   )
 }

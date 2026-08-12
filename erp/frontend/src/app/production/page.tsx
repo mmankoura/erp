@@ -11,6 +11,8 @@ import {
   type ProductionLog,
 } from "@/lib/api"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
+import { numCol, dateCol } from "@/components/grid/columns"
+import { Chip } from "@/components/grid/chip"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -59,18 +61,14 @@ const stageConfig: Record<ProductionStage, { label: string; icon: React.ElementT
 
 const stageOrder: ProductionStage[] = ["NOT_STARTED", "KITTING", "SMT", "TH", "COMPLETED", "SHIPPED"]
 
-function StageBadge({ stage, quantity }: { stage: ProductionStage; quantity: number }) {
-  const config = stageConfig[stage]
-  const Icon = config.icon
-
-  if (quantity === 0) return null
-
-  return (
-    <Badge variant="outline" className={`${config.color} border-0 gap-1`}>
-      <Icon className="h-3 w-3" />
-      {quantity}
-    </Badge>
-  )
+/** Where each stage's quantity lives on a WIP row, so the stage columns can be generated from `stageOrder` rather than written out six times. */
+const stageQuantity: Record<ProductionStage, (row: WipSummary) => number> = {
+  NOT_STARTED: (row) => row.quantity_not_started,
+  KITTING: (row) => row.quantity_in_kitting,
+  SMT: (row) => row.quantity_in_smt,
+  TH: (row) => row.quantity_in_th,
+  COMPLETED: (row) => row.quantity_completed,
+  SHIPPED: (row) => row.quantity_shipped,
 }
 
 function StageCard({ summary, onClick }: { summary: StageSummary; onClick: () => void }) {
@@ -248,15 +246,10 @@ export default function ProductionPage() {
       filterAccessor: (row) => row.product_name,
       cell: (row) => row.product_name,
     },
-    {
-      id: "total_quantity",
-      header: "Total Qty",
+    numCol("total_quantity", "Total Qty", (row) => row.total_quantity, {
       size: 90,
-      align: "right",
-      sortable: true,
-      accessorFn: (row) => row.total_quantity,
-      cell: (row) => row.total_quantity.toLocaleString(),
-    },
+      decimals: 0,
+    }),
     {
       id: "status",
       header: "Status",
@@ -265,42 +258,38 @@ export default function ProductionPage() {
       filterable: true,
       accessorFn: (row) => row.status,
       filterAccessor: (row) => row.status.replace("_", " "),
-      cell: (row) => (
-        <Badge variant="outline" className="text-xs">
-          {row.status.replace("_", " ")}
-        </Badge>
-      ),
+      copyValue: (row) => row.status.replace("_", " "),
+      cell: (row) => <Chip>{row.status.replace("_", " ")}</Chip>,
     },
+    // The six stages were one 300px cell of wrapping badges, which a fixed row
+    // height clips. As six columns each one sorts, filters and copies on its
+    // own — "which orders have anything in SMT" is a click rather than a read —
+    // and Excel can sum a stage down the column. The grid remembers hidden
+    // columns, so the stages you don't watch can be turned off once.
+    ...stageOrder.map((stage) =>
+      numCol<WipSummary>(stage.toLowerCase(), stageConfig[stage].label, stageQuantity[stage], {
+        size: 90,
+        decimals: 0,
+        // Zero is the common case here; muting it keeps the occupied stages
+        // legible while the number stays sortable and copyable.
+        cell: (row) => {
+          const quantity = stageQuantity[stage](row)
+          return (
+            <span className={`font-mono tabular-nums ${quantity === 0 ? "text-muted-foreground/40" : ""}`}>
+              {quantity.toLocaleString()}
+            </span>
+          )
+        },
+      })
+    ),
     {
-      id: "stages",
-      header: "Production Stages",
-      size: 300,
-      accessorFn: (row) =>
-        `${row.quantity_not_started}|${row.quantity_in_kitting}|${row.quantity_in_smt}|${row.quantity_in_th}|${row.quantity_completed}|${row.quantity_shipped}`,
-      cell: (row) => (
-        <div className="flex flex-wrap gap-1">
-          <StageBadge stage="NOT_STARTED" quantity={row.quantity_not_started} />
-          <StageBadge stage="KITTING" quantity={row.quantity_in_kitting} />
-          <StageBadge stage="SMT" quantity={row.quantity_in_smt} />
-          <StageBadge stage="TH" quantity={row.quantity_in_th} />
-          <StageBadge stage="COMPLETED" quantity={row.quantity_completed} />
-          <StageBadge stage="SHIPPED" quantity={row.quantity_shipped} />
-        </div>
-      ),
-    },
-    {
-      id: "due_date",
-      header: "Due Date",
-      size: 120,
-      sortable: true,
-      filterable: true,
-      accessorFn: (row) => new Date(row.due_date).getTime(),
-      filterAccessor: (row) => new Date(row.due_date).toLocaleDateString(),
+      ...dateCol<WipSummary>("due_date", "Due Date", (row) => row.due_date, { size: 120 }),
+      // Keeps a custom cell so overdue still reads at a glance.
       cell: (row) => {
         const dueDate = new Date(row.due_date)
         const isOverdue = dueDate < new Date()
         return (
-          <span className={isOverdue ? "text-red-600 font-medium" : ""}>
+          <span className={`tabular-nums ${isOverdue ? "text-red-600 font-medium" : ""}`}>
             {dueDate.toLocaleDateString()}
           </span>
         )
@@ -308,64 +297,73 @@ export default function ProductionPage() {
     },
     {
       id: "actions",
-      header: "Actions",
-      size: 240,
+      header: "",
+      size: 100,
       sortable: false,
       filterable: false,
       accessorFn: () => "",
+      copyValue: () => "",
+      // Start / Move / Ship lose their text labels: three labelled buttons need
+      // 240px and a 40px row. The icons were already there, and each keeps the
+      // label as its tooltip.
       cell: (row) => (
-        <div className="flex gap-1">
+        <div className="flex items-center gap-0.5">
           {row.quantity_not_started > 0 && (
             <Button
-              size="sm"
-              variant="outline"
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5"
+              title="Start production"
               onClick={(e) => {
                 e.preventDefault()
                 setSelectedOrder(row.order_id)
                 setStartDialogOpen(true)
               }}
             >
-              <Play className="h-3 w-3 mr-1" />
-              Start
+              <Play className="h-3.5 w-3.5" />
             </Button>
           )}
           {(row.quantity_in_kitting > 0 || row.quantity_in_smt > 0 || row.quantity_in_th > 0) && (
             <Button
-              size="sm"
-              variant="outline"
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5"
+              title="Move to the next stage"
               onClick={(e) => {
                 e.preventDefault()
                 setSelectedOrder(row.order_id)
                 setMoveDialogOpen(true)
               }}
             >
-              <ArrowRight className="h-3 w-3 mr-1" />
-              Move
+              <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           )}
           {row.quantity_completed > 0 && (
             <Button
-              size="sm"
-              variant="outline"
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5"
+              title="Ship"
               onClick={(e) => {
                 e.preventDefault()
                 setSelectedOrder(row.order_id)
                 setShipDialogOpen(true)
               }}
             >
-              <Truck className="h-3 w-3 mr-1" />
-              Ship
+              <Truck className="h-3.5 w-3.5" />
             </Button>
           )}
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
+            className="h-5 w-5"
+            title="Open this order's WIP detail"
             onClick={(e) => {
               e.preventDefault()
               setSelectedOrder(row.order_id)
             }}
           >
-            <ChevronRight className="h-3 w-3" />
+            <ChevronRight className="h-3.5 w-3.5" />
           </Button>
         </div>
       ),
@@ -438,6 +436,10 @@ export default function ProductionPage() {
               row.product_name.toLowerCase().includes(q) ||
               row.status.toLowerCase().includes(q)
             }
+            spreadsheet
+            storageKey="production-wip"
+            getRowId={(row) => row.order_id}
+            onRowActivate={(row) => setSelectedOrder(row.order_id)}
           />
         </TabsContent>
 

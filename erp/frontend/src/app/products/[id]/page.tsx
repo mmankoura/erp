@@ -86,6 +86,7 @@ import { useParams } from "next/navigation"
 import { BomImportWizard } from "@/components/bom-import-wizard"
 import { useAuth, UserRole } from "@/contexts/auth-context"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
+import { textCol, monoCol, numCol } from "@/components/grid/columns"
 
 const resourceTypeLabels: Record<ResourceType, string> = {
   SMT: "SMT",
@@ -250,102 +251,86 @@ export default function ProductDetailPage() {
       return item.alternate_ipn ?? ""
     }
 
+    // This grid wrapped its long cells rather than clipping them, which is what
+    // kept it off a fixed row height. It now clips like the rest of the sheets:
+    // every column that can overflow carries the full value as its tooltip, and
+    // Ctrl+C copies the whole thing regardless of what fits on screen. Ref Des
+    // is the column this matters most for — a part with 39 designators is one
+    // line here and a full list on hover.
     const cols: VirtualGridColumn<BomItem>[] = [
-      {
-        id: "line_number",
-        header: "Line",
+      numCol("line_number", "Line", (item) => item.line_number ?? null, {
         size: 70,
-        accessorFn: (item) => item.line_number ?? 0,
-        cell: (item) => <span className="font-mono text-sm">{item.line_number || "-"}</span>,
-      },
-      {
-        id: "ipn",
-        header: "Internal P/N",
+        decimals: 0,
+      }),
+      monoCol("ipn", "Internal P/N", (item) => item.material?.internal_part_number, {
         size: 140,
-        accessorFn: (item) => item.material?.internal_part_number || "",
-        cell: (item) => <span className="font-medium whitespace-normal break-words">{item.material?.internal_part_number || "-"}</span>,
-      },
+        cell: (item) =>
+          item.material?.internal_part_number ? (
+            <span className="font-medium">{item.material.internal_part_number}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      }),
       {
         id: "alternate_ipn",
         header: "Alternates",
         size: 180,
         accessorFn: (item) => altText(item),
         filterAccessor: (item) => altText(item) || "—",
+        copyValue: (item) => altText(item),
+        // Was one row per alternate; now one comma-separated line, which is
+        // what `altText` already produced for sorting and filtering.
         cell: (item) => {
-          const alts = item.alternates ?? []
-          if (alts.length === 0 && !item.alternate_ipn) return <span className="text-muted-foreground">—</span>
-          if (alts.length > 0) {
-            return (
-              <div className="space-y-0.5">
-                {alts.map((alt) => (
-                  <div key={alt.id} className="text-sm">
-                    <span className="font-medium">{alt.material?.internal_part_number ?? alt.material_id}</span>
-                  </div>
-                ))}
-              </div>
-            )
-          }
-          return <span className="text-sm">{item.alternate_ipn}</span>
-        },
-      },
-      {
-        id: "manufacturer",
-        header: "Manufacturer",
-        size: 140,
-        accessorFn: (item) => item.material?.manufacturer || "",
-        filterAccessor: (item) => item.material?.manufacturer || "-",
-        cell: (item) => <span className="text-sm whitespace-normal break-words">{item.material?.manufacturer || "-"}</span>,
-      },
-      {
-        id: "manufacturer_pn",
-        header: "Manufacturer P/N",
-        size: 150,
-        accessorFn: (item) => item.material?.manufacturer_pn || "",
-        cell: (item) => <span className="text-sm whitespace-normal break-words">{item.material?.manufacturer_pn || "-"}</span>,
-      },
-      {
-        id: "quantity_required",
-        header: "Qty Per",
-        size: 90,
-        align: "right",
-        accessorFn: (item) => item.quantity_required,
-        cell: (item) => <span className="font-mono">{item.quantity_required}</span>,
-      },
-      {
-        id: "resource_type",
-        header: "Type",
-        size: 100,
-        accessorFn: (item) => item.material?.resource_type || "",
-        filterAccessor: (item) => {
-          const rt = item.material?.resource_type
-          return rt ? resourceTypeLabels[rt] || rt : "-"
-        },
-        cell: (item) => {
-          const rt = item.material?.resource_type
-          return (
-            <span className="text-sm">
-              {rt ? resourceTypeLabels[rt] || rt : "-"}
+          const text = altText(item)
+          return text ? (
+            <span className="font-medium" title={text}>
+              {text}
             </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
           )
         },
       },
+      textCol("manufacturer", "Manufacturer", (item) => item.material?.manufacturer, {
+        size: 140,
+      }),
+      monoCol("manufacturer_pn", "Manufacturer P/N", (item) => item.material?.manufacturer_pn, {
+        size: 150,
+      }),
+      numCol("quantity_required", "Qty Per", (item) => item.quantity_required, { size: 90 }),
+      textCol(
+        "resource_type",
+        "Type",
+        (item) => {
+          const rt = item.material?.resource_type
+          return rt ? resourceTypeLabels[rt] || rt : null
+        },
+        { size: 100 }
+      ),
       {
-        id: "reference_designators",
-        header: "Ref Des",
-        size: 220,
-        accessorFn: (item) => item.reference_designators || "",
-        cell: (item) => (
-          <span className="text-sm font-mono whitespace-normal break-words" title={item.reference_designators || ""}>
-            {item.reference_designators || "-"}
-          </span>
+        ...textCol<BomItem>(
+          "reference_designators",
+          "Ref Des",
+          (item) => item.reference_designators,
+          { size: 220 }
         ),
+        cell: (item) =>
+          item.reference_designators ? (
+            <span className="font-mono" title={item.reference_designators}>
+              {item.reference_designators}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
       },
       {
-        id: "notes",
-        header: "Notes",
-        size: 160,
-        accessorFn: (item) => item.notes || "",
-        cell: (item) => <span className="text-sm whitespace-normal break-words">{item.notes || "-"}</span>,
+        ...textCol<BomItem>("notes", "Notes", (item) => item.notes, { size: 160 }),
+        cell: (item) =>
+          item.notes ? (
+            <span title={item.notes}>{item.notes}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
       },
     ]
 
@@ -357,21 +342,23 @@ export default function ProductDetailPage() {
         sortable: false,
         filterable: false,
         accessorFn: () => "",
+        copyValue: () => "",
+        // Shrunk to fit the 26px sheet row.
         cell: (item) => (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-5 w-5"
               onClick={() => setEditingItem(item)}
               title="Edit item"
             >
-              <Pencil className="h-4 w-4" />
+              <Pencil className="h-3.5 w-3.5" />
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                  <Trash2 className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive">
+                  <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -779,6 +766,10 @@ export default function ProductDetailPage() {
                 const notes = item.notes?.toLowerCase() || ""
                 return ipn.includes(q) || altIpn.includes(q) || altList.includes(q) || refDes.includes(q) || mfr.includes(q) || mpn.includes(q) || notes.includes(q)
               }}
+              spreadsheet
+              bare
+              storageKey="bom-items"
+              getRowId={(item) => item.id}
             />
           </CardContent>
         </Card>

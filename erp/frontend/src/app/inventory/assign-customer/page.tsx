@@ -5,6 +5,7 @@ import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type InventoryLot, type Customer } from "@/lib/api"
 import { useAuth, UserRole } from "@/contexts/auth-context"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
+import { textCol, monoCol, numCol, dateCol } from "@/components/grid/columns"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -57,7 +58,8 @@ function AssignCustomerCell({
 
   return (
     <Select value={value} onValueChange={handleChange} disabled={saving}>
-      <SelectTrigger className="h-8 text-xs">
+      {/* Sized to sit inside the 26px spreadsheet row. */}
+      <SelectTrigger className="h-6 text-xs">
         <SelectValue placeholder="Select customer..." />
       </SelectTrigger>
       <SelectContent>
@@ -263,6 +265,9 @@ export default function AssignCustomerPage() {
       sortable: false,
       filterable: false,
       accessorFn: () => "",
+      // A tick box has no text form; copying a block that spans it should not
+      // emit "false" into Excel.
+      copyValue: () => "",
       cell: (l) => (
         <span
           onMouseDown={(e) => { shiftHeldRef.current = e.shiftKey }}
@@ -280,72 +285,24 @@ export default function AssignCustomerPage() {
         </span>
       ),
     },
-    {
-      id: "uid",
-      header: "UID",
+    monoCol("uid", "UID", (l) => l.uid, {
       size: 160,
-      sortable: true,
-      filterable: true,
-      accessorFn: (l) => l.uid,
-      filterAccessor: (l) => l.uid,
-      cell: (l) => <span className="font-mono font-medium text-sm">{l.uid}</span>,
-    },
-    {
-      id: "ipn",
-      header: "IPN",
+      cell: (l) => <span className="font-mono font-medium">{l.uid}</span>,
+    }),
+    monoCol("ipn", "IPN", (l) => l.material?.internal_part_number, {
       size: 160,
-      sortable: true,
-      filterable: true,
-      accessorFn: (l) => l.material?.internal_part_number || "",
-      filterAccessor: (l) => l.material?.internal_part_number || "—",
-      cell: (l) => <span className="font-medium text-sm">{l.material?.internal_part_number || "—"}</span>,
-    },
-    {
-      id: "manufacturer",
-      header: "Manufacturer",
-      size: 140,
-      sortable: true,
-      filterable: true,
-      accessorFn: (l) => l.material?.manufacturer || "",
-      filterAccessor: (l) => l.material?.manufacturer || "—",
-      cell: (l) => <span className="text-sm">{l.material?.manufacturer || "—"}</span>,
-    },
-    {
-      id: "mpn",
-      header: "MPN",
-      size: 160,
-      sortable: true,
-      filterable: true,
-      accessorFn: (l) => l.material?.manufacturer_pn || "",
-      cell: (l) => <span className="text-sm">{l.material?.manufacturer_pn || "—"}</span>,
-    },
-    {
-      id: "quantity",
-      header: "Qty",
-      size: 90,
-      align: "right",
-      sortable: true,
-      accessorFn: (l) => parseFloat(String(l.quantity)),
-      cell: (l) => <span className="font-mono text-sm">{parseFloat(String(l.quantity)).toLocaleString()}</span>,
-    },
-    {
-      id: "bin",
-      header: "BIN",
-      size: 110,
-      sortable: true,
-      filterable: true,
-      accessorFn: (l) => l.bin || "",
-      filterAccessor: (l) => l.bin || "—",
-      cell: (l) => <span className="font-mono text-xs">{l.bin || "—"}</span>,
-    },
-    {
-      id: "received",
-      header: "Received",
-      size: 110,
-      sortable: true,
-      accessorFn: (l) => l.received_date || "",
-      cell: (l) => <span className="text-xs text-muted-foreground">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "—"}</span>,
-    },
+      cell: (l) =>
+        l.material?.internal_part_number ? (
+          <span className="font-medium">{l.material.internal_part_number}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    }),
+    textCol("manufacturer", "Manufacturer", (l) => l.material?.manufacturer, { size: 140 }),
+    textCol("mpn", "MPN", (l) => l.material?.manufacturer_pn, { size: 160 }),
+    numCol("quantity", "Qty", (l) => parseFloat(String(l.quantity)), { size: 90 }),
+    monoCol("bin", "BIN", (l) => l.bin, { size: 110 }),
+    dateCol("received", "Received", (l) => l.received_date, { size: 110 }),
     {
       id: "assign",
       header: "Quick assign",
@@ -353,6 +310,8 @@ export default function AssignCustomerPage() {
       sortable: false,
       filterable: false,
       accessorFn: () => "",
+      // Nothing to put on the clipboard — the cell is a control, not a value.
+      copyValue: () => "",
       cell: (l) => (
         <AssignCustomerCell lot={l} customers={customers ?? []} onSaved={refetch} />
       ),
@@ -457,6 +416,18 @@ export default function AssignCustomerPage() {
               columns={columns}
               isLoading={lotsLoading}
               onVisibleRowsChange={setOrderedLots}
+              spreadsheet
+              // This page owns the arrow keys: Up/Down move the row focus,
+              // Shift extends the selection, Space ticks the focused row and
+              // Escape clears — which is how fifty lots get selected for a bulk
+              // assign without touching the mouse. The grid's cell cursor runs
+              // on the same keystrokes and neither handler stops the other, so
+              // it stays off; the sheet contributes its presentation and filter
+              // row only.
+              spreadsheetOptions={{ cellCursor: false }}
+              bare
+              storageKey="assign-customer-lots"
+              getRowId={(l) => l.id}
             />
           </CardContent>
         </Card>
