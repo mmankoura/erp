@@ -22,14 +22,18 @@ const TONES: Record<ChipTone, string> = {
 export function Chip({
   tone = "neutral",
   className,
+  title,
   children,
 }: {
   tone?: ChipTone
   className?: string
+  /** Tooltip. A chip clips at the column edge like any other cell, so anything longer than the column needs somewhere to put the rest. */
+  title?: string
   children: ReactNode
 }) {
   return (
     <span
+      title={title}
       className={cn(
         "inline-flex items-center rounded-sm border px-1 text-[11px] leading-4 whitespace-nowrap",
         TONES[tone],

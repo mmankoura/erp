@@ -65,6 +65,18 @@ export interface SelectionRect {
 }
 
 export interface SpreadsheetOptions<T> {
+  /**
+   * The cell cursor, range selection, Ctrl+C and paste. Default true — it is
+   * most of what spreadsheet mode is for.
+   *
+   * Set false for a grid whose page already owns the arrow keys. The grid's key
+   * handler calls `preventDefault` but not `stopPropagation`, so on a page with
+   * its own keyboard model both handlers run and one ArrowDown moves two
+   * things. Turning the cursor off keeps the presentation — fixed rows,
+   * gridlines, the row-number gutter, the filter row — and leaves the keyboard
+   * to the page.
+   */
+  cellCursor?: boolean
   /** Row-number gutter down the left edge. Default true. */
   rowNumbers?: boolean
   /** Initial state of the filter row. Default true; a saved choice wins. */

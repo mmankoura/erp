@@ -163,6 +163,9 @@ export function VirtualGrid<T>({
   server,
 }: VirtualGridProps<T>) {
   const rowHeight = rowHeightProp ?? (spreadsheet ? SHEET_ROW_HEIGHT : 44)
+  // Presentation and cursor are separable: a page that owns the arrow keys can
+  // take the sheet's look without the grid fighting it for keystrokes.
+  const cellCursor = spreadsheet && (spreadsheetOptions?.cellCursor ?? true)
   const showRowNumbers = spreadsheet && (spreadsheetOptions?.rowNumbers ?? true)
   const [filterRowOpen, setFilterRowOpen] = useState(spreadsheetOptions?.filterRow ?? true)
   const [search, setSearch] = useState("")
@@ -999,10 +1002,10 @@ export function VirtualGrid<T>({
           ref={parentRef}
           className={cn("overflow-auto", spreadsheet && "outline-none")}
           style={{ height }}
-          tabIndex={spreadsheet ? 0 : undefined}
-          onKeyDown={spreadsheet ? handleGridKeyDown : undefined}
-          onCopy={spreadsheet ? handleCopy : undefined}
-          onPaste={spreadsheet ? handlePaste : undefined}
+          tabIndex={cellCursor ? 0 : undefined}
+          onKeyDown={cellCursor ? handleGridKeyDown : undefined}
+          onCopy={cellCursor ? handleCopy : undefined}
+          onPaste={cellCursor ? handlePaste : undefined}
         >
           {/* The shim gives header and rows one shared width so they scroll
               together. The gutter is not a TanStack column, so its width has to
@@ -1154,15 +1157,16 @@ export function VirtualGrid<T>({
                         className={cn(
                           "relative sticky left-0 z-[1] shrink-0 border-r border-border h-full flex items-center justify-end select-none",
                           showRowNumbers &&
-                            "px-1.5 text-[11px] text-muted-foreground tabular-nums cursor-pointer",
-                          rect && virtualRow.index >= rect.r0 && virtualRow.index <= rect.r1
+                            "px-1.5 text-[11px] text-muted-foreground tabular-nums",
+                          cellCursor && "cursor-pointer",
+                          cellCursor && rect && virtualRow.index >= rect.r0 && virtualRow.index <= rect.r1
                             ? "bg-accent text-accent-foreground"
                             : "bg-muted"
                         )}
                         style={{ width: gutterWidth, minWidth: gutterWidth }}
                         title={stripe?.label}
                         onMouseDown={
-                          showRowNumbers
+                          showRowNumbers && cellCursor
                             ? (e) => {
                                 e.preventDefault()
                                 selectRow(virtualRow.index, e.shiftKey)
@@ -1187,14 +1191,16 @@ export function VirtualGrid<T>({
                     const colId = cell.column.id
                     const colDef = columnsById.get(colId)
                     const rendered = flexRender(cell.column.columnDef.cell, cell.getContext())
-                    const selected = spreadsheet && isInRect(virtualRow.index, colIdx)
+                    const selected = cellCursor && isInRect(virtualRow.index, colIdx)
                     const isActive =
-                      spreadsheet && activePos?.r === virtualRow.index && activePos?.c === colIdx
+                      cellCursor && activePos?.r === virtualRow.index && activePos?.c === colIdx
                     const key = cellKey(row.id, colId)
                     const isEditingCell = editing?.rowId === row.id && editing?.colId === colId
                     const pendingValue = pendingValues.get(key)
                     const error = cellErrors.get(key)
-                    const cellEditable = spreadsheet && canEditCell(row.original, colId)
+                    // Editing rides on the cursor: the editor opens at the
+                    // active cell and commits by moving it.
+                    const cellEditable = cellCursor && canEditCell(row.original, colId)
                     return (
                       <div
                         key={cell.id}
@@ -1213,8 +1219,8 @@ export function VirtualGrid<T>({
                           isEditingCell && "px-0"
                         )}
                         style={{ width: cell.column.getSize(), minWidth: cell.column.getSize() }}
-                        onMouseDown={spreadsheet ? (e) => handleCellMouseDown(e, virtualRow.index, colIdx) : undefined}
-                        onMouseEnter={spreadsheet ? () => handleCellMouseEnter(virtualRow.index, colIdx) : undefined}
+                        onMouseDown={cellCursor ? (e) => handleCellMouseDown(e, virtualRow.index, colIdx) : undefined}
+                        onMouseEnter={cellCursor ? () => handleCellMouseEnter(virtualRow.index, colIdx) : undefined}
                         onDoubleClick={
                           cellEditable
                             ? () =>
