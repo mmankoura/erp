@@ -59,6 +59,7 @@ import {
   type CellEdit,
   type CellCommitResult,
   type RowStripe,
+  type ServerGridOptions,
 } from "@/components/grid/types"
 import { CellEditor, type EditorExit } from "@/components/grid/cell-editor"
 
@@ -128,6 +129,12 @@ interface VirtualGridProps<T> {
    */
   spreadsheet?: boolean
   spreadsheetOptions?: SpreadsheetOptions<T>
+  /**
+   * Hand sorting and the global search to the server. Requires `getRowId` —
+   * without a stable identity the cursor would follow a row *position* across a
+   * re-sort and land on a different record.
+   */
+  server?: ServerGridOptions
 }
 
 // =============== VirtualGrid Component ===============
@@ -153,6 +160,7 @@ export function VirtualGrid<T>({
   onRowActivate,
   spreadsheet = false,
   spreadsheetOptions,
+  server,
 }: VirtualGridProps<T>) {
   const rowHeight = rowHeightProp ?? (spreadsheet ? SHEET_ROW_HEIGHT : 44)
   const showRowNumbers = spreadsheet && (spreadsheetOptions?.rowNumbers ?? true)
@@ -200,19 +208,49 @@ export function VirtualGrid<T>({
     [gridColumns]
   )
 
-  // Global search filter
+  // Global search filter. With a server search the rows arriving are already
+  // narrowed, so filtering them again here would only cut the result twice.
+  const serverSearch = !!server?.onSearchChange
   const filteredData = useMemo(() => {
     if (!data) return []
-    if (!search || !searchFn) return data
+    if (serverSearch || !search || !searchFn) return data
     const q = search.toLowerCase()
     return data.filter((row) => searchFn(row, q))
-  }, [data, search, searchFn])
+  }, [data, search, searchFn, serverSearch])
+
+  // Debounce the search out to the server; the input itself stays instant.
+  const onSearchChangeRef = useRef(server?.onSearchChange)
+  onSearchChangeRef.current = server?.onSearchChange
+  const searchDebounceMs = server?.searchDebounceMs ?? 300
+  useEffect(() => {
+    if (!serverSearch) return
+    const timer = setTimeout(() => onSearchChangeRef.current?.(search), searchDebounceMs)
+    return () => clearTimeout(timer)
+  }, [search, serverSearch, searchDebounceMs])
+
+  const serverSorting: SortingState = useMemo(
+    () => (server?.sort ? [{ id: server.sort.columnId, desc: server.sort.desc }] : []),
+    [server?.sort]
+  )
 
   const table = useReactTable({
     data: filteredData,
     columns: tanstackColumns,
-    state: { sorting, columnVisibility, columnFilters, columnSizing },
-    onSortingChange: setSorting,
+    manualSorting: !!server,
+    state: {
+      sorting: server ? serverSorting : sorting,
+      columnVisibility,
+      columnFilters,
+      columnSizing,
+    },
+    onSortingChange: server
+      ? (updater) => {
+          // TanStack hands us an updater, so resolve it against the state the
+          // server is currently showing or the toggle silently no-ops.
+          const next = typeof updater === "function" ? updater(serverSorting) : updater
+          server.onSortChange(next.length ? { columnId: next[0].id, desc: next[0].desc } : null)
+        }
+      : setSorting,
     onColumnVisibilityChange: setColumnVisibility,
     onColumnFiltersChange: setColumnFilters,
     onColumnSizingChange: setColumnSizing,
@@ -350,6 +388,30 @@ export function VirtualGrid<T>({
   )
   const { activePos, rect, selectCell, selectRow, selectAll, clear, isInRect } =
     useCellSelection(rowIds, colIds)
+
+  // A server re-sort replaces the rows under the viewport, so staying at row
+  // 4,000 of a different ordering — with a cursor pointing at whatever landed
+  // there — is not where anyone wants to be.
+  const serverSortSignature = server ? `${server.sort?.columnId ?? ""}:${server.sort?.desc ?? ""}` : ""
+  const didMountRef = useRef(false)
+  useEffect(() => {
+    if (!server) return
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      return
+    }
+    virtualizerRef.current?.scrollToIndex(0)
+    clear()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverSortSignature])
+
+  // Without a stable identity the cursor tracks a position, and a server
+  // re-sort silently moves it to a different record.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" && server && !getRowId) {
+      console.error("VirtualGrid: `server` requires `getRowId`.")
+    }
+  }, [server, getRowId])
 
   const columnSizes = visibleLeafColumns.map((c) => c.getSize())
   const columnSizesRef = useRef(columnSizes)
@@ -1228,6 +1290,11 @@ export function VirtualGrid<T>({
           {rows.length.toLocaleString()}{rows.length !== (data?.length ?? 0) ? ` of ${(data?.length ?? 0).toLocaleString()}` : ""} rows
           {activeFilterCount > 0 && " (filtered)"}
           {search && ` matching "${search}"`}
+          {/* Say when the grid is only holding a window of the table, or a
+              filter that finds nothing reads as "no such record". */}
+          {server?.totalRows !== undefined && server.totalRows > (data?.length ?? 0) && (
+            <> — showing the first {(data?.length ?? 0).toLocaleString()} of {server.totalRows.toLocaleString()}</>
+          )}
         </div>
       </CardContent>
 

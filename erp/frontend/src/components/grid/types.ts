@@ -204,3 +204,23 @@ export const STRIPE_RAIL_WIDTH = 4
  * sticky gutter and vanish as soon as the grid is scrolled sideways.
  */
 export type RowStripe = { color: string; label?: string } | null
+
+/**
+ * Sorting and global search happen on the server. The grid stops doing its own
+ * — it renders the header arrows from `sort` and reports clicks rather than
+ * acting on them.
+ *
+ * Column filters and the filter row stay client-side, over the rows actually
+ * loaded. That's a real distinction on a windowed endpoint: the search box
+ * reaches the whole table, the filter row only reaches what's in front of you.
+ * Set `totalRows` so the footer can say so.
+ */
+export interface ServerGridOptions {
+  sort: { columnId: string; desc: boolean } | null
+  onSortChange: (next: { columnId: string; desc: boolean } | null) => void
+  /** Debounced by the grid. Omit to keep the search box client-side. */
+  onSearchChange?: (search: string) => void
+  searchDebounceMs?: number
+  /** Row count on the server, for the footer. */
+  totalRows?: number
+}
