@@ -21,6 +21,29 @@ import {
   AuditEntityType,
 } from '../../entities/audit-event.entity';
 
+/** Outcome of a bulk part-number lookup, partitioned by how confident the match is. */
+export interface ResolvePartNumbersResult {
+  matched: Array<{
+    /** The part number as submitted. */
+    part_number: string;
+    material_id: string;
+    internal_part_number: string;
+    description: string | null;
+    manufacturer: string | null;
+    manufacturer_pn: string | null;
+    resource_type: Material['resource_type'];
+    customer_id: string | null;
+  }>;
+  /** Found only by ignoring case. Offered as a suggestion for the caller to accept. */
+  case_mismatch: Array<{
+    part_number: string;
+    suggested: string;
+    material_id: string;
+  }>;
+  /** No material exists; importing these would create them. */
+  missing: string[];
+}
+
 // Active order statuses for where-used analysis
 const ACTIVE_ORDER_STATUSES = [
   OrderStatus.ENTERED,
@@ -94,6 +117,86 @@ export class MaterialsService {
     return this.materialRepository.findOne({
       where: { internal_part_number: partNumber },
     });
+  }
+
+  /**
+   * Resolve many internal part numbers at once.
+   *
+   * Importing a BOM means asking "which of these 250 parts do we already have?"
+   * There was no way to ask that, so the product page loads the entire material
+   * catalogue into a dropdown to do it client-side.
+   *
+   * Case mismatches come back as *suggestions* rather than being silently
+   * resolved. The existing import path rewrites the part number in place on a
+   * case-insensitive hit and only warns, but then re-looks it up with an exact
+   * match at commit time — so a preview that matched can create a duplicate
+   * material on commit. Handing the decision back to the caller closes that.
+   */
+  async resolveByPartNumbers(
+    partNumbers: string[],
+  ): Promise<ResolvePartNumbersResult> {
+    const unique = Array.from(
+      new Set(partNumbers.map((p) => p.trim()).filter(Boolean)),
+    );
+    if (unique.length === 0) {
+      return { matched: [], case_mismatch: [], missing: [] };
+    }
+
+    const exact = await this.materialRepository.find({
+      where: { internal_part_number: In(unique) },
+    });
+    const byExact = new Map(exact.map((m) => [m.internal_part_number, m]));
+
+    // Only the leftovers are worth a second, looser pass.
+    const unresolved = unique.filter((p) => !byExact.has(p));
+    const loose = unresolved.length
+      ? await this.materialRepository
+          .createQueryBuilder('material')
+          .where('LOWER(material.internal_part_number) IN (:...lowered)', {
+            lowered: unresolved.map((p) => p.toLowerCase()),
+          })
+          .getMany()
+      : [];
+    const byLower = new Map(
+      loose.map((m) => [m.internal_part_number.toLowerCase(), m]),
+    );
+
+    const result: ResolvePartNumbersResult = {
+      matched: [],
+      case_mismatch: [],
+      missing: [],
+    };
+
+    for (const partNumber of unique) {
+      const hit = byExact.get(partNumber);
+      if (hit) {
+        result.matched.push({
+          part_number: partNumber,
+          material_id: hit.id,
+          internal_part_number: hit.internal_part_number,
+          description: hit.description,
+          manufacturer: hit.manufacturer,
+          manufacturer_pn: hit.manufacturer_pn,
+          resource_type: hit.resource_type,
+          customer_id: hit.customer_id,
+        });
+        continue;
+      }
+
+      const nearly = byLower.get(partNumber.toLowerCase());
+      if (nearly) {
+        result.case_mismatch.push({
+          part_number: partNumber,
+          suggested: nearly.internal_part_number,
+          material_id: nearly.id,
+        });
+        continue;
+      }
+
+      result.missing.push(partNumber);
+    }
+
+    return result;
   }
 
   async create(createMaterialDto: CreateMaterialDto): Promise<Material> {

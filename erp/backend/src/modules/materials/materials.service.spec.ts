@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, ConflictException } from '@nestjs/common';
+import { In } from 'typeorm';
 import { MaterialsService } from './materials.service';
 import { Material } from '../../entities/material.entity';
 import { BomItem } from '../../entities/bom-item.entity';
@@ -280,6 +281,101 @@ describe('MaterialsService', () => {
       const out = await service.getUsageSummary('mat-1');
       expect(out.total_products).toBe(0);
       expect(out.total_qty_required_by_open_orders).toBe(0);
+    });
+  });
+
+  describe('resolveByPartNumbers', () => {
+    const material = (overrides: Partial<Material> = {}) =>
+      ({
+        id: 'mat-1',
+        internal_part_number: 'OR1015',
+        description: 'Resistor',
+        manufacturer: 'Vishay',
+        manufacturer_pn: 'CRCW040',
+        resource_type: null,
+        customer_id: null,
+        ...overrides,
+      }) as Material;
+
+    it('short-circuits on an empty list without touching the database', async () => {
+      const out = await service.resolveByPartNumbers([]);
+      expect(out).toEqual({ matched: [], case_mismatch: [], missing: [] });
+      expect(materialRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('ignores blanks and duplicates in the input', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([material()]);
+      const out = await service.resolveByPartNumbers([
+        'OR1015', ' OR1015 ', '', '   ',
+      ]);
+      expect(out.matched).toHaveLength(1);
+      expect(materialRepo.find).toHaveBeenCalledWith({
+        where: { internal_part_number: In(['OR1015']) },
+      });
+    });
+
+    it('returns exact hits with the fields an import needs', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([material()]);
+      const out = await service.resolveByPartNumbers(['OR1015']);
+      expect(out.matched[0]).toEqual({
+        part_number: 'OR1015',
+        material_id: 'mat-1',
+        internal_part_number: 'OR1015',
+        description: 'Resistor',
+        manufacturer: 'Vishay',
+        manufacturer_pn: 'CRCW040',
+        resource_type: null,
+        customer_id: null,
+      });
+      expect(out.missing).toEqual([]);
+    });
+
+    it('offers a case mismatch as a suggestion rather than resolving it', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([]);
+      const qb = materialRepo.createQueryBuilder();
+      qb.getMany.mockResolvedValue([material()]);
+
+      const out = await service.resolveByPartNumbers(['or1015']);
+
+      expect(out.matched).toEqual([]);
+      expect(out.case_mismatch).toEqual([
+        { part_number: 'or1015', suggested: 'OR1015', material_id: 'mat-1' },
+      ]);
+      expect(out.missing).toEqual([]);
+    });
+
+    it('reports unknown part numbers as missing', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([]);
+      const qb = materialRepo.createQueryBuilder();
+      qb.getMany.mockResolvedValue([]);
+
+      const out = await service.resolveByPartNumbers(['NOPE-1']);
+      expect(out.missing).toEqual(['NOPE-1']);
+    });
+
+    it('skips the case-insensitive pass when everything matched exactly', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([material()]);
+      const qb = materialRepo.createQueryBuilder();
+      qb.getMany.mockResolvedValue([]);
+
+      await service.resolveByPartNumbers(['OR1015']);
+      expect(qb.getMany).not.toHaveBeenCalled();
+    });
+
+    it('partitions a mixed batch', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([material()]);
+      const qb = materialRepo.createQueryBuilder();
+      qb.getMany.mockResolvedValue([
+        material({ id: 'mat-2', internal_part_number: 'OR2486' }),
+      ]);
+
+      const out = await service.resolveByPartNumbers([
+        'OR1015', 'or2486', 'Do Not Populate',
+      ]);
+
+      expect(out.matched.map((m) => m.part_number)).toEqual(['OR1015']);
+      expect(out.case_mismatch.map((m) => m.part_number)).toEqual(['or2486']);
+      expect(out.missing).toEqual(['Do Not Populate']);
     });
   });
 });
