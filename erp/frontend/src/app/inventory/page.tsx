@@ -13,8 +13,7 @@ import {
   type InventoryAllocation,
   type Material,
 } from "@/lib/api"
-import { DataTable, type Column } from "@/components/data-table"
-import { RelationalFilterBuilder, type FilterGroup } from "@/components/relational-filter-builder"
+import type { FilterGroup } from "@/components/relational-filter-builder"
 import { InventoryImportWizard } from "@/components/inventory-import-wizard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -51,7 +50,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Plus,
   History,
@@ -59,8 +58,6 @@ import {
   Package,
   Upload,
   Trash2,
-  ChevronDown,
-  ChevronUp,
   MapPin,
   Pencil,
   Lock,
@@ -639,251 +636,6 @@ export default function InventoryPage() {
   const totalOnHand = inventory?.reduce((sum, item) => sum + item.quantity_on_hand, 0) || 0
   const totalAllocated = inventory?.reduce((sum, item) => sum + item.quantity_allocated, 0) || 0
   const lowStockCount = lowStock?.length || 0
-
-  const lotColumns: Column<InventoryLotWithId>[] = [
-    {
-      key: "uid",
-      header: "UID",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (lot) => lot.uid,
-      cell: (lot) => <span className="font-mono font-medium">{lot.uid}</span>,
-    },
-    {
-      key: "customer",
-      header: "Customer",
-      sortable: true,
-      filterable: true,
-      sortAccessor: (lot) => lot.material?.customer?.name || "",
-      filterAccessor: (lot) => lot.material?.customer?.name || "-",
-      cell: (lot) => lot.material?.customer?.name || "-",
-    },
-    {
-      key: "ipn",
-      header: "IPN",
-      sortable: true,
-      filterable: true,
-      sortAccessor: (lot) => lot.material?.internal_part_number || "",
-      filterAccessor: (lot) => lot.material?.internal_part_number || "",
-      cell: (lot) => lot.material?.internal_part_number,
-    },
-    {
-      key: "quantity",
-      header: "Quantity",
-      className: "text-right",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (lot) => lot.quantity.toLocaleString(),
-      cell: (lot) => <span className="font-mono">{lot.quantity.toLocaleString()}</span>,
-    },
-    {
-      key: "package_type",
-      header: "Package",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (lot) => lot.package_type,
-      cell: (lot) => <Badge variant="outline">{lot.package_type}</Badge>,
-    },
-    {
-      key: "po_reference",
-      header: "PO Ref",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (lot) => lot.po_reference || "-",
-      cell: (lot) => <span className="text-muted-foreground">{lot.po_reference || "-"}</span>,
-    },
-    {
-      key: "status",
-      header: "Status",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (lot) => lot.status,
-      cell: (lot) => (
-        <Badge
-          variant={
-            lot.status === "ACTIVE"
-              ? "default"
-              : lot.status === "CONSUMED"
-                ? "secondary"
-                : "destructive"
-          }
-        >
-          {lot.status}
-        </Badge>
-      ),
-    },
-    {
-      key: "received_date",
-      header: "Received",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (lot) => lot.received_date ? new Date(lot.received_date).toLocaleDateString() : "-",
-      cell: (lot) => (
-        <span className="text-sm text-muted-foreground">
-          {lot.received_date ? new Date(lot.received_date).toLocaleDateString() : "-"}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      className: "w-[60px]",
-      cell: (lot) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-destructive hover:text-destructive"
-          onClick={() => {
-            if (confirm(`Delete lot ${lot.uid}?`)) {
-              deleteLotMutation.mutate(lot.id)
-            }
-          }}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      ),
-    },
-  ]
-
-  const columns: Column<InventoryStockWithId>[] = [
-    {
-      key: "customer",
-      header: "Customer",
-      defaultWidth: 140,
-      sortable: true,
-      filterable: true,
-      sortAccessor: (stock) => stock.material?.customer?.name || "",
-      filterAccessor: (stock) => stock.material?.customer?.name || "-",
-      cell: (stock) => stock.material?.customer?.name || "-",
-    },
-    {
-      key: "material",
-      header: "Material",
-      defaultWidth: 220,
-      sortable: true,
-      filterable: true,
-      sortAccessor: (stock) => stock.material?.internal_part_number || "",
-      filterAccessor: (stock) => stock.material?.internal_part_number || "",
-      cell: (stock) => (
-        <div>
-          <span className="font-medium">{stock.material?.internal_part_number}</span>
-          {stock.material?.description && (
-            <p className="text-xs text-muted-foreground truncate">
-              {stock.material.description}
-            </p>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: "resource_type",
-      header: "Type",
-      defaultWidth: 80,
-      sortable: true,
-      filterable: true,
-      sortAccessor: (stock) => stock.material?.resource_type || "",
-      filterAccessor: (stock) => stock.material?.resource_type || "-",
-      cell: (stock) =>
-        stock.material?.resource_type ? (
-          <Badge variant="outline">{stock.material.resource_type}</Badge>
-        ) : (
-          "-"
-        ),
-    },
-    {
-      key: "quantity_on_hand",
-      header: "On Hand",
-      defaultWidth: 100,
-      className: "text-right",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (stock) => stock.quantity_on_hand.toLocaleString(),
-      cell: (stock) => (
-        <span className="font-mono">{stock.quantity_on_hand.toLocaleString()}</span>
-      ),
-    },
-    {
-      key: "quantity_required",
-      header: "Required",
-      defaultWidth: 100,
-      className: "text-right",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (stock) => stock.quantity_required.toLocaleString(),
-      cell: (stock) => (
-        <span className={`font-mono ${stock.quantity_required > 0 ? "text-purple-600" : ""}`}>
-          {stock.quantity_required.toLocaleString()}
-        </span>
-      ),
-    },
-    {
-      key: "quantity_allocated",
-      header: "Allocated",
-      defaultWidth: 100,
-      className: "text-right",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (stock) => stock.quantity_allocated.toLocaleString(),
-      cell: (stock) => (
-        <AllocationPopover materialId={stock.material_id} quantity={stock.quantity_allocated} />
-      ),
-    },
-    {
-      key: "quantity_available",
-      header: "Available",
-      defaultWidth: 100,
-      className: "text-right",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (stock) => stock.quantity_available.toLocaleString(),
-      cell: (stock) => (
-        <span
-          className={`font-mono font-medium ${
-            stock.quantity_available <= 0
-              ? "text-red-600"
-              : stock.quantity_available < 10
-                ? "text-yellow-600"
-                : "text-green-600"
-          }`}
-        >
-          {stock.quantity_available.toLocaleString()}
-        </span>
-      ),
-    },
-    {
-      key: "quantity_on_order",
-      header: "On Order",
-      defaultWidth: 100,
-      className: "text-right",
-      sortable: true,
-      filterable: true,
-      filterAccessor: (stock) => stock.quantity_on_order.toLocaleString(),
-      cell: (stock) => (
-        <span className={`font-mono ${stock.quantity_on_order > 0 ? "text-blue-600" : ""}`}>
-          {stock.quantity_on_order.toLocaleString()}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      defaultWidth: 120,
-      resizable: false,
-      className: "w-[120px]",
-      cell: (stock) => (
-        <div className="flex items-center gap-1">
-          <TransactionHistoryDialog
-            stock={stock}
-            trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <History className="h-4 w-4" />
-              </Button>
-            }
-          />
-        </div>
-      ),
-    },
-  ]
 
   // VirtualGrid columns for Stock Levels
   const stockVgColumns: VirtualGridColumn<InventoryStockWithId>[] = [
