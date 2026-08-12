@@ -57,6 +57,17 @@ export function redo(doc: WizardDoc): WizardDoc {
 }
 
 /**
+ * Jump the cursor to an absolute position — clicking a step in the recorder to
+ * see the grid as it stood there. Clamped rather than rejected, so a stale
+ * click after an action was deleted lands somewhere sensible instead of
+ * throwing.
+ */
+export function goTo(doc: WizardDoc, cursor: number): WizardDoc {
+  const clamped = Math.max(0, Math.min(doc.actions.length, Math.trunc(cursor)))
+  return clamped === doc.cursor ? doc : { ...doc, cursor: clamped }
+}
+
+/**
  * Remove an action outright, wherever it sits.
  *
  * The engine's replay tests pin the property this relies on: deleting an

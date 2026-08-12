@@ -7,6 +7,7 @@ import {
   record,
   undo,
   redo,
+  goTo,
   removeAction,
   setComment,
   loadRecipe,
@@ -93,6 +94,30 @@ describe("undo / redo", () => {
     const there = replay(source, appliedActions(doc))
     const andBack = replay(source, appliedActions(redo(undo(doc))))
     expect(andBack).toEqual(there)
+  })
+})
+
+describe("goTo", () => {
+  it("moves the cursor to an absolute step", () => {
+    const doc = docWith(HEADERS, FILL, DROP_COL)
+    expect(goTo(doc, 1).cursor).toBe(1)
+    expect(appliedActions(goTo(doc, 1))).toEqual([HEADERS])
+  })
+
+  it("clamps instead of throwing, so a stale click lands somewhere sensible", () => {
+    const doc = docWith(HEADERS, FILL)
+    expect(goTo(doc, -3).cursor).toBe(0)
+    expect(goTo(doc, 99).cursor).toBe(2)
+  })
+
+  it("returns the same object when the cursor would not move", () => {
+    const doc = docWith(HEADERS)
+    expect(goTo(doc, 1)).toBe(doc)
+  })
+
+  it("leaves the action list untouched", () => {
+    const doc = docWith(HEADERS, FILL, DROP_COL)
+    expect(goTo(doc, 0).actions).toEqual(doc.actions)
   })
 })
 

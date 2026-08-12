@@ -18,13 +18,17 @@ import {
   canRedo,
   canUndo,
   emptyDoc,
+  goTo,
   record,
   redo,
+  removeAction,
+  setComment,
   undo,
 } from "@/lib/bom-wizard/doc"
 import { readBomFile } from "@/lib/bom-wizard/parse"
 import type { GridAction, WizardDoc, WizardRow, WizardSource } from "@/lib/bom-wizard/types"
 import { WizardGridView } from "@/components/bom-wizard/wizard-grid"
+import { RecorderPanel } from "@/components/bom-wizard/recorder-panel"
 import {
   FillDownDialog,
   HeaderRowDialog,
@@ -106,6 +110,18 @@ export default function BomWizardPage() {
 
   const onRowActivate = useCallback((row: WizardRow) => setActivatedRow(row.srcIndex), [])
 
+  const onGoTo = useCallback((cursor: number) => {
+    setDoc((prev) => (prev ? goTo(prev, cursor) : prev))
+  }, [])
+
+  const onRemove = useCallback((id: string) => {
+    setDoc((prev) => (prev ? removeAction(prev, id) : prev))
+  }, [])
+
+  const onComment = useCallback((id: string, comment: string) => {
+    setDoc((prev) => (prev ? setComment(prev, id, comment) : prev))
+  }, [])
+
   const close = () => {
     setSheets(null)
     setDoc(null)
@@ -161,84 +177,91 @@ export default function BomWizardPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium truncate max-w-[16rem]">
-                {doc.source.fileName}
-              </span>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] items-start">
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium truncate max-w-[16rem]">
+                  {doc.source.fileName}
+                </span>
 
-              {sheets && sheets.length > 1 ? (
-                <Select value={doc.source.sheetName} onValueChange={pickSheet}>
-                  <SelectTrigger className="h-8 w-52">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sheets.map((s) => (
-                      <SelectItem key={s.sheetName} value={s.sheetName}>
-                        {s.sheetName}
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {s.matrix.length} rows
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Badge variant="secondary">{doc.source.sheetName}</Badge>
-              )}
+                {sheets && sheets.length > 1 ? (
+                  <Select value={doc.source.sheetName} onValueChange={pickSheet}>
+                    <SelectTrigger className="h-8 w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sheets.map((s) => (
+                        <SelectItem key={s.sheetName} value={s.sheetName}>
+                          {s.sheetName}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {s.matrix.length} rows
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Badge variant="secondary">{doc.source.sheetName}</Badge>
+                )}
 
-              <Badge variant="outline">
-                {grid.rows.length} of {doc.source.matrix.length} rows
-              </Badge>
+                <Badge variant="outline">
+                  {grid.rows.length} of {doc.source.matrix.length} rows
+                </Badge>
 
-              <div className="flex-1" />
+                <div className="flex-1" />
 
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!canUndo(doc)}
-                onClick={() => setDoc(undo(doc))}
-              >
-                <Undo2 className="h-4 w-4 mr-2" />
-                Undo
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!canRedo(doc)}
-                onClick={() => setDoc(redo(doc))}
-              >
-                <Redo2 className="h-4 w-4 mr-2" />
-                Redo
-              </Button>
-              <Badge variant="secondary">
-                {doc.cursor} of {doc.actions.length} steps
-              </Badge>
-            </div>
+                {/* The step count lives in the recorder panel, not here. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canUndo(doc)}
+                  onClick={() => setDoc(undo(doc))}
+                >
+                  <Undo2 className="h-4 w-4 mr-2" />
+                  Undo
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canRedo(doc)}
+                  onClick={() => setDoc(redo(doc))}
+                >
+                  <Redo2 className="h-4 w-4 mr-2" />
+                  Redo
+                </Button>
+              </div>
 
-            <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-              <Button variant="outline" size="sm" onClick={() => setDialog("headers")}>
-                <Heading className="h-4 w-4 mr-2" />
-                Use row as headers
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setDialog("fill")}>
-                <ArrowDownToLine className="h-4 w-4 mr-2" />
-                Fill down
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setDialog("merge")}>
-                <Merge className="h-4 w-4 mr-2" />
-                Merge continuation rows
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setDialog("mapping")}>
-                <Columns3 className="h-4 w-4 mr-2" />
-                Map columns
-              </Button>
-            </div>
+              <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+                <Button variant="outline" size="sm" onClick={() => setDialog("headers")}>
+                  <Heading className="h-4 w-4 mr-2" />
+                  Use row as headers
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setDialog("fill")}>
+                  <ArrowDownToLine className="h-4 w-4 mr-2" />
+                  Fill down
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setDialog("merge")}>
+                  <Merge className="h-4 w-4 mr-2" />
+                  Merge continuation rows
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setDialog("mapping")}>
+                  <Columns3 className="h-4 w-4 mr-2" />
+                  Map columns
+                </Button>
+              </div>
 
-            <WizardGridView grid={grid} height={620} onRowActivate={onRowActivate} />
-          </CardContent>
-        </Card>
+              <WizardGridView grid={grid} height={620} onRowActivate={onRowActivate} />
+            </CardContent>
+          </Card>
+
+          <RecorderPanel
+            doc={doc}
+            onGoTo={onGoTo}
+            onRemove={onRemove}
+            onComment={onComment}
+          />
+        </div>
       )}
 
       {doc && grid && (
