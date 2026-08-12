@@ -9,6 +9,7 @@ import {
   type PhysicalCountStatus,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
@@ -50,7 +51,7 @@ export default function PhysicalCountListPage() {
       sortable: true,
       filterable: true,
       accessorFn: (c) => c.count_number,
-      cell: (c) => <span className="font-mono font-medium text-sm">{c.count_number}</span>,
+      cell: (c) => <span className="font-mono font-medium">{c.count_number}</span>,
     },
     {
       id: "customer",
@@ -60,7 +61,7 @@ export default function PhysicalCountListPage() {
       filterable: true,
       accessorFn: (c) => c.customer?.name || "",
       filterAccessor: (c) => c.customer?.name || "—",
-      cell: (c) => <span className="text-sm">{c.customer?.name ?? "—"}</span>,
+      cell: (c) => <span>{c.customer?.name ?? "—"}</span>,
     },
     {
       id: "status",
@@ -70,7 +71,7 @@ export default function PhysicalCountListPage() {
       filterable: true,
       accessorFn: (c) => c.status,
       filterAccessor: (c) => c.status,
-      cell: (c) => <Badge variant={statusVariant[c.status]}>{c.status}</Badge>,
+      cell: (c) => <Chip>{c.status}</Chip>,
     },
     {
       id: "scope",
@@ -119,7 +120,7 @@ export default function PhysicalCountListPage() {
       filterable: false,
       accessorFn: () => "",
       cell: (c) => (
-        <Button variant="ghost" size="sm" onClick={() => router.push(`/physical-count/${c.id}`)}>
+        <Button variant="ghost" size="icon" className="h-5 w-5" title="Open count" onClick={() => router.push(`/physical-count/${c.id}`)}>
           Open
         </Button>
       ),
@@ -177,6 +178,10 @@ export default function PhysicalCountListPage() {
               (c.customer?.name?.toLowerCase().includes(q) ?? false) ||
               c.status.toLowerCase().includes(q)
             }
+            spreadsheet
+            bare
+            storageKey="physical-counts"
+            getRowId={(c) => c.id}
           />
         </CardContent>
       </Card>

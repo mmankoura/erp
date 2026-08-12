@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useApi } from "@/hooks/use-api"
 import { api, type Customer, type PackageType } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -43,12 +44,12 @@ interface ReceivedItem {
 function buildReceiptLogColumns(onUndo: (item: ReceivedItem) => void): VirtualGridColumn<ReceivedItem>[] {
   return [
     { id: "uid", header: "UID", size: 160, sortable: true, filterable: true, filterAccessor: (r) => r.uid, accessorFn: (r) => r.uid, cell: (r) => <span className={`font-mono text-xs ${r.undone ? "line-through text-muted-foreground" : ""}`}>{r.uid}</span> },
-    { id: "ipn", header: "IPN", size: 140, sortable: true, filterable: true, filterAccessor: (r) => r.ipn, accessorFn: (r) => r.ipn, cell: (r) => <span className={`font-medium text-sm ${r.undone ? "line-through text-muted-foreground" : ""}`}>{r.ipn}</span> },
-    { id: "description", header: "Description", size: 200, accessorFn: (r) => r.description ?? "", cell: (r) => <span className="text-muted-foreground text-sm truncate block">{r.description ?? "\u2014"}</span> },
-    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (r) => r.qty, cell: (r) => <span className={`font-mono text-sm ${r.undone ? "line-through text-muted-foreground" : ""}`}>{r.qty.toLocaleString()}</span> },
-    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (r) => r.package_type, accessorFn: (r) => r.package_type, cell: (r) => <span className="text-sm">{r.package_type}</span> },
-    { id: "type", header: "Type", size: 140, sortable: true, filterable: true, filterAccessor: (r) => r.receipt_type === "PO" ? `PO ${r.po_number ?? ""}` : r.receipt_type === "CUSTOMER_SUPPLIED" ? r.customer_name ?? "Customer" : "Stock", accessorFn: (r) => r.receipt_type, cell: (r) => <Badge variant="outline" className="text-xs">{r.receipt_type === "PO" ? `PO ${r.po_number ?? ""}` : r.receipt_type === "CUSTOMER_SUPPLIED" ? r.customer_name ?? "Customer" : "Stock"}</Badge> },
-    { id: "status", header: "Status", size: 100, accessorFn: (r) => r.undone ? "Undone" : r.po_line_updated ? "Received" : "In Stock", cell: (r) => r.undone ? <Badge variant="secondary" className="text-xs">Undone</Badge> : <div className="flex items-center gap-1 text-green-600"><CheckCircle className="h-4 w-4" /><span className="text-xs">{r.po_line_updated ? "Received" : "In Stock"}</span></div> },
+    { id: "ipn", header: "IPN", size: 140, sortable: true, filterable: true, filterAccessor: (r) => r.ipn, accessorFn: (r) => r.ipn, cell: (r) => <span className={`font-medium ${r.undone ? "line-through text-muted-foreground" : ""}`}>{r.ipn}</span> },
+    { id: "description", header: "Description", size: 200, accessorFn: (r) => r.description ?? "", cell: (r) => <span className="text-muted-foreground truncate block">{r.description ?? "\u2014"}</span> },
+    { id: "qty", header: "Qty", size: 80, align: "right", sortable: true, accessorFn: (r) => r.qty, cell: (r) => <span className={`font-mono tabular-nums ${r.undone ? "line-through text-muted-foreground" : ""}`}>{r.qty.toLocaleString()}</span> },
+    { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (r) => r.package_type, accessorFn: (r) => r.package_type, cell: (r) => <span>{r.package_type}</span> },
+    { id: "type", header: "Type", size: 140, sortable: true, filterable: true, filterAccessor: (r) => r.receipt_type === "PO" ? `PO ${r.po_number ?? ""}` : r.receipt_type === "CUSTOMER_SUPPLIED" ? r.customer_name ?? "Customer" : "Stock", accessorFn: (r) => r.receipt_type, cell: (r) => <Chip>{r.receipt_type === "PO" ? `PO ${r.po_number ?? ""}` : r.receipt_type === "CUSTOMER_SUPPLIED" ? r.customer_name ?? "Customer" : "Stock"}</Chip> },
+    { id: "status", header: "Status", size: 100, accessorFn: (r) => r.undone ? "Undone" : r.po_line_updated ? "Received" : "In Stock", cell: (r) => r.undone ? <Chip tone="muted">Undone</Chip> : <span className="text-emerald-600">{r.po_line_updated ? "Received" : "In Stock"}</span> },
     { id: "actions", header: "", size: 60, accessorFn: () => "", cell: (r) => r.undone ? null : <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Undo receive" onClick={() => onUndo(r)}><Trash2 className="h-3.5 w-3.5" /></Button> },
   ]
 }
@@ -392,6 +393,9 @@ export default function QuickReceivePage() {
               (r.customer_name ?? "").toLowerCase().includes(q))
             }
             height={500}
+            spreadsheet
+            storageKey="quick-receive-log"
+            getRowId={(r) => r.uid}
           />
         </div>
       </div>

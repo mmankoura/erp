@@ -166,6 +166,9 @@ export default function CustomerInventoryReportPage() {
                     .filter(Boolean)
                     .some((v) => String(v).toLowerCase().includes(q.toLowerCase()))
                 }
+                spreadsheet
+                storageKey="customer-inventory-summary"
+                getRowId={(r) => r.id}
               />
             </TabsContent>
             <TabsContent value="detail">
@@ -179,6 +182,9 @@ export default function CustomerInventoryReportPage() {
                     .filter(Boolean)
                     .some((v) => String(v).toLowerCase().includes(q.toLowerCase()))
                 }
+                spreadsheet
+                storageKey="customer-inventory-detail"
+                getRowId={(r) => r.id}
               />
             </TabsContent>
           </Tabs>

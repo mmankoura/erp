@@ -1683,6 +1683,9 @@ function PoHistoryTab() {
             (item.customer ?? "").toLowerCase().includes(q) ||
             (item.comments ?? "").toLowerCase().includes(q)
           }
+          spreadsheet
+          storageKey="po-history"
+          getRowId={(r) => r.id}
         />
       )}
     </div>

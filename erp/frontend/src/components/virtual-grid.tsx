@@ -102,6 +102,11 @@ interface VirtualGridProps<T> {
   /** Shown in place of the default "No data found". */
   emptyMessage?: ReactNode
   /**
+   * Drop the card chrome. For pages that already wrap the grid in their own
+   * Card — otherwise the user sees two nested borders.
+   */
+  bare?: boolean
+  /**
    * Namespace for this grid's remembered state — column widths, hidden columns
    * and the filter-row toggle — under `vgrid:<key>:*` in localStorage. Omit and
    * the grid remembers nothing.
@@ -143,6 +148,7 @@ export function VirtualGrid<T>({
   getRowId,
   className,
   emptyMessage = "No data found",
+  bare = false,
   storageKey,
   onRowActivate,
   spreadsheet = false,
@@ -849,8 +855,16 @@ export function VirtualGrid<T>({
   }
 
   return (
-    <Card className={className}>
-      <CardHeader className="pb-3">
+    <Card
+      className={cn(
+        // `bare` strips the card's chrome rather than removing the element, so
+        // the toolbar, the grid and the footer keep the layout they already
+        // have — only the second border goes.
+        bare && "border-0 shadow-none bg-transparent py-0 gap-3",
+        className
+      )}
+    >
+      <CardHeader className={cn("pb-3", bare && "px-0")}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {title && <CardTitle className="text-lg">{title}</CardTitle>}
@@ -915,7 +929,7 @@ export function VirtualGrid<T>({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className={cn("p-0", bare && "px-0")}>
         {/* The scroll container is also the keyboard host: focus stays here and
             never moves to a cell, so the virtualizer unmounting the active row
             can't strand it. */}

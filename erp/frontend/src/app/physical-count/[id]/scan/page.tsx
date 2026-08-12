@@ -10,6 +10,7 @@ import {
 } from "@/lib/api"
 import { useAuth } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -151,7 +152,7 @@ export default function ScanPage() {
       sortable: true,
       filterable: true,
       accessorFn: (s) => s.uid,
-      cell: (s) => <span className="font-mono font-medium text-sm">{s.uid}</span>,
+      cell: (s) => <span className="font-mono font-medium">{s.uid}</span>,
     },
     {
       id: "qty",
@@ -160,7 +161,7 @@ export default function ScanPage() {
       align: "right",
       sortable: true,
       accessorFn: (s) => parseFloat(String(s.scanned_qty)),
-      cell: (s) => <span className="font-mono text-sm">{parseFloat(String(s.scanned_qty)).toLocaleString()}</span>,
+      cell: (s) => <span className="font-mono tabular-nums">{parseFloat(String(s.scanned_qty)).toLocaleString()}</span>,
     },
     {
       id: "matched",
@@ -172,9 +173,9 @@ export default function ScanPage() {
       filterAccessor: (s) => (s.matched_lot_id ? "matched" : "orphan"),
       cell: (s) =>
         s.matched_lot_id ? (
-          <Badge variant="default" className="text-xs">matched</Badge>
+          <Chip tone="success">matched</Chip>
         ) : (
-          <Badge variant="outline" className="text-xs">orphan</Badge>
+          <Chip tone="warning">orphan</Chip>
         ),
     },
     {
@@ -184,7 +185,7 @@ export default function ScanPage() {
       sortable: true,
       filterable: true,
       accessorFn: (s) => s.resolution,
-      cell: (s) => <Badge variant="outline" className="text-xs">{s.resolution}</Badge>,
+      cell: (s) => <Chip>{s.resolution}</Chip>,
     },
     {
       id: "actions",
@@ -195,7 +196,7 @@ export default function ScanPage() {
       accessorFn: () => "",
       cell: (s) =>
         s.resolution !== "REJECTED" && isOwner ? (
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => voidScan(s.id)}>
+          <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={() => voidScan(s.id)}>
             <Trash2 className="h-4 w-4" />
           </Button>
         ) : null,
@@ -279,6 +280,10 @@ export default function ScanPage() {
             columns={columns}
             searchPlaceholder="Search by UID..."
             searchFn={(s, q) => s.uid.toLowerCase().includes(q)}
+            spreadsheet
+            bare
+            storageKey="physical-count-scan"
+            getRowId={(s) => s.id}
           />
         </CardContent>
       </Card>
