@@ -186,5 +186,21 @@ export function parseCellInput(
 
 /** Width of the row-number gutter, sized to fit the largest row number. */
 export function gutterWidthFor(rowCount: number): number {
-  return Math.max(40, String(rowCount).length * 8 + 20)
+  // The extra room over the bare digits is for the status stripe down the
+  // left edge.
+  return Math.max(44, String(rowCount).length * 8 + 24)
 }
+
+/** Width of the stripe-only rail shown when there are no row numbers. */
+export const STRIPE_RAIL_WIDTH = 4
+
+/**
+ * A status stripe painted down the left edge of the gutter. `color` is a
+ * background utility (`"bg-amber-500"`); `label` becomes the gutter's tooltip,
+ * so the colour is discoverable rather than folklore.
+ *
+ * This is where row status belongs in a sheet: the cell background is the
+ * selection's, and a left border on the row itself would sit underneath the
+ * sticky gutter and vanish as soon as the grid is scrolled sideways.
+ */
+export type RowStripe = { color: string; label?: string } | null

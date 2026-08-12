@@ -47,6 +47,7 @@ import {
   SHEET_ROW_HEIGHT,
   SHEET_HEADER_HEIGHT,
   SHEET_FILTER_HEIGHT,
+  STRIPE_RAIL_WIDTH,
   gutterWidthFor,
   copyValueOf,
   cellKey,
@@ -57,6 +58,7 @@ import {
   type GridFilterValue,
   type CellEdit,
   type CellCommitResult,
+  type RowStripe,
 } from "@/components/grid/types"
 import { CellEditor, type EditorExit } from "@/components/grid/cell-editor"
 
@@ -76,6 +78,13 @@ interface VirtualGridProps<T> {
   headerActions?: ReactNode
   /** Optional per-row className for tinting (e.g., status backgrounds). */
   rowClassName?: (row: T) => string
+  /**
+   * A status stripe down the left edge of the gutter. Prefer this to tinting
+   * the whole row: in a sheet the cell background belongs to the selection, and
+   * a border on the row hides behind the sticky gutter once you scroll
+   * sideways. Works in classic mode too, as a bare 4px rail.
+   */
+  rowStripe?: (row: T) => RowStripe
   /**
    * Fires with the rows in their current displayed order (after the grid's own
    * sorting/filtering). Use this when the parent needs the on-screen order —
@@ -130,6 +139,7 @@ export function VirtualGrid<T>({
   headerActions,
   rowClassName,
   onVisibleRowsChange,
+  rowStripe,
   getRowId,
   className,
   emptyMessage = "No data found",
@@ -301,7 +311,16 @@ export function VirtualGrid<T>({
   }
 
   const activeFilterCount = columnFilters.length
-  const gutterWidth = showRowNumbers ? gutterWidthFor(rows.length) : 0
+  // A grid with stripes but no row numbers still needs somewhere to put them,
+  // so it gets a bare rail. That's also what lets a classic grid carry stripes
+  // before it converts to a sheet.
+  const showStripeRail = !!rowStripe && !showRowNumbers
+  const showGutter = showRowNumbers || showStripeRail
+  const gutterWidth = showRowNumbers
+    ? gutterWidthFor(rows.length)
+    : showStripeRail
+      ? STRIPE_RAIL_WIDTH
+      : 0
   const showFilterRow = spreadsheet && filterRowOpen
 
   // ---- Cell cursor -------------------------------------------------------
@@ -918,7 +937,7 @@ export function VirtualGrid<T>({
           className="border-t border-b bg-muted flex sticky top-0 z-10"
           style={spreadsheet ? { height: SHEET_HEADER_HEIGHT } : undefined}
         >
-          {showRowNumbers && (
+          {showGutter && (
             <div
               className="sticky left-0 z-20 shrink-0 bg-muted border-r border-border h-full"
               style={{ width: gutterWidth, minWidth: gutterWidth }}
@@ -1010,7 +1029,7 @@ export function VirtualGrid<T>({
             className="flex sticky z-10 bg-background border-b border-border"
             style={{ top: SHEET_HEADER_HEIGHT, height: SHEET_FILTER_HEIGHT }}
           >
-            {showRowNumbers && (
+            {showGutter && (
               <div
                 className="sticky left-0 z-20 shrink-0 bg-muted border-r border-border h-full"
                 style={{ width: gutterWidth, minWidth: gutterWidth }}
@@ -1052,24 +1071,42 @@ export function VirtualGrid<T>({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  {showRowNumbers && (
-                    <div
-                      className={cn(
-                        "sticky left-0 z-[1] shrink-0 border-r border-border h-full flex items-center justify-end px-1.5 text-[11px] text-muted-foreground tabular-nums select-none cursor-pointer",
-                        rect && virtualRow.index >= rect.r0 && virtualRow.index <= rect.r1
-                          ? "bg-accent text-accent-foreground"
-                          : "bg-muted"
-                      )}
-                      style={{ width: gutterWidth, minWidth: gutterWidth }}
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        selectRow(virtualRow.index, e.shiftKey)
-                        parentRef.current?.focus({ preventScroll: true })
-                      }}
-                    >
-                      {virtualRow.index + 1}
-                    </div>
-                  )}
+                  {showGutter && (() => {
+                    const stripe = rowStripe?.(row.original)
+                    return (
+                      <div
+                        className={cn(
+                          "relative sticky left-0 z-[1] shrink-0 border-r border-border h-full flex items-center justify-end select-none",
+                          showRowNumbers &&
+                            "px-1.5 text-[11px] text-muted-foreground tabular-nums cursor-pointer",
+                          rect && virtualRow.index >= rect.r0 && virtualRow.index <= rect.r1
+                            ? "bg-accent text-accent-foreground"
+                            : "bg-muted"
+                        )}
+                        style={{ width: gutterWidth, minWidth: gutterWidth }}
+                        title={stripe?.label}
+                        onMouseDown={
+                          showRowNumbers
+                            ? (e) => {
+                                e.preventDefault()
+                                selectRow(virtualRow.index, e.shiftKey)
+                                parentRef.current?.focus({ preventScroll: true })
+                              }
+                            : undefined
+                        }
+                      >
+                        {/* Absolute so it paints over the selection tint rather
+                            than being replaced by it. */}
+                        {stripe && (
+                          <span
+                            className={cn("absolute inset-y-0 left-0", stripe.color)}
+                            style={{ width: showRowNumbers ? 3 : STRIPE_RAIL_WIDTH }}
+                          />
+                        )}
+                        {showRowNumbers && virtualRow.index + 1}
+                      </div>
+                    )
+                  })()}
                   {row.getVisibleCells().map((cell, colIdx) => {
                     const colId = cell.column.id
                     const colDef = columnsById.get(colId)

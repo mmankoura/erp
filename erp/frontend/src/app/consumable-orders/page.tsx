@@ -6,7 +6,7 @@ import { useApi, useMutation } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Chip, type ChipTone } from "@/components/grid/chip"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -90,14 +90,17 @@ export const emptyLine: NewLine = {
   notes: "",
 }
 
-const statusRowTint: Record<ConsumableOrderStatus, string> = {
-  ORDERED: "bg-blue-100 border-l-4 border-l-blue-500",
-  RECEIVED: "bg-emerald-100 border-l-4 border-l-emerald-500",
+// Status marks the gutter rather than washing the whole row: in a sheet the
+// cell background belongs to the selection, and a left border on the row would
+// sit under the sticky gutter and disappear when scrolled sideways.
+const statusStripe: Record<ConsumableOrderStatus, string> = {
+  ORDERED: "bg-blue-500",
+  RECEIVED: "bg-emerald-500",
 }
 
-const statusBadgeVariant: Record<ConsumableOrderStatus, "default" | "secondary"> = {
-  ORDERED: "default",
-  RECEIVED: "secondary",
+const statusTone: Record<ConsumableOrderStatus, ChipTone> = {
+  ORDERED: "info",
+  RECEIVED: "success",
 }
 
 type CoLineRow = {
@@ -131,7 +134,7 @@ function InlineStatusCell({
   }
 
   if (disabled) {
-    return <Badge variant={statusBadgeVariant[order.status]}>{order.status}</Badge>
+    return <Chip tone={statusTone[order.status]}>{order.status}</Chip>
   }
 
   return (
@@ -143,9 +146,7 @@ function InlineStatusCell({
           className="inline-flex items-center hover:opacity-80 transition-opacity cursor-pointer disabled:opacity-50"
           title="Change status"
         >
-          <Badge variant={statusBadgeVariant[order.status]}>
-            {pending ? "..." : order.status}
-          </Badge>
+          <Chip tone={statusTone[order.status]}>{pending ? "..." : order.status}</Chip>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
@@ -248,7 +249,7 @@ export default function ConsumableOrdersPage() {
       filterable: true,
       accessorFn: (r) => r.line?.ata_part_number ?? "",
       filterAccessor: (r) => r.line?.ata_part_number ?? "—",
-      cell: (r) => <span className="font-mono text-sm">{r.line?.ata_part_number || "—"}</span>,
+      cell: (r) => <span className="font-mono">{r.line?.ata_part_number || "—"}</span>,
     },
     {
       id: "description",
@@ -268,7 +269,7 @@ export default function ConsumableOrdersPage() {
       filterable: true,
       accessorFn: (r) => r.line?.manufacturer ?? "",
       filterAccessor: (r) => r.line?.manufacturer ?? "—",
-      cell: (r) => <span className="text-sm">{r.line?.manufacturer || "—"}</span>,
+      cell: (r) => <span>{r.line?.manufacturer || "—"}</span>,
     },
     {
       id: "mpn",
@@ -278,7 +279,7 @@ export default function ConsumableOrdersPage() {
       filterable: true,
       accessorFn: (r) => r.line?.manufacturer_pn ?? "",
       filterAccessor: (r) => r.line?.manufacturer_pn ?? "—",
-      cell: (r) => <span className="font-mono text-sm">{r.line?.manufacturer_pn || "—"}</span>,
+      cell: (r) => <span className="font-mono">{r.line?.manufacturer_pn || "—"}</span>,
     },
     {
       id: "qty",
@@ -319,7 +320,7 @@ export default function ConsumableOrdersPage() {
       filterable: true,
       accessorFn: (r) => r.line?.customer ?? "",
       filterAccessor: (r) => r.line?.customer ?? "—",
-      cell: (r) => <span className="text-sm text-muted-foreground">{r.line?.customer || "—"}</span>,
+      cell: (r) => <span className="text-muted-foreground">{r.line?.customer || "—"}</span>,
     },
     {
       id: "order_date",
@@ -356,14 +357,14 @@ export default function ConsumableOrdersPage() {
       cell: (r) => (
         <div className="flex items-center gap-1">
           <Link href={`/consumable-orders/${r.order.id}`}>
-            <Button variant="ghost" size="icon" className="h-8 w-8" title="Open order details">
+            <Button variant="ghost" size="icon" className="h-5 w-5" title="Open order details">
               <Eye className="h-4 w-4" />
             </Button>
           </Link>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-5 w-5"
             title="Download PDF"
             onClick={async () => {
               const { generateConsumablePoPdf } = await import("@/lib/consumable-po-pdf")
@@ -375,7 +376,7 @@ export default function ConsumableOrdersPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-5 w-5"
             title="Download Excel"
             onClick={async () => {
               const { exportConsumableOrderToExcel } = await import("@/lib/consumable-po-excel")
@@ -386,7 +387,7 @@ export default function ConsumableOrdersPage() {
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button variant="ghost" size="icon" className="h-5 w-5">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -522,7 +523,10 @@ export default function ConsumableOrdersPage() {
           (r.line?.manufacturer_pn ?? "").toLowerCase().includes(q) ||
           (r.line?.customer ?? "").toLowerCase().includes(q)
         }
-        rowClassName={(r) => statusRowTint[r.order.status]}
+        rowStripe={(r) => ({ color: statusStripe[r.order.status], label: r.order.status })}
+        spreadsheet
+        storageKey="consumable-orders"
+        getRowId={(r) => `${r.order.id}:${r.line?.id ?? "none"}`}
       />
     </div>
   )
