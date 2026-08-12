@@ -16,6 +16,8 @@ export interface VirtualGridColumn<T> {
   cell: (row: T) => ReactNode
   sortable?: boolean
   filterable?: boolean
+  /** Drag-to-resize. Default true. */
+  resizable?: boolean
   filterAccessor?: (row: T) => string
   /**
    * What Ctrl+C writes for this cell. Defaults to `accessorFn`, which is the
@@ -67,8 +69,6 @@ export interface SpreadsheetOptions<T> {
   rowNumbers?: boolean
   /** Initial state of the filter row. Default true; a saved choice wins. */
   filterRow?: boolean
-  /** Namespace for remembering the filter-row toggle in localStorage. */
-  storageKey?: string
   /**
    * Master gate for typing into cells. Pages drive this from their own
    * edit-unlock toggle, so the grid is read-only until the user asks for it.

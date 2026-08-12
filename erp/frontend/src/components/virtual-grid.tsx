@@ -21,9 +21,11 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ArrowUp, ArrowDown, Search, Columns, X, ListFilter } from "lucide-react"
+import { ArrowUp, ArrowDown, Search, Columns, X, ListFilter, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
 import { FilterRowCell } from "@/components/grid/filter-row"
@@ -88,6 +90,23 @@ interface VirtualGridProps<T> {
   getRowId?: (row: T) => string
   /** Applied to the outer Card — several pages nest this grid in their own. */
   className?: string
+  /** Shown in place of the default "No data found". */
+  emptyMessage?: ReactNode
+  /**
+   * Namespace for this grid's remembered state — column widths, hidden columns
+   * and the filter-row toggle — under `vgrid:<key>:*` in localStorage. Omit and
+   * the grid remembers nothing.
+   */
+  storageKey?: string
+  /**
+   * "Open this record": fires on double-click of a cell with no editor, and on
+   * Enter when nothing is being edited.
+   *
+   * Deliberately not a single-click handler — in spreadsheet mode a click puts
+   * the cell cursor somewhere, and navigating on click would leave no way to
+   * select a cell at all.
+   */
+  onRowActivate?: (row: T) => void
   /**
    * Excel-like presentation: fixed 26px rows, gridlines on every cell and a
    * row-number gutter. Cells clip instead of wrapping, so don't turn this on
@@ -113,18 +132,21 @@ export function VirtualGrid<T>({
   onVisibleRowsChange,
   getRowId,
   className,
+  emptyMessage = "No data found",
+  storageKey,
+  onRowActivate,
   spreadsheet = false,
   spreadsheetOptions,
 }: VirtualGridProps<T>) {
   const rowHeight = rowHeightProp ?? (spreadsheet ? SHEET_ROW_HEIGHT : 44)
   const showRowNumbers = spreadsheet && (spreadsheetOptions?.rowNumbers ?? true)
-  const filterRowStorageKey = spreadsheetOptions?.storageKey
   const [filterRowOpen, setFilterRowOpen] = useState(spreadsheetOptions?.filterRow ?? true)
   const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
+  const [restored, setRestored] = useState(false)
 
   // Convert VirtualGridColumn to TanStack ColumnDef
   // Default: every column is sortable + filterable unless explicitly opted out.
@@ -138,7 +160,7 @@ export function VirtualGrid<T>({
           size: col.size ?? 150,
           minSize: 60,
           maxSize: 800,
-          enableResizing: true,
+          enableResizing: col.resizable ?? true,
           accessorFn: col.accessorFn,
           cell: ({ row }) => col.cell(row.original),
           enableSorting: col.sortable ?? true,
@@ -224,23 +246,58 @@ export function VirtualGrid<T>({
         : undefined,
   })
 
-  // Read the saved toggle after mount, not in the useState initializer —
-  // localStorage isn't there during SSR and reading it inline mismatches the
-  // hydrated markup.
+  // ---- Remembered state --------------------------------------------------
+  //
+  // All read after mount, never in a useState initializer — localStorage isn't
+  // there during SSR and reading it inline mismatches the hydrated markup.
+
+  const stored = (suffix: string) => `vgrid:${storageKey}:${suffix}`
+  const write = (suffix: string, value: string) => {
+    if (storageKey) window.localStorage.setItem(stored(suffix), value)
+  }
+
   useEffect(() => {
-    if (!filterRowStorageKey) return
-    const saved = window.localStorage.getItem(`vgrid:${filterRowStorageKey}:filterRow`)
-    if (saved !== null) setFilterRowOpen(saved === "1")
-  }, [filterRowStorageKey])
+    if (!storageKey) return
+    const savedFilterRow = window.localStorage.getItem(`vgrid:${storageKey}:filterRow`)
+    if (savedFilterRow !== null) setFilterRowOpen(savedFilterRow === "1")
+
+    try {
+      const savedSizing = window.localStorage.getItem(`vgrid:${storageKey}:sizing`)
+      if (savedSizing) setColumnSizing(JSON.parse(savedSizing))
+      const savedHidden = window.localStorage.getItem(`vgrid:${storageKey}:hidden`)
+      if (savedHidden) setColumnVisibility(JSON.parse(savedHidden))
+    } catch {
+      // Corrupt or hand-edited entry — fall back to defaults rather than
+      // leaving the grid unrenderable.
+      window.localStorage.removeItem(`vgrid:${storageKey}:sizing`)
+      window.localStorage.removeItem(`vgrid:${storageKey}:hidden`)
+    }
+    setRestored(true)
+  }, [storageKey])
+
+  // Only persist once the saved values are in, or the first render's empty
+  // defaults would overwrite them.
+  useEffect(() => {
+    if (!storageKey || !restored) return
+    write("sizing", JSON.stringify(columnSizing))
+  }, [columnSizing, storageKey, restored])
+
+  useEffect(() => {
+    if (!storageKey || !restored) return
+    write("hidden", JSON.stringify(columnVisibility))
+  }, [columnVisibility, storageKey, restored])
 
   const toggleFilterRow = () => {
     setFilterRowOpen((open) => {
       const next = !open
-      if (filterRowStorageKey) {
-        window.localStorage.setItem(`vgrid:${filterRowStorageKey}:filterRow`, next ? "1" : "0")
-      }
+      write("filterRow", next ? "1" : "0")
       return next
     })
+  }
+
+  const resetColumns = () => {
+    setColumnSizing({})
+    setColumnVisibility({})
   }
 
   const activeFilterCount = columnFilters.length
@@ -428,7 +485,15 @@ export function VirtualGrid<T>({
       }
       case "Enter":
         e.preventDefault()
-        move(e.shiftKey ? r - 1 : r + 1, c, false)
+        // On a grid that can be typed into, Enter belongs to the cursor —
+        // that's the spreadsheet convention, and F2/double-click still open an
+        // editor. Only a read-only grid gives Enter to "open this record".
+        if (onRowActivate && !editable) {
+          const row = rows[r]
+          if (row) onRowActivate(row.original)
+        } else {
+          move(e.shiftKey ? r - 1 : r + 1, c, false)
+        }
         break
     }
   }
@@ -818,6 +883,13 @@ export function VirtualGrid<T>({
                     {typeof column.columnDef.header === "string" ? column.columnDef.header : column.id}
                   </DropdownMenuCheckboxItem>
                 ))}
+                {/* Without this, dragging a column down to its 60px minimum
+                    leaves no way back. */}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={resetColumns}>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Reset columns
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             {headerActions}
@@ -1038,7 +1110,9 @@ export function VirtualGrid<T>({
                                   colIdx,
                                   String(colDef?.edit?.getValue(row.original) ?? "")
                                 )
-                            : undefined
+                            : onRowActivate
+                              ? () => onRowActivate(row.original)
+                              : undefined
                         }
                       >
                         {isEditingCell && colDef?.edit ? (
@@ -1066,11 +1140,34 @@ export function VirtualGrid<T>({
             })}
           </div>
 
-          {isLoading && rows.length === 0 && (
-            <div className="flex items-center justify-center h-40 text-muted-foreground">Loading...</div>
-          )}
+          {/* A shaped skeleton rather than the word "Loading" — it holds the
+              column widths, so the grid doesn't jump when the data lands. */}
+          {isLoading && rows.length === 0 &&
+            Array.from({ length: 8 }, (_, i) => (
+              <div
+                key={i}
+                className={cn("flex border-b", spreadsheet && "border-border")}
+                style={{ height: rowHeight }}
+              >
+                {gutterWidth > 0 && (
+                  <div
+                    className="sticky left-0 shrink-0 bg-muted border-r border-border"
+                    style={{ width: gutterWidth, minWidth: gutterWidth }}
+                  />
+                )}
+                {visibleLeafColumns.map((column) => (
+                  <div
+                    key={column.id}
+                    className={cn("shrink-0 flex items-center", spreadsheet ? "px-2" : "px-3")}
+                    style={{ width: column.getSize(), minWidth: column.getSize() }}
+                  >
+                    <div className="h-2 w-full max-w-[70%] rounded bg-muted animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            ))}
           {!isLoading && rows.length === 0 && (
-            <div className="flex items-center justify-center h-40 text-muted-foreground">No data found</div>
+            <div className="flex items-center justify-center h-40 text-muted-foreground">{emptyMessage}</div>
           )}
           </div>
         </div>

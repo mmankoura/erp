@@ -919,11 +919,11 @@ export default function InventoryPage() {
             isLoading={lotsLoading}
             spreadsheet
             spreadsheetOptions={{
-              storageKey: "inventory-lots",
               editable: canEditLots && editUnlocked,
               onCommit: commitLotEdits,
               onAfterCommit: onLotSaved,
             }}
+            storageKey="inventory-lots"
             getRowId={(l) => l.id}
             height={620}
             headerActions={
