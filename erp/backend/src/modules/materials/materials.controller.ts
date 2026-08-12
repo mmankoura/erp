@@ -17,6 +17,7 @@ import {
   CreateMaterialDto,
   UpdateMaterialDto,
   BulkCreateMaterialDto,
+  ResolvePartNumbersDto,
 } from './dto';
 import { FilterMaterialsDto } from './dto/filter-materials.dto';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
@@ -45,6 +46,15 @@ export class MaterialsController {
   @Post('filter')
   async filterMaterials(@Body() dto: FilterMaterialsDto) {
     return this.materialsService.filterMaterials(dto);
+  }
+
+  /**
+   * Resolve a batch of internal part numbers — what a BOM import needs before
+   * it can tell you which lines are new materials.
+   */
+  @Post('resolve-part-numbers')
+  async resolvePartNumbers(@Body() dto: ResolvePartNumbersDto) {
+    return this.materialsService.resolveByPartNumbers(dto.part_numbers);
   }
 
   @Post()

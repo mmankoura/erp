@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { BomService } from './bom.service';
 import { BomImportService } from './bom-import.service';
+import { BomWizardService } from './bom-wizard.service';
 import {
   CreateBomRevisionDto,
   UpdateBomRevisionDto,
@@ -27,6 +28,10 @@ import {
   BomImportCommitDto,
   ReplaceBomItemsDto,
 } from './dto';
+import {
+  CreateBomWizardRecipeDto,
+  UpdateBomWizardRecipeDto,
+} from './dto/bom-wizard-recipe.dto';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -39,6 +44,7 @@ export class BomController {
   constructor(
     private readonly bomService: BomService,
     private readonly bomImportService: BomImportService,
+    private readonly bomWizardService: BomWizardService,
   ) {}
 
   // ============ Revision Endpoints ============
@@ -252,6 +258,43 @@ export class BomController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async commitImport(@Body() dto: BomImportCommitDto) {
     return this.bomImportService.commitImport(dto);
+  }
+
+  // ============ Wizard Recipe Endpoints ============
+
+  @Get('wizard/recipes')
+  async findAllRecipes() {
+    return this.bomWizardService.findAll();
+  }
+
+  @Get('wizard/recipes/:id')
+  async findRecipe(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bomWizardService.findOne(id);
+  }
+
+  @Post('wizard/recipes')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async createRecipe(
+    @Body() dto: CreateBomWizardRecipeDto,
+    @CurrentUser() user?: User,
+  ) {
+    return this.bomWizardService.create(dto, user?.username);
+  }
+
+  @Patch('wizard/recipes/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async updateRecipe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBomWizardRecipeDto,
+  ) {
+    return this.bomWizardService.update(id, dto);
+  }
+
+  @Delete('wizard/recipes/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteRecipe(@Param('id', ParseUUIDPipe) id: string) {
+    await this.bomWizardService.remove(id);
   }
 
   // ==================== BOM ITEM ALTERNATES ====================
