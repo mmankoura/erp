@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { api, type Order, type MrpShortage, type MrpShortagesResponse, type MaterialStatus } from "@/lib/api"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -50,10 +51,7 @@ function MaterialStatusBadge({ status }: { status: MaterialStatus }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger>
-          <Badge variant="outline" className={`${config.bg} border-0 gap-1`}>
-            <Icon className="h-3 w-3" />
-            {config.label}
-          </Badge>
+          <Chip className={`${config.bg} border-0`}>{config.label}</Chip>
         </TooltipTrigger>
         <TooltipContent>
           {status === "READY" && "All materials available for production"}
@@ -150,7 +148,7 @@ export default function OrdersPage() {
       filterable: true,
       accessorFn: (order) => order.po_number ?? "",
       filterAccessor: (order) => order.po_number || "-",
-      cell: (order) => <span className="text-sm">{order.po_number || "\u2014"}</span>,
+      cell: (order) => <span>{order.po_number || "\u2014"}</span>,
     },
     {
       id: "wo_number",
@@ -160,7 +158,7 @@ export default function OrdersPage() {
       filterable: true,
       accessorFn: (order) => order.wo_number ?? "",
       filterAccessor: (order) => order.wo_number || "-",
-      cell: (order) => <span className="text-sm">{order.wo_number || "\u2014"}</span>,
+      cell: (order) => <span>{order.wo_number || "\u2014"}</span>,
     },
     {
       id: "customer",
@@ -200,9 +198,9 @@ export default function OrdersPage() {
       accessorFn: (order) => order.status,
       filterAccessor: (order) => order.status.replace("_", " "),
       cell: (order) => (
-        <Badge variant="outline" className={orderStatusColors[order.status]}>
+        <Chip className={orderStatusColors[order.status]}>
           {order.status.replace("_", " ")}
-        </Badge>
+        </Chip>
       ),
     },
     {
@@ -246,9 +244,7 @@ export default function OrdersPage() {
       accessorFn: (order) => order.order_type,
       filterAccessor: (order) => order.order_type,
       cell: (order) => (
-        <Badge variant="secondary" className="text-xs">
-          {order.order_type}
-        </Badge>
+        <Chip tone="muted">{order.order_type}</Chip>
       ),
     },
     {
@@ -263,7 +259,7 @@ export default function OrdersPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-5 w-5"
             onClick={(e) => {
               e.stopPropagation()
               router.push(`/orders/${order.id}`)
@@ -274,7 +270,7 @@ export default function OrdersPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
+            className="h-5 w-5 text-destructive hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation()
               handleDelete(order.id, order.order_number)
@@ -380,6 +376,9 @@ export default function OrdersPage() {
           (order.product?.name ?? "").toLowerCase().includes(q) ||
           (order.product?.part_number ?? "").toLowerCase().includes(q)
         }
+        spreadsheet
+        storageKey="orders"
+        getRowId={(r) => r.id}
       />
     </div>
   )

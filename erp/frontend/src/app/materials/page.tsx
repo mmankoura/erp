@@ -5,6 +5,7 @@ import { api, type Material, type Customer } from "@/lib/api"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { RelationalFilterBuilder, type FilterGroup } from "@/components/relational-filter-builder"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
@@ -432,7 +433,7 @@ export default function MaterialsPage() {
       accessorFn: (m) => m.resource_type || "",
       filterAccessor: (m) => m.resource_type || "-",
       cell: (m) =>
-        m.resource_type ? <Badge variant="outline">{m.resource_type}</Badge> : "-",
+        m.resource_type ? <Chip>{m.resource_type}</Chip> : "—",
     },
     {
       id: "category",
@@ -443,7 +444,7 @@ export default function MaterialsPage() {
       accessorFn: (m) => m.category || "",
       filterAccessor: (m) => m.category || "-",
       cell: (m) =>
-        m.category ? <Badge variant="secondary">{m.category}</Badge> : "-",
+        m.category ? <Chip tone="muted">{m.category}</Chip> : "—",
     },
     {
       id: "uom",
@@ -467,7 +468,7 @@ export default function MaterialsPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-5 w-5"
             onClick={(e) => {
               e.stopPropagation()
               router.push(`/materials/${m.id}`)
@@ -486,7 +487,7 @@ export default function MaterialsPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-5 w-5"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Pencil className="h-4 w-4" />
@@ -496,7 +497,7 @@ export default function MaterialsPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-destructive hover:text-destructive"
+                className="h-5 w-5 text-destructive hover:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation()
                   if (confirm("Are you sure you want to delete this material?")) {
@@ -649,6 +650,9 @@ export default function MaterialsPage() {
           (m.description?.toLowerCase().includes(q) ?? false) ||
           (m.customer?.name?.toLowerCase().includes(q) ?? false)
         }
+        spreadsheet
+        storageKey="materials"
+        getRowId={(r) => r.id}
       />
     </div>
   )

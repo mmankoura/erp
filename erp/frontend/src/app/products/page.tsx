@@ -4,6 +4,7 @@ import { useApi, useMutation } from "@/hooks/use-api"
 import { api, type Product, type Customer } from "@/lib/api"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
@@ -276,10 +277,7 @@ export default function ProductsPage() {
       filterAccessor: (product) => (product.active_bom_revision_id ? "Active" : "No BOM"),
       cell: (product) =>
         product.active_bom_revision_id ? (
-          <Badge variant="secondary" className="gap-1">
-            <FileText className="h-3 w-3" />
-            Active
-          </Badge>
+          <Chip tone="success">Active</Chip>
         ) : (
           <span className="text-muted-foreground text-sm">No BOM</span>
         ),
@@ -296,7 +294,7 @@ export default function ProductsPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-5 w-5"
             onClick={(e) => {
               e.stopPropagation()
               router.push(`/products/${product.id}`)
@@ -313,7 +311,7 @@ export default function ProductsPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-5 w-5"
                 onClick={(e) => e.stopPropagation()}
               >
                 <Pencil className="h-4 w-4" />
@@ -323,7 +321,7 @@ export default function ProductsPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
+            className="h-5 w-5 text-destructive hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation()
               if (confirm("Are you sure you want to delete this product?")) {
@@ -416,6 +414,9 @@ export default function ProductsPage() {
           (product.description?.toLowerCase().includes(q) ?? false) ||
           (product.customer?.name?.toLowerCase().includes(q) ?? false)
         }
+        spreadsheet
+        storageKey="products"
+        getRowId={(r) => r.id}
       />
     </div>
   )

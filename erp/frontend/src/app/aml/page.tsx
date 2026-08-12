@@ -5,6 +5,7 @@ import { api, type ApprovedManufacturer, type AmlStatus, type Material, type Att
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Chip } from "@/components/grid/chip"
 import {
   Dialog,
   DialogContent,
@@ -618,9 +619,9 @@ export default function AMLPage() {
       accessorFn: (entry) => entry.source,
       filterAccessor: (entry) => (entry.source === "BOM_IMPORT" ? "BOM Import" : "Manual"),
       cell: (entry) => (
-        <Badge variant={entry.source === "BOM_IMPORT" ? "secondary" : "outline"} className="text-xs">
+        <Chip tone={entry.source === "BOM_IMPORT" ? "muted" : "neutral"}>
           {entry.source === "BOM_IMPORT" ? "BOM Import" : "Manual"}
-        </Badge>
+        </Chip>
       ),
     },
     {
@@ -642,10 +643,7 @@ export default function AMLPage() {
       accessorFn: (entry) => entry.status,
       filterAccessor: (entry) => statusConfig[entry.status].label,
       cell: (entry) => (
-        <Badge variant={statusConfig[entry.status].variant}>
-          {statusConfig[entry.status].icon}
-          <span className="ml-1">{statusConfig[entry.status].label}</span>
-        </Badge>
+        <Chip>{statusConfig[entry.status].label}</Chip>
       ),
     },
     {
@@ -661,7 +659,7 @@ export default function AMLPage() {
             aml={entry}
             onSuccess={refetch}
             trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button variant="ghost" size="icon" className="h-5 w-5">
                 <Eye className="h-4 w-4" />
               </Button>
             }
@@ -670,7 +668,7 @@ export default function AMLPage() {
             aml={entry}
             onSuccess={refetch}
             trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button variant="ghost" size="icon" className="h-5 w-5">
                 <Factory className="h-4 w-4" />
               </Button>
             }
@@ -790,6 +788,9 @@ export default function AMLPage() {
           (item.customer?.name || "").toLowerCase().includes(q) ||
           (item.notes || "").toLowerCase().includes(q)
         }
+        spreadsheet
+        storageKey="aml"
+        getRowId={(r) => r.id}
       />
     </div>
   )

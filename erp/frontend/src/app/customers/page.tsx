@@ -257,7 +257,7 @@ export default function CustomersPage() {
             customer={c}
             onSuccess={refetch}
             trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button variant="ghost" size="icon" className="h-5 w-5">
                 <Pencil className="h-4 w-4" />
               </Button>
             }
@@ -265,7 +265,7 @@ export default function CustomersPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
+            className="h-5 w-5 text-destructive hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation()
               if (confirm("Are you sure you want to delete this customer?")) {
@@ -311,6 +311,9 @@ export default function CustomersPage() {
           (c.email?.toLowerCase().includes(q) ?? false) ||
           (c.phone?.toLowerCase().includes(q) ?? false)
         }
+        spreadsheet
+        storageKey="customers"
+        getRowId={(r) => r.id}
       />
     </div>
   )

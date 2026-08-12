@@ -274,7 +274,7 @@ export default function SuppliersPage() {
             supplier={s}
             onSuccess={refetch}
             trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button variant="ghost" size="icon" className="h-5 w-5">
                 <Pencil className="h-4 w-4" />
               </Button>
             }
@@ -282,7 +282,7 @@ export default function SuppliersPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
+            className="h-5 w-5 text-destructive hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation()
               if (confirm("Are you sure you want to delete this supplier?")) {
@@ -328,6 +328,9 @@ export default function SuppliersPage() {
           (s.email?.toLowerCase().includes(q) ?? false) ||
           (s.phone?.toLowerCase().includes(q) ?? false)
         }
+        spreadsheet
+        storageKey="suppliers"
+        getRowId={(r) => r.id}
       />
     </div>
   )
