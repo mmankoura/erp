@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -24,11 +25,13 @@ import {
   UpdateBomImportMappingDto,
   BomImportUploadDto,
   BomImportCommitDto,
+  ReplaceBomItemsDto,
 } from './dto';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '../../entities/user.entity';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { User, UserRole } from '../../entities/user.entity';
 
 @Controller('bom')
 @UseGuards(AuthenticatedGuard, RolesGuard)
@@ -169,6 +172,27 @@ export class BomController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeItem(@Param('itemId', ParseUUIDPipe) itemId: string) {
     await this.bomService.removeItem(itemId);
+  }
+
+  /**
+   * Replace every line of a revision in one transaction — the BOM Wizard's
+   * "correct this revision in place" path.
+   *
+   * ADMIN only for now, unlike the single-item edits above: this rewrites the
+   * BOM that live orders were costed and kitted against, and the guard that
+   * stops it doing real damage is new.
+   */
+  @Put('revision/:id/items')
+  @Roles(UserRole.ADMIN)
+  async replaceRevisionItems(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReplaceBomItemsDto,
+    @CurrentUser() user?: User,
+  ) {
+    return this.bomService.replaceRevisionItems(id, dto.items, {
+      actor: user?.username,
+      allowWithOrders: dto.confirm_overwrite_with_orders,
+    });
   }
 
   // ============ Import Mapping Endpoints ============

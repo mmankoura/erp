@@ -5,13 +5,13 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { BomRevision } from '../../entities/bom-revision.entity';
 import { BomItem } from '../../entities/bom-item.entity';
 import { BomItemAlternate } from '../../entities/bom-item-alternate.entity';
 import { Material } from '../../entities/material.entity';
 import { Product } from '../../entities/product.entity';
-import { Order } from '../../entities/order.entity';
+import { Order, OrderStatus } from '../../entities/order.entity';
 import {
   CreateBomRevisionDto,
   UpdateBomRevisionDto,
@@ -19,11 +19,35 @@ import {
   UpdateBomItemDto,
   CreateFullBomRevisionDto,
 } from './dto';
-import { AuditService } from '../audit/audit.service';
+import { AuditService, CreateAuditEventDto } from '../audit/audit.service';
 import {
   AuditEventType,
   AuditEntityType,
 } from '../../entities/audit-event.entity';
+
+/**
+ * One line of a wholesale revision replacement. `bom_line_key` is the identity
+ * the diff matches on, so the caller must derive it before getting here.
+ */
+export interface ReplacementBomItem {
+  material_id: string;
+  bom_line_key: string;
+  quantity_required: number;
+  line_number?: number | null;
+  reference_designators?: string | null;
+  notes?: string | null;
+  alternate_ipn?: string | null;
+  polarized?: boolean;
+  scrap_factor?: number;
+}
+
+export interface ReplaceItemsResult {
+  revision: BomRevision;
+  added: number;
+  updated: number;
+  removed: number;
+  unchanged: number;
+}
 
 export interface BomDiffResult {
   added: BomItem[];
@@ -246,6 +270,239 @@ export class BomService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Replace every line of an existing revision in one transaction.
+   *
+   * This is the "the BOM was imported wrong, fix it in place" path. It is
+   * deliberately the most guarded write in this module, because nothing
+   * downstream snapshots a BOM: MRP, kitting and production all read
+   * `bom_items` live through `order.bom_revision_id`. Rewriting a revision
+   * therefore rewrites the arithmetic behind work that has already happened.
+   *
+   * Lines are matched on `bom_line_key` so a matched line keeps its
+   * `bom_item.id`, which is what keeps its `bom_item_alternates` rows attached.
+   * Delete-and-reinsert would silently drop every alternate on the revision —
+   * the same bug `copyRevision` has.
+   */
+  async replaceRevisionItems(
+    revisionId: string,
+    items: ReplacementBomItem[],
+    opts: { actor?: string; allowWithOrders?: boolean } = {},
+  ): Promise<ReplaceItemsResult> {
+    const revision = await this.findRevision(revisionId);
+
+    if (revision.is_archived) {
+      throw new BadRequestException(
+        'Cannot edit an archived revision. Unarchive it first.',
+      );
+    }
+
+    // No DB uniqueness backs (bom_revision_id, bom_line_key) — the migration
+    // created a plain index — so the check has to happen here.
+    const keys = new Set<string>();
+    for (const item of items) {
+      if (keys.has(item.bom_line_key)) {
+        throw new BadRequestException(
+          `Duplicate line key "${item.bom_line_key}" in the submitted items.`,
+        );
+      }
+      keys.add(item.bom_line_key);
+    }
+
+    await this.assertRevisionIsSafeToRewrite(revisionId, opts.allowWithOrders);
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    const events: CreateAuditEventDto[] = [];
+    let added = 0;
+    let updated = 0;
+    let unchanged = 0;
+
+    try {
+      const existing = await queryRunner.manager.find(BomItem, {
+        where: { bom_revision_id: revisionId },
+      });
+      const existingByKey = new Map(
+        existing.map((item) => [item.bom_line_key ?? item.material_id, item]),
+      );
+
+      for (const incoming of items) {
+        const match = existingByKey.get(incoming.bom_line_key);
+
+        if (!match) {
+          const created = queryRunner.manager.create(BomItem, {
+            ...this.toItemColumns(incoming),
+            bom_revision_id: revisionId,
+          });
+          const saved = await queryRunner.manager.save(created);
+          added++;
+          events.push({
+            event_type: AuditEventType.BOM_ITEM_ADDED,
+            entity_type: AuditEntityType.BOM_ITEM,
+            entity_id: saved.id ?? incoming.bom_line_key,
+            actor: opts.actor,
+            new_value: this.toItemColumns(incoming),
+            metadata: { bom_revision_id: revisionId },
+          });
+          continue;
+        }
+
+        const before = this.toItemColumns(match);
+        const after = this.toItemColumns(incoming);
+
+        if (this.itemColumnsEqual(before, after)) {
+          unchanged++;
+          continue;
+        }
+
+        Object.assign(match, after);
+        await queryRunner.manager.save(match);
+        updated++;
+        events.push({
+          event_type: AuditEventType.BOM_ITEM_UPDATED,
+          entity_type: AuditEntityType.BOM_ITEM,
+          entity_id: match.id,
+          actor: opts.actor,
+          old_value: before,
+          new_value: after,
+          metadata: { bom_revision_id: revisionId },
+        });
+      }
+
+      const removedItems = existing.filter(
+        (item) => !keys.has(item.bom_line_key ?? item.material_id),
+      );
+
+      if (removedItems.length > 0) {
+        const removedIds = removedItems.map((item) => item.id);
+        // Alternates first — they carry an FK onto bom_items.
+        await queryRunner.manager.delete(BomItemAlternate, {
+          bom_item_id: In(removedIds),
+        });
+        await queryRunner.manager.delete(BomItem, { id: In(removedIds) });
+
+        for (const item of removedItems) {
+          events.push({
+            event_type: AuditEventType.BOM_ITEM_REMOVED,
+            entity_type: AuditEntityType.BOM_ITEM,
+            entity_id: item.id,
+            actor: opts.actor,
+            old_value: this.toItemColumns(item),
+            metadata: { bom_revision_id: revisionId },
+          });
+        }
+      }
+
+      await queryRunner.commitTransaction();
+
+      const summary = {
+        added,
+        updated,
+        removed: removedItems.length,
+        unchanged,
+      };
+
+      // After commit, so a failed audit write can never roll back a good BOM.
+      await this.auditService.emitStateChange(
+        AuditEventType.BOM_REVISION_UPDATED,
+        AuditEntityType.BOM_REVISION,
+        revisionId,
+        { item_count: existing.length },
+        { item_count: items.length, ...summary },
+        opts.actor,
+        { source: 'BOM_WIZARD' },
+      );
+      await this.auditService.emitMany(events);
+
+      return { revision: await this.findRevision(revisionId), ...summary };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Refuse to rewrite a revision when doing so would corrupt work in flight.
+   *
+   * Three tiers, because the damage is not uniform. An order that has only been
+   * entered has consumed nothing yet, so an explicit acknowledgement is enough.
+   * An order that has moved past ENTERED has already had a kitting list built
+   * from these lines and, past SMT, inventory consumed against them — and
+   * neither is recomputed. `order_material_sources` is seeded once at order
+   * creation and never re-seeded, so a line added here would have no supply
+   * source at all and a removed one would leave an orphan. There is no
+   * reconciliation path for any of that, so this tier has no override.
+   */
+  private async assertRevisionIsSafeToRewrite(
+    revisionId: string,
+    allowWithOrders = false,
+  ): Promise<void> {
+    const orders = await this.orderRepository.find({
+      where: { bom_revision_id: revisionId },
+    });
+
+    const live = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
+    if (live.length === 0) return;
+
+    const inFlight = live.filter((o) => o.status !== OrderStatus.ENTERED);
+    if (inFlight.length > 0) {
+      const offenders = inFlight
+        .slice(0, 3)
+        .map((o) => `${o.order_number} (${o.status})`)
+        .join(', ');
+      throw new ConflictException(
+        `Cannot overwrite: ${inFlight.length} order${inFlight.length !== 1 ? 's have' : ' has'} moved past ENTERED against this revision — ${offenders}. ` +
+          'Their kitting lists and material consumption were built from these lines and are not recomputed. Save as a new revision instead.',
+      );
+    }
+
+    if (!allowWithOrders) {
+      const names = live
+        .slice(0, 3)
+        .map((o) => o.order_number)
+        .join(', ');
+      throw new ConflictException(
+        `${live.length} order${live.length !== 1 ? 's' : ''} reference this revision (${names}). ` +
+          'Overwriting rewrites the BOM they were created against. Save as a new revision, or confirm the overwrite explicitly.',
+      );
+    }
+  }
+
+  /** The columns a replacement controls. Anything absent is normalised so comparisons are stable. */
+  private toItemColumns(item: ReplacementBomItem | BomItem) {
+    return {
+      material_id: item.material_id,
+      bom_line_key: item.bom_line_key ?? null,
+      quantity_required: Number(item.quantity_required),
+      line_number: item.line_number ?? null,
+      reference_designators: item.reference_designators ?? null,
+      notes: item.notes ?? null,
+      alternate_ipn: item.alternate_ipn ?? null,
+      polarized: item.polarized ?? false,
+      scrap_factor: Number(item.scrap_factor ?? 0),
+    };
+  }
+
+  private itemColumnsEqual(
+    a: ReturnType<BomService['toItemColumns']>,
+    b: ReturnType<BomService['toItemColumns']>,
+  ): boolean {
+    return (
+      a.material_id === b.material_id &&
+      a.quantity_required === b.quantity_required &&
+      a.line_number === b.line_number &&
+      a.reference_designators === b.reference_designators &&
+      a.notes === b.notes &&
+      a.alternate_ipn === b.alternate_ipn &&
+      a.polarized === b.polarized &&
+      a.scrap_factor === b.scrap_factor
+    );
   }
 
   async updateRevision(

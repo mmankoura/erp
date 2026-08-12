@@ -6,3 +6,4 @@ export * from './create-full-bom-revision.dto';
 export * from './create-bom-import-mapping.dto';
 export * from './update-bom-import-mapping.dto';
 export * from './bom-import.dto';
+export * from './replace-bom-items.dto';

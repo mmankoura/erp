@@ -115,6 +115,38 @@ export function createMockDataSource(
 }
 
 /**
+ * Build a QueryRunner mock for testing services that manage their own
+ * transaction. The lifecycle methods are jest.fn()s so a test can assert that a
+ * failure rolled back rather than committed — the thing that matters most about
+ * a transaction and the thing a `transaction(cb)` mock cannot show you.
+ */
+export function createMockQueryRunner(
+  managerOverrides: Partial<EntityManager> = {},
+): any {
+  const manager: any = {
+    save: jest.fn((_entityOrClass: any, maybeEntity?: any) =>
+      Promise.resolve(maybeEntity ?? _entityOrClass),
+    ),
+    create: jest.fn((_entityClass: any, dto: any) => dto),
+    find: jest.fn().mockResolvedValue([]),
+    findOne: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    remove: jest.fn(),
+    query: jest.fn(),
+    ...managerOverrides,
+  };
+  return {
+    connect: jest.fn(),
+    startTransaction: jest.fn(),
+    commitTransaction: jest.fn(),
+    rollbackTransaction: jest.fn(),
+    release: jest.fn(),
+    manager,
+  };
+}
+
+/**
  * Build a mock NestJS ExecutionContext for guard testing.
  */
 export function createMockExecutionContext(opts: {
