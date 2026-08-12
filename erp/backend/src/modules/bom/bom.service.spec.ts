@@ -14,7 +14,16 @@ import { Material } from '../../entities/material.entity';
 import { Product } from '../../entities/product.entity';
 import { Order } from '../../entities/order.entity';
 import { AuditService } from '../audit/audit.service';
-import { createMockRepo, MockRepo } from '../../test-utils/repo-mock';
+import {
+  createMockRepo,
+  createMockQueryRunner,
+  MockRepo,
+} from '../../test-utils/repo-mock';
+import { OrderStatus } from '../../entities/order.entity';
+import {
+  AuditEventType,
+  AuditEntityType,
+} from '../../entities/audit-event.entity';
 
 const buildRevision = (overrides: Partial<BomRevision> = {}): BomRevision =>
   ({
@@ -59,7 +68,13 @@ describe('BomService', () => {
   let materialRepo: MockRepo<Material>;
   let productRepo: MockRepo<Product>;
   let orderRepo: MockRepo<Order>;
-  let audit: { emitCreate: jest.Mock; emitDelete: jest.Mock; emitStateChange: jest.Mock };
+  let audit: {
+    emitCreate: jest.Mock;
+    emitDelete: jest.Mock;
+    emitStateChange: jest.Mock;
+    emitMany: jest.Mock;
+  };
+  let queryRunner: ReturnType<typeof createMockQueryRunner>;
 
   beforeEach(async () => {
     revRepo = createMockRepo<BomRevision>();
@@ -72,8 +87,10 @@ describe('BomService', () => {
       emitCreate: jest.fn(),
       emitDelete: jest.fn(),
       emitStateChange: jest.fn(),
+      emitMany: jest.fn(),
     };
-    const dataSource = { createQueryRunner: jest.fn() };
+    queryRunner = createMockQueryRunner();
+    const dataSource = { createQueryRunner: () => queryRunner };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -356,6 +373,225 @@ describe('BomService', () => {
     it('removeAlternate throws NotFound when missing', async () => {
       (altRepo.findOne as jest.Mock).mockResolvedValue(null);
       await expect(service.removeAlternate('alt-x')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('replaceRevisionItems', () => {
+    const line = (overrides: Partial<any> = {}) => ({
+      material_id: 'mat-1',
+      bom_line_key: 'IPN-1|R1',
+      quantity_required: 1,
+      line_number: 1,
+      reference_designators: 'R1',
+      notes: null,
+      alternate_ipn: null,
+      polarized: false,
+      scrap_factor: 0,
+      ...overrides,
+    });
+
+    /** Put a revision in place and set the order picture the guard will see. */
+    const given = (orders: Partial<Order>[], revision = buildRevision()) => {
+      (revRepo.findOne as jest.Mock).mockResolvedValue(revision);
+      (orderRepo.find as jest.Mock).mockResolvedValue(orders);
+    };
+
+    it('throws NotFound when the revision does not exist', async () => {
+      (revRepo.findOne as jest.Mock).mockResolvedValue(null);
+      await expect(service.replaceRevisionItems('rev-x', [line()])).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('refuses to rewrite an archived revision', async () => {
+      given([], buildRevision({ is_archived: true }));
+      await expect(service.replaceRevisionItems('rev-1', [line()])).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('rejects duplicate line keys, since no DB constraint catches them', async () => {
+      given([]);
+      await expect(
+        service.replaceRevisionItems('rev-1', [line(), line()]),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    describe('the order guard', () => {
+      it('proceeds when no orders reference the revision', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([]);
+        await expect(
+          service.replaceRevisionItems('rev-1', [line()]),
+        ).resolves.toBeDefined();
+        expect(queryRunner.commitTransaction).toHaveBeenCalled();
+      });
+
+      it('treats cancelled orders as not referencing it', async () => {
+        given([{ order_number: 'SO-1', status: OrderStatus.CANCELLED } as Order]);
+        queryRunner.manager.find.mockResolvedValue([]);
+        await expect(
+          service.replaceRevisionItems('rev-1', [line()]),
+        ).resolves.toBeDefined();
+      });
+
+      it('blocks on an ENTERED order unless the caller acknowledges it', async () => {
+        given([{ order_number: 'SO-1', status: OrderStatus.ENTERED } as Order]);
+        await expect(
+          service.replaceRevisionItems('rev-1', [line()]),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('allows an ENTERED order through with allowWithOrders', async () => {
+        given([{ order_number: 'SO-1', status: OrderStatus.ENTERED } as Order]);
+        queryRunner.manager.find.mockResolvedValue([]);
+        await expect(
+          service.replaceRevisionItems('rev-1', [line()], { allowWithOrders: true }),
+        ).resolves.toBeDefined();
+      });
+
+      it.each([
+        OrderStatus.KITTING,
+        OrderStatus.SMT,
+        OrderStatus.TH,
+        OrderStatus.SHIPPED,
+        OrderStatus.ON_HOLD,
+      ])('refuses an order in %s even with allowWithOrders', async (status) => {
+        given([{ order_number: 'SO-9', status } as Order]);
+        await expect(
+          service.replaceRevisionItems('rev-1', [line()], { allowWithOrders: true }),
+        ).rejects.toThrow(ConflictException);
+        expect(queryRunner.startTransaction).not.toHaveBeenCalled();
+      });
+
+      it('names the offending orders so the message is actionable', async () => {
+        given([{ order_number: 'SO-1055', status: OrderStatus.SMT } as Order]);
+        await expect(
+          service.replaceRevisionItems('rev-1', [line()]),
+        ).rejects.toThrow(/SO-1055 \(SMT\)/);
+      });
+    });
+
+    describe('the diff', () => {
+      it('adds, updates, removes and leaves unchanged lines alone', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([
+          buildItem({ id: 'keep', bom_line_key: 'IPN-1|R1', material_id: 'mat-1' }),
+          buildItem({
+            id: 'change',
+            bom_line_key: 'IPN-2|R2',
+            material_id: 'mat-2',
+            quantity_required: 1,
+          }),
+          buildItem({ id: 'gone', bom_line_key: 'IPN-3|R3', material_id: 'mat-3' }),
+        ]);
+
+        const result = await service.replaceRevisionItems('rev-1', [
+          line(), // unchanged
+          line({ bom_line_key: 'IPN-2|R2', material_id: 'mat-2', quantity_required: 7 }),
+          line({ bom_line_key: 'IPN-4|R4', material_id: 'mat-4' }), // new
+        ]);
+
+        expect(result).toMatchObject({ added: 1, updated: 1, removed: 1, unchanged: 1 });
+      });
+
+      it('keeps the row id of a matched line so its alternates survive', async () => {
+        given([]);
+        const existing = buildItem({
+          id: 'item-keep',
+          bom_line_key: 'IPN-1|R1',
+          quantity_required: 1,
+        });
+        queryRunner.manager.find.mockResolvedValue([existing]);
+
+        await service.replaceRevisionItems('rev-1', [line({ quantity_required: 9 })]);
+
+        // Updated in place — not deleted and reinserted.
+        expect(queryRunner.manager.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'item-keep', quantity_required: 9 }),
+        );
+        expect(queryRunner.manager.delete).not.toHaveBeenCalled();
+      });
+
+      it('deletes alternates before the items that own them', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([
+          buildItem({ id: 'gone', bom_line_key: 'IPN-9|R9' }),
+        ]);
+
+        await service.replaceRevisionItems('rev-1', [line()]);
+
+        const deleted = queryRunner.manager.delete.mock.calls.map((c: any[]) => c[0]);
+        expect(deleted[0]).toBe(BomItemAlternate);
+        expect(deleted[1]).toBe(BomItem);
+      });
+
+      it('falls back to material_id for legacy lines with no key', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([
+          buildItem({ id: 'legacy', bom_line_key: null, material_id: 'mat-legacy' }),
+        ]);
+
+        const result = await service.replaceRevisionItems('rev-1', [
+          line({ bom_line_key: 'mat-legacy', material_id: 'mat-legacy' }),
+        ]);
+
+        expect(result).toMatchObject({ added: 0, removed: 0 });
+      });
+    });
+
+    describe('transaction and audit', () => {
+      it('rolls back and does not audit when a write fails', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([]);
+        queryRunner.manager.save.mockRejectedValue(new Error('db down'));
+
+        await expect(service.replaceRevisionItems('rev-1', [line()])).rejects.toThrow(
+          'db down',
+        );
+        expect(queryRunner.rollbackTransaction).toHaveBeenCalled();
+        expect(queryRunner.commitTransaction).not.toHaveBeenCalled();
+        expect(audit.emitMany).not.toHaveBeenCalled();
+        expect(queryRunner.release).toHaveBeenCalled();
+      });
+
+      it('emits one event per changed line, and none for unchanged ones', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([
+          buildItem({ id: 'keep', bom_line_key: 'IPN-1|R1' }),
+          buildItem({ id: 'gone', bom_line_key: 'IPN-8|R8' }),
+        ]);
+
+        await service.replaceRevisionItems(
+          'rev-1',
+          [line(), line({ bom_line_key: 'IPN-5|R5', material_id: 'mat-5' })],
+          { actor: 'mark' },
+        );
+
+        const types = audit.emitMany.mock.calls[0][0].map((e: any) => e.event_type);
+        expect(types).toEqual([
+          AuditEventType.BOM_ITEM_ADDED,
+          AuditEventType.BOM_ITEM_REMOVED,
+        ]);
+        expect(audit.emitMany.mock.calls[0][0][0].actor).toBe('mark');
+      });
+
+      it('audits the revision summary after committing', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([]);
+
+        await service.replaceRevisionItems('rev-1', [line()]);
+
+        expect(audit.emitStateChange).toHaveBeenCalledWith(
+          AuditEventType.BOM_REVISION_UPDATED,
+          AuditEntityType.BOM_REVISION,
+          'rev-1',
+          expect.anything(),
+          expect.objectContaining({ added: 1 }),
+          undefined,
+          { source: 'BOM_WIZARD' },
+        );
+      });
     });
   });
 });
