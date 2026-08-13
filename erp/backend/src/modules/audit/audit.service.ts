@@ -63,6 +63,33 @@ export class AuditService {
   }
 
   /**
+   * Record a batch of audit events in a single insert.
+   *
+   * Replacing the items of a BOM revision produces one event per line, and a
+   * real BOM runs to a few hundred lines. Emitting those one at a time is a few
+   * hundred round trips for what is naturally one statement.
+   */
+  async emitMany(dtos: CreateAuditEventDto[]): Promise<AuditEvent[]> {
+    if (dtos.length === 0) return [];
+
+    const events = dtos.map((dto) =>
+      this.auditRepository.create({
+        event_type: dto.event_type,
+        entity_type: dto.entity_type,
+        entity_id: dto.entity_id,
+        actor: dto.actor ?? null,
+        old_value: dto.old_value ?? null,
+        new_value: dto.new_value ?? null,
+        metadata: dto.metadata ?? null,
+      }),
+    );
+
+    const saved = await this.auditRepository.save(events);
+    this.logger.debug(`Audit batch: ${dtos.length} events`);
+    return saved;
+  }
+
+  /**
    * Convenience method for recording state changes.
    * Automatically captures old and new values.
    */

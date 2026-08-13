@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -14,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { BomService } from './bom.service';
 import { BomImportService } from './bom-import.service';
+import { BomWizardService } from './bom-wizard.service';
 import {
   CreateBomRevisionDto,
   UpdateBomRevisionDto,
@@ -24,11 +26,17 @@ import {
   UpdateBomImportMappingDto,
   BomImportUploadDto,
   BomImportCommitDto,
+  ReplaceBomItemsDto,
 } from './dto';
+import {
+  CreateBomWizardRecipeDto,
+  UpdateBomWizardRecipeDto,
+} from './dto/bom-wizard-recipe.dto';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '../../entities/user.entity';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { User, UserRole } from '../../entities/user.entity';
 
 @Controller('bom')
 @UseGuards(AuthenticatedGuard, RolesGuard)
@@ -36,6 +44,7 @@ export class BomController {
   constructor(
     private readonly bomService: BomService,
     private readonly bomImportService: BomImportService,
+    private readonly bomWizardService: BomWizardService,
   ) {}
 
   // ============ Revision Endpoints ============
@@ -171,6 +180,27 @@ export class BomController {
     await this.bomService.removeItem(itemId);
   }
 
+  /**
+   * Replace every line of a revision in one transaction — the BOM Wizard's
+   * "correct this revision in place" path.
+   *
+   * ADMIN only for now, unlike the single-item edits above: this rewrites the
+   * BOM that live orders were costed and kitted against, and the guard that
+   * stops it doing real damage is new.
+   */
+  @Put('revision/:id/items')
+  @Roles(UserRole.ADMIN)
+  async replaceRevisionItems(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReplaceBomItemsDto,
+    @CurrentUser() user?: User,
+  ) {
+    return this.bomService.replaceRevisionItems(id, dto.items, {
+      actor: user?.username,
+      allowWithOrders: dto.confirm_overwrite_with_orders,
+    });
+  }
+
   // ============ Import Mapping Endpoints ============
 
   @Get('import/mappings')
@@ -228,6 +258,43 @@ export class BomController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async commitImport(@Body() dto: BomImportCommitDto) {
     return this.bomImportService.commitImport(dto);
+  }
+
+  // ============ Wizard Recipe Endpoints ============
+
+  @Get('wizard/recipes')
+  async findAllRecipes() {
+    return this.bomWizardService.findAll();
+  }
+
+  @Get('wizard/recipes/:id')
+  async findRecipe(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bomWizardService.findOne(id);
+  }
+
+  @Post('wizard/recipes')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async createRecipe(
+    @Body() dto: CreateBomWizardRecipeDto,
+    @CurrentUser() user?: User,
+  ) {
+    return this.bomWizardService.create(dto, user?.username);
+  }
+
+  @Patch('wizard/recipes/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async updateRecipe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBomWizardRecipeDto,
+  ) {
+    return this.bomWizardService.update(id, dto);
+  }
+
+  @Delete('wizard/recipes/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteRecipe(@Param('id', ParseUUIDPipe) id: string) {
+    await this.bomWizardService.remove(id);
   }
 
   // ==================== BOM ITEM ALTERNATES ====================
