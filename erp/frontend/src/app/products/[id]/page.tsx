@@ -44,14 +44,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -87,6 +79,11 @@ import { BomImportWizard } from "@/components/bom-import-wizard"
 import { useAuth, UserRole } from "@/contexts/auth-context"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { textCol, monoCol, numCol } from "@/components/grid/columns"
+import {
+  SHEET_ROW_HEIGHT,
+  SHEET_HEADER_HEIGHT,
+  SHEET_FILTER_HEIGHT,
+} from "@/components/grid/types"
 
 const resourceTypeLabels: Record<ResourceType, string> = {
   SMT: "SMT",
@@ -94,6 +91,124 @@ const resourceTypeLabels: Record<ResourceType, string> = {
   MECH: "Mechanical",
   PCB: "PCB",
   DNP: "Do Not Place",
+}
+
+/**
+ * Three of these stack inside an 80vh dialog, so none of them can take the
+ * grid's 560px default. Eight rows is what a section gets before it scrolls
+ * inside itself, which keeps all three sections reachable however lopsided the
+ * diff is — a 200-line "Added" can't push "Changed" off the bottom.
+ */
+function diffGridHeight(rowCount: number): number {
+  return Math.min(rowCount, 8) * SHEET_ROW_HEIGHT + SHEET_HEADER_HEIGHT + SHEET_FILTER_HEIGHT
+}
+
+/** Added and Removed hold BomItems and render identically; only the stripe and the storage key differ. */
+function BomDiffGrid({
+  items,
+  stripe,
+  storageKey,
+}: {
+  items: BomItem[]
+  stripe: { color: string; label: string }
+  storageKey: string
+}) {
+  const columns = useMemo<VirtualGridColumn<BomItem>[]>(
+    () => [
+      monoCol("ipn", "Internal P/N", (item) => item.material?.internal_part_number, {
+        size: 140,
+        cell: (item) =>
+          item.material?.internal_part_number ? (
+            <span className="font-medium">{item.material.internal_part_number}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      }),
+      textCol("description", "Description", (item) => item.material?.description, { size: 220 }),
+      numCol("quantity_required", "Qty", (item) => item.quantity_required, { size: 70 }),
+      {
+        ...textCol<BomItem>("reference_designators", "Ref Des", (item) => item.reference_designators, {
+          size: 240,
+        }),
+        // Clipped with the full list on hover, as on the BOM grid this dialog
+        // is compared against — `break-all` wrapping is what kept the old
+        // table off a fixed row height.
+        cell: (item) =>
+          item.reference_designators ? (
+            <span className="font-mono" title={item.reference_designators}>
+              {item.reference_designators}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+    ],
+    []
+  )
+
+  return (
+    <VirtualGrid
+      data={items}
+      columns={columns}
+      spreadsheet
+      bare
+      storageKey={storageKey}
+      getRowId={(item) => item.id}
+      height={diffGridHeight(items.length)}
+      // The section's colour moves to the gutter: in a sheet the cell
+      // background belongs to the selection, so tinting the row would fight it.
+      rowStripe={() => stripe}
+    />
+  )
+}
+
+/** A changed line: the part, plus the list of what differs about it. */
+type BomChange = BomDiff["changed"][number]
+
+function BomChangedGrid({ changes }: { changes: BomChange[] }) {
+  const columns = useMemo<VirtualGridColumn<BomChange>[]>(
+    () => [
+      monoCol("ipn", "Internal P/N", (change) => change.old.material?.internal_part_number, {
+        size: 140,
+        cell: (change) =>
+          change.old.material?.internal_part_number ? (
+            <span className="font-medium">{change.old.material.internal_part_number}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      }),
+      {
+        id: "changes",
+        header: "Changes",
+        size: 420,
+        sortable: false,
+        accessorFn: (change) => change.changes.join("; "),
+        filterAccessor: (change) => change.changes.join("; "),
+        copyValue: (change) => change.changes.join("; "),
+        // Was one line per change; now joined, with the full set on hover. A
+        // line that changed in four ways is still one row of the sheet.
+        cell: (change) => (
+          <span className="text-muted-foreground" title={change.changes.join("\n")}>
+            {change.changes.join("; ")}
+          </span>
+        ),
+      },
+    ],
+    []
+  )
+
+  return (
+    <VirtualGrid
+      data={changes}
+      columns={columns}
+      spreadsheet
+      bare
+      storageKey="bom-diff-changed"
+      getRowId={(change) => change.old.id}
+      height={diffGridHeight(changes.length)}
+      rowStripe={() => ({ color: "bg-blue-500", label: "Changed" })}
+    />
+  )
 }
 
 export default function ProductDetailPage() {
@@ -826,80 +941,29 @@ export default function ProductDetailPage() {
               {diffResult.added.length > 0 && (
                 <div>
                   <h4 className="font-medium mb-2 text-green-600 dark:text-green-400">Added Items</h4>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[130px]">Internal P/N</TableHead>
-                        <TableHead className="w-[200px]">Description</TableHead>
-                        <TableHead className="w-[60px]">Qty</TableHead>
-                        <TableHead className="min-w-[150px]">Ref Des</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {diffResult.added.map((item) => (
-                        <TableRow key={item.id} className="bg-green-50 dark:bg-green-950/20">
-                          <TableCell className="font-medium">{item.material?.internal_part_number || "-"}</TableCell>
-                          <TableCell>{item.material?.description || "-"}</TableCell>
-                          <TableCell className="font-mono">{item.quantity_required}</TableCell>
-                          <TableCell className="font-mono text-sm whitespace-normal break-all">{item.reference_designators || "-"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <BomDiffGrid
+                    items={diffResult.added}
+                    stripe={{ color: "bg-green-500", label: "Added" }}
+                    storageKey="bom-diff-added"
+                  />
                 </div>
               )}
 
               {diffResult.removed.length > 0 && (
                 <div>
                   <h4 className="font-medium mb-2 text-red-600 dark:text-red-400">Removed Items</h4>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[130px]">Internal P/N</TableHead>
-                        <TableHead className="w-[200px]">Description</TableHead>
-                        <TableHead className="w-[60px]">Qty</TableHead>
-                        <TableHead className="min-w-[150px]">Ref Des</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {diffResult.removed.map((item) => (
-                        <TableRow key={item.id} className="bg-red-50 dark:bg-red-950/20">
-                          <TableCell className="font-medium">{item.material?.internal_part_number || "-"}</TableCell>
-                          <TableCell>{item.material?.description || "-"}</TableCell>
-                          <TableCell className="font-mono">{item.quantity_required}</TableCell>
-                          <TableCell className="font-mono text-sm whitespace-normal break-all">{item.reference_designators || "-"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <BomDiffGrid
+                    items={diffResult.removed}
+                    stripe={{ color: "bg-red-500", label: "Removed" }}
+                    storageKey="bom-diff-removed"
+                  />
                 </div>
               )}
 
               {diffResult.changed.length > 0 && (
                 <div>
                   <h4 className="font-medium mb-2 text-blue-600 dark:text-blue-400">Changed Items</h4>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Internal P/N</TableHead>
-                        <TableHead>Changes</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {diffResult.changed.map((change) => (
-                        <TableRow key={change.old.id} className="bg-blue-50 dark:bg-blue-950/20">
-                          <TableCell className="font-medium">{change.old.material?.internal_part_number || "-"}</TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              {change.changes.map((c, idx) => (
-                                <div key={idx} className="text-sm text-muted-foreground">{c}</div>
-                              ))}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <BomChangedGrid changes={diffResult.changed} />
                 </div>
               )}
 
