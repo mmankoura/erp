@@ -29,6 +29,7 @@ import { readBomFile } from "@/lib/bom-wizard/parse"
 import type { GridAction, WizardDoc, WizardRow, WizardSource } from "@/lib/bom-wizard/types"
 import { WizardGridView } from "@/components/bom-wizard/wizard-grid"
 import { RecorderPanel } from "@/components/bom-wizard/recorder-panel"
+import { CommitDialog } from "@/components/bom-wizard/commit-dialog"
 import {
   FillDownDialog,
   HeaderRowDialog,
@@ -47,6 +48,7 @@ import {
 } from "@/components/ui/select"
 import {
   ArrowDownToLine,
+  Check,
   Columns3,
   FileUp,
   Heading,
@@ -57,7 +59,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-type DialogKind = "headers" | "fill" | "merge" | "mapping" | null
+type DialogKind = "headers" | "fill" | "merge" | "mapping" | "commit" | null
 
 export default function BomWizardPage() {
   const [sheets, setSheets] = useState<WizardSource[] | null>(null)
@@ -249,6 +251,13 @@ export default function BomWizardPage() {
                   <Columns3 className="h-4 w-4 mr-2" />
                   Map columns
                 </Button>
+
+                <div className="flex-1" />
+
+                <Button size="sm" onClick={() => setDialog("commit")}>
+                  <Check className="h-4 w-4 mr-2" />
+                  Commit…
+                </Button>
               </div>
 
               <WizardGridView grid={grid} height={620} onRowActivate={onRowActivate} />
@@ -290,6 +299,13 @@ export default function BomWizardPage() {
             open={dialog === "mapping"}
             onOpenChange={(open) => setDialog(open ? "mapping" : null)}
             onRecord={onRecord}
+          />
+          <CommitDialog
+            grid={grid}
+            sourceFileName={doc.source.fileName}
+            open={dialog === "commit"}
+            onOpenChange={(open) => setDialog(open ? "commit" : null)}
+            onCommitted={() => setDialog(null)}
           />
         </>
       )}
