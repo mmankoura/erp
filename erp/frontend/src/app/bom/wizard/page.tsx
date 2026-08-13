@@ -19,6 +19,7 @@ import {
   canUndo,
   emptyDoc,
   goTo,
+  loadRecipe,
   record,
   redo,
   removeAction,
@@ -26,10 +27,17 @@ import {
   undo,
 } from "@/lib/bom-wizard/doc"
 import { readBomFile } from "@/lib/bom-wizard/parse"
-import type { GridAction, WizardDoc, WizardRow, WizardSource } from "@/lib/bom-wizard/types"
+import type {
+  GridAction,
+  RecordedAction,
+  WizardDoc,
+  WizardRow,
+  WizardSource,
+} from "@/lib/bom-wizard/types"
 import { WizardGridView } from "@/components/bom-wizard/wizard-grid"
 import { RecorderPanel } from "@/components/bom-wizard/recorder-panel"
 import { CommitDialog } from "@/components/bom-wizard/commit-dialog"
+import { LoadRecipeDialog, SaveRecipeDialog } from "@/components/bom-wizard/recipe-dialogs"
 import {
   FillDownDialog,
   HeaderRowDialog,
@@ -51,15 +59,25 @@ import {
   Check,
   Columns3,
   FileUp,
+  FolderOpen,
   Heading,
   Merge,
   Redo2,
+  Save,
   Undo2,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
 
-type DialogKind = "headers" | "fill" | "merge" | "mapping" | "commit" | null
+type DialogKind =
+  | "headers"
+  | "fill"
+  | "merge"
+  | "mapping"
+  | "commit"
+  | "save-recipe"
+  | "load-recipe"
+  | null
 
 export default function BomWizardPage() {
   const [sheets, setSheets] = useState<WizardSource[] | null>(null)
@@ -122,6 +140,11 @@ export default function BomWizardPage() {
 
   const onComment = useCallback((id: string, comment: string) => {
     setDoc((prev) => (prev ? setComment(prev, id, comment) : prev))
+  }, [])
+
+  const onLoadRecipe = useCallback((actions: RecordedAction[], name: string) => {
+    setDoc((prev) => (prev ? loadRecipe(prev, actions) : prev))
+    toast.success(`Loaded "${name}" — ${actions.length} steps applied`)
   }, [])
 
   const close = () => {
@@ -254,6 +277,20 @@ export default function BomWizardPage() {
 
                 <div className="flex-1" />
 
+                <Button variant="ghost" size="sm" onClick={() => setDialog("load-recipe")}>
+                  <FolderOpen className="h-4 w-4 mr-2" />
+                  Load recipe
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={doc.actions.length === 0}
+                  onClick={() => setDialog("save-recipe")}
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Save recipe
+                </Button>
+
                 <Button size="sm" onClick={() => setDialog("commit")}>
                   <Check className="h-4 w-4 mr-2" />
                   Commit…
@@ -306,6 +343,16 @@ export default function BomWizardPage() {
             open={dialog === "commit"}
             onOpenChange={(open) => setDialog(open ? "commit" : null)}
             onCommitted={() => setDialog(null)}
+          />
+          <SaveRecipeDialog
+            actions={doc.actions}
+            open={dialog === "save-recipe"}
+            onOpenChange={(open) => setDialog(open ? "save-recipe" : null)}
+          />
+          <LoadRecipeDialog
+            open={dialog === "load-recipe"}
+            onOpenChange={(open) => setDialog(open ? "load-recipe" : null)}
+            onLoad={onLoadRecipe}
           />
         </>
       )}
