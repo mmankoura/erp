@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
 import { BomRevision } from '../../entities/bom-revision.entity';
-import { BomItem } from '../../entities/bom-item.entity';
+import { BomItem, ResourceType } from '../../entities/bom-item.entity';
 import { BomItemAlternate } from '../../entities/bom-item-alternate.entity';
 import { Material } from '../../entities/material.entity';
 import { Product } from '../../entities/product.entity';
@@ -39,6 +39,7 @@ export interface ReplacementBomItem {
   alternate_ipn?: string | null;
   polarized?: boolean;
   scrap_factor?: number;
+  resource_type?: ResourceType | null;
 }
 
 export interface ReplaceItemsResult {
@@ -486,6 +487,7 @@ export class BomService {
       alternate_ipn: item.alternate_ipn ?? null,
       polarized: item.polarized ?? false,
       scrap_factor: Number(item.scrap_factor ?? 0),
+      resource_type: item.resource_type ?? null,
     };
   }
 
@@ -501,7 +503,8 @@ export class BomService {
       a.notes === b.notes &&
       a.alternate_ipn === b.alternate_ipn &&
       a.polarized === b.polarized &&
-      a.scrap_factor === b.scrap_factor
+      a.scrap_factor === b.scrap_factor &&
+      a.resource_type === b.resource_type
     );
   }
 

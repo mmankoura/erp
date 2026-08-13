@@ -7,11 +7,13 @@ import {
   IsInt,
   IsArray,
   IsUUID,
+  IsEnum,
   ValidateNested,
   ArrayMinSize,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ResourceType } from '../../../entities/bom-item.entity';
 
 export class ReplaceBomItemDto {
   @IsUUID()
@@ -52,6 +54,15 @@ export class ReplaceBomItemDto {
   @IsNumber()
   @IsOptional()
   scrap_factor?: number;
+
+  /**
+   * Absent leaves the column null on a new line and rewrites a matched line's
+   * existing value to null — the replacement is wholesale, so an omitted field
+   * means "this line has none", not "leave whatever was there".
+   */
+  @IsEnum(ResourceType)
+  @IsOptional()
+  resource_type?: ResourceType;
 }
 
 export class ReplaceBomItemsDto {

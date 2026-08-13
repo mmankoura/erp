@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { BomService } from './bom.service';
 import { BomRevision, BomSource } from '../../entities/bom-revision.entity';
-import { BomItem } from '../../entities/bom-item.entity';
+import { BomItem, ResourceType } from '../../entities/bom-item.entity';
 import { BomItemAlternate } from '../../entities/bom-item-alternate.entity';
 import { Material } from '../../entities/material.entity';
 import { Product } from '../../entities/product.entity';
@@ -493,6 +493,58 @@ describe('BomService', () => {
         ]);
 
         expect(result).toMatchObject({ added: 1, updated: 1, removed: 1, unchanged: 1 });
+      });
+
+      it('writes resource_type on a new line', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([]);
+
+        await service.replaceRevisionItems('rev-1', [
+          line({ resource_type: ResourceType.MECH }),
+        ]);
+
+        expect(queryRunner.manager.create).toHaveBeenCalledWith(
+          BomItem,
+          expect.objectContaining({ resource_type: ResourceType.MECH }),
+        );
+      });
+
+      it('counts a resource_type change as an update rather than unchanged', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([
+          buildItem({
+            id: 'item-1',
+            bom_line_key: 'IPN-1|R1',
+            material_id: 'mat-1',
+            resource_type: ResourceType.SMT,
+          }),
+        ]);
+
+        const result = await service.replaceRevisionItems('rev-1', [
+          line({ resource_type: ResourceType.MECH }),
+        ]);
+
+        expect(result).toMatchObject({ updated: 1, unchanged: 0 });
+      });
+
+      it('clears resource_type when the replacement omits it', async () => {
+        given([]);
+        queryRunner.manager.find.mockResolvedValue([
+          buildItem({
+            id: 'item-1',
+            bom_line_key: 'IPN-1|R1',
+            material_id: 'mat-1',
+            resource_type: ResourceType.SMT,
+          }),
+        ]);
+
+        // Wholesale replacement: an omitted field means the line has none, not
+        // "leave whatever was there".
+        await service.replaceRevisionItems('rev-1', [line()]);
+
+        expect(queryRunner.manager.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'item-1', resource_type: null }),
+        );
       });
 
       it('keeps the row id of a matched line so its alternates survive', async () => {
