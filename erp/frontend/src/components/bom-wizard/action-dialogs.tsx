@@ -20,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import type { ColumnId, GridAction, SemanticField, WizardGrid } from "@/lib/bom-wizard/types"
 import { SEMANTIC_FIELDS } from "@/lib/bom-wizard/fields"
 
@@ -58,7 +57,7 @@ function ColumnChecklist({
   emptyHint?: string
 }) {
   return (
-    <ScrollArea className="h-56 rounded-md border">
+    <div className="h-56 overflow-y-auto rounded-md border">
       <div className="p-2 space-y-1">
         {grid.columns.map((col) => {
           const samples = samplesOf(grid, col.id)
@@ -82,7 +81,7 @@ function ColumnChecklist({
           )
         })}
       </div>
-    </ScrollArea>
+    </div>
   )
 }
 
@@ -102,7 +101,10 @@ function ColumnSelect({
 }) {
   return (
     <Select
-      value={value ?? NONE}
+      // Without an explicit "None" item to hold it, the sentinel would be a
+      // value matching no option: Radix then renders neither a selection nor
+      // the placeholder, and the control reads as broken. "" is unset.
+      value={value ?? (allowNone ? NONE : "")}
       onValueChange={(v) => onChange(v === NONE ? undefined : v)}
     >
       <SelectTrigger>
@@ -145,7 +147,7 @@ export function HeaderRowDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Use a row as column headers</DialogTitle>
           <DialogDescription>
@@ -230,7 +232,7 @@ export function FillDownDialog({ grid, open, onOpenChange, onRecord }: ActionDia
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Fill down</DialogTitle>
           <DialogDescription>
@@ -303,7 +305,7 @@ export function MergeReferencesDialog({ grid, open, onOpenChange, onRecord }: Ac
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Merge continuation rows</DialogTitle>
           <DialogDescription>
@@ -422,7 +424,7 @@ export function MappingDialog({ grid, open, onOpenChange, onRecord }: ActionDial
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Map columns to BOM fields</DialogTitle>
           <DialogDescription>
@@ -431,7 +433,7 @@ export function MappingDialog({ grid, open, onOpenChange, onRecord }: ActionDial
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="h-80 rounded-md border">
+        <div className="h-80 overflow-y-auto rounded-md border">
           <div className="p-2 space-y-1">
             {grid.columns.map((col) => (
               <div key={col.id} className="flex items-center gap-3 rounded px-2 py-1.5">
@@ -463,7 +465,7 @@ export function MappingDialog({ grid, open, onOpenChange, onRecord }: ActionDial
               </div>
             ))}
           </div>
-        </ScrollArea>
+        </div>
 
         {missing.length > 0 && (
           <p className="text-xs text-muted-foreground">

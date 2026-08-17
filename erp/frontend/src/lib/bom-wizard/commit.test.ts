@@ -194,9 +194,15 @@ describe("partNumbersToResolve", () => {
 describe("materialLookup", () => {
   const resolution: PartNumberResolution = {
     matched: [{ part_number: "800313", material_id: "mat-1" } as never],
-    case_mismatch: [{ part_number: "abc", material_id: "mat-2" } as never],
+    // The server reports a case-only hit with the material's real spelling as
+    // `suggested`, not as `internal_part_number` like a true match.
+    case_mismatch: [{ part_number: "abc", suggested: "ABC", material_id: "mat-2" }],
     missing: ["NOPE"],
   }
+
+  it("keeps the suggested spelling available for the dialog to show", () => {
+    expect(resolution.case_mismatch[0].suggested).toBe("ABC")
+  })
 
   it("includes exact hits always", () => {
     expect(materialLookup(resolution, false).get("800313")).toBe("mat-1")

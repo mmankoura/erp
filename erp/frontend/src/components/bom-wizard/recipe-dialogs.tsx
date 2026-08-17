@@ -26,7 +26,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -109,7 +108,7 @@ export function SaveRecipeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Save these steps as a recipe</DialogTitle>
           <DialogDescription>
@@ -224,7 +223,7 @@ export function LoadRecipeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Load a recipe</DialogTitle>
           <DialogDescription>
@@ -233,7 +232,7 @@ export function LoadRecipeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="h-72 rounded-md border">
+        <div className="h-72 overflow-y-auto rounded-md border">
           <div className="p-2 space-y-1">
             {isLoading && (
               <p className="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</p>
@@ -283,7 +282,7 @@ export function LoadRecipeDialog({
               </div>
             ))}
           </div>
-        </ScrollArea>
+        </div>
 
         <div className="space-y-2">
           <Label htmlFor="recipe-import">Or import a recipe file</Label>

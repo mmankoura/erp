@@ -23,10 +23,22 @@ export interface ResolvedPartNumber {
   customer_id: string | null
 }
 
+/**
+ * Found only by ignoring case. A different shape from a match on purpose: the
+ * server reports the material's real spelling as `suggested`, because the
+ * decision the caller has to make is precisely "did you mean this one?".
+ */
+export interface CaseMismatchedPartNumber {
+  /** As the file spelled it. */
+  part_number: string
+  /** As the material spells it. */
+  suggested: string
+  material_id: string
+}
+
 export interface PartNumberResolution {
   matched: ResolvedPartNumber[]
-  /** Found only by ignoring case. The caller decides whether to accept each. */
-  case_mismatch: ResolvedPartNumber[]
+  case_mismatch: CaseMismatchedPartNumber[]
   missing: string[]
 }
 
