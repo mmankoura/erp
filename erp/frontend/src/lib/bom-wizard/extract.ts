@@ -129,6 +129,17 @@ export function extractRows(grid: WizardGrid): ExtractedRow[] {
   })
 }
 
+/** Rows sharing a line identity, in the order they appear. One entry per line once merged. */
+function groupByLineKey(rows: ExtractedRow[]): Map<string, ExtractedRow[]> {
+  const groups = new Map<string, ExtractedRow[]>()
+  for (const row of rows) {
+    const group = groups.get(row.lineKey)
+    if (group) group.push(row)
+    else groups.set(row.lineKey, [row])
+  }
+  return groups
+}
+
 /**
  * Everything wrong with the extracted lines that can be known without asking
  * the server. Never mutates and never blocks — the commit dialog shows these
@@ -163,13 +174,6 @@ export function findWarnings(rows: ExtractedRow[]): GridWarning[] {
     }
 
     const designators = designatorsOf(values.reference_designators)
-    if (quantity !== null && designators.length > 0 && designators.length !== quantity) {
-      warnings.push({
-        kind: "quantity_mismatch",
-        srcIndex,
-        message: `Row ${srcIndex + 1}: quantity is ${quantity} but ${designators.length} reference designators are listed.`,
-      })
-    }
 
     for (const designator of designators) {
       const owners = designatorOwners.get(designator) ?? []
@@ -188,6 +192,42 @@ export function findWarnings(rows: ExtractedRow[]): GridWarning[] {
     const keyed = keyOwners.get(row.lineKey) ?? []
     keyed.push(srcIndex)
     keyOwners.set(row.lineKey, keyed)
+  }
+
+  /**
+   * Quantity against designator count, asked once per *line* rather than once
+   * per row.
+   *
+   * Before Merge runs, a wrapped line is still many rows: each carries the
+   * whole line's quantity (Fill Down put it there) but only its own fragment of
+   * the designator list, so a per-row check fires on every continuation row and
+   * buries everything else. Counting across the rows that share a line
+   * identity asks the question the user actually cares about — does this part's
+   * quantity match its designators — and gives the same answer before and after
+   * a merge.
+   */
+  for (const [key, groupRows] of groupByLineKey(rows)) {
+    const quantity = groupRows
+      .map((r) => parseQuantity(r.values.quantity_required))
+      .find((q) => q !== null)
+    if (quantity === null || quantity === undefined) continue
+
+    const designators = groupRows.flatMap((r) =>
+      designatorsOf(r.values.reference_designators)
+    )
+    if (designators.length === 0 || designators.length === quantity) continue
+
+    const first = groupRows[0].srcIndex
+    const where =
+      groupRows.length === 1
+        ? `Row ${first + 1}`
+        : `Line "${key}" (rows ${first + 1}–${groupRows[groupRows.length - 1].srcIndex + 1})`
+
+    warnings.push({
+      kind: "quantity_mismatch",
+      srcIndex: first,
+      message: `${where}: quantity is ${quantity} but ${designators.length} reference designators are listed.`,
+    })
   }
 
   for (const [designator, owners] of designatorOwners) {

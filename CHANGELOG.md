@@ -36,7 +36,8 @@
 
 ### Known behavior changes (worth communicating to users)
 
-- **There are now two ways to import a BOM.** The old importer on the product page is completely unchanged and still the one reached from Products → BOM. The wizard is a separate page and does not replace it. Use the old one for simple flat files; use the wizard for anything wrapped, merged or awkward.
+- **Import BOM now opens the wizard.** The button on a product's page goes to the wizard with that product already selected, instead of the old full-screen import dialog. The old importer's code and its `/bom/import/*` endpoints are untouched and still work, but nothing in the interface reaches them any more — so the wizard is the import path, not an alternative to it.
+- **The wizard is also reachable on its own**, from Catalog → BOM Wizard, for importing without starting from a product.
 - **The wizard cannot create materials.** A part number with no material is listed and skipped — the rest of the file still imports. Create the missing materials first, then reopen the commit dialog. This is deliberate: the old importer's habit of inventing materials mid-import is what makes a bad BOM expensive to unpick.
 - **Replacing a revision's items is Admin-only; creating a new revision is Admin or Manager.** A manager can prepare and save a recipe, and import a new revision, but cannot overwrite an existing one.
 - **On a replace, a line with no resource type has its resource type cleared.** The endpoint replaces items wholesale, so an omitted field means "this line has none", not "leave what was there".

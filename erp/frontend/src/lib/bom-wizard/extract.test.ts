@@ -234,6 +234,46 @@ describe("findWarnings", () => {
     expect(found?.message).toContain("quantity is 3 but 2 reference designators")
   })
 
+  it("counts designators across a wrapped line rather than per row", () => {
+    // What an un-merged BOM looks like after Fill Down: every continuation row
+    // carries the whole line's quantity but only its own fragment of the
+    // designators. Asking per row would fire on each one.
+    const w = warn(
+      [
+        ["Line", "IPN", "Qty", "Ref"],
+        ["3", "A", "6", "C1,C2"],
+        ["3", "A", "6", "C3,C4"],
+        ["3", "A", "6", "C5,C6"],
+      ],
+      {
+        F1: "line_number",
+        F2: "internal_part_number",
+        F3: "quantity_required",
+        F4: "reference_designators",
+      }
+    )
+    expect(w.filter((x) => x.kind === "quantity_mismatch")).toHaveLength(0)
+  })
+
+  it("still reports a wrapped line whose total genuinely disagrees", () => {
+    const w = warn(
+      [
+        ["Line", "IPN", "Qty", "Ref"],
+        ["3", "A", "9", "C1,C2"],
+        ["3", "A", "9", "C3,C4"],
+      ],
+      {
+        F1: "line_number",
+        F2: "internal_part_number",
+        F3: "quantity_required",
+        F4: "reference_designators",
+      }
+    )
+    const found = w.find((x) => x.kind === "quantity_mismatch")
+    expect(found?.message).toContain('Line "L:3" (rows 2–3)')
+    expect(found?.message).toContain("quantity is 9 but 4 reference designators")
+  })
+
   it("stays quiet when quantity and designators agree", () => {
     const w = warn([["IPN", "Qty", "Ref"], ["A", "2", "C1,C2"]], {
       F1: "internal_part_number",
