@@ -25,13 +25,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ArrowUp, ArrowDown, Search, Columns, X, ListFilter, RotateCcw, Download } from "lucide-react"
+import {
+  ArrowUp,
+  ArrowDown,
+  Search,
+  Columns,
+  X,
+  ListFilter,
+  RotateCcw,
+  Download,
+  Bookmark,
+  Save,
+  Plus,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
 import { FilterRowCell } from "@/components/grid/filter-row"
 import { useCellSelection } from "@/components/grid/use-cell-selection"
 import { serializeTsv, toHtmlTable, parseTsv } from "@/components/grid/tsv"
-import { planPaste, describePlan, type PastePlan } from "@/components/grid/paste"
+import { planPaste, describePlan, fillTarget, type PastePlan } from "@/components/grid/paste"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,6 +61,7 @@ import {
   SHEET_FILTER_HEIGHT,
   STRIPE_RAIL_WIDTH,
   gutterWidthFor,
+  frozenOffsets,
   cellKey,
   parseCellKey,
   parseCellInput,
@@ -58,11 +71,22 @@ import {
   type CellEdit,
   type CellCommitResult,
   type RowStripe,
+  type SelectionRect,
   type ServerGridOptions,
 } from "@/components/grid/types"
 import { CellEditor, type EditorExit } from "@/components/grid/cell-editor"
 import { buildMatrix, toCsv, coerceCell, exportFilename } from "@/components/grid/export"
 import { aggregateColumn, formatAggregate, AGGREGATE_LABEL } from "@/components/grid/aggregate"
+import {
+  parseViews,
+  serializeViews,
+  upsertView,
+  removeView,
+  findView,
+  sameName,
+  viewsKey,
+  type GridView,
+} from "@/components/grid/views"
 import { downloadWorkbook, downloadBlob } from "@/lib/export-utils"
 import * as XLSX from "xlsx"
 
@@ -360,6 +384,62 @@ export function VirtualGrid<T>({
     setColumnVisibility({})
   }
 
+  // ---- Saved views -------------------------------------------------------
+
+  const [views, setViews] = useState<GridView[]>([])
+  const [activeView, setActiveView] = useState<string | null>(null)
+  const [savingView, setSavingView] = useState(false)
+  const [newViewName, setNewViewName] = useState("")
+
+  useEffect(() => {
+    if (!storageKey) return
+    setViews(parseViews(window.localStorage.getItem(viewsKey(storageKey))))
+  }, [storageKey])
+
+  const persistViews = (next: GridView[]) => {
+    setViews(next)
+    if (storageKey) window.localStorage.setItem(viewsKey(storageKey), serializeViews(next))
+  }
+
+  const currentView = (name: string): GridView => ({
+    name: name.trim(),
+    filters: columnFilters,
+    sorting: table.getState().sorting,
+    visibility: columnVisibility,
+    sizing: columnSizing,
+    search,
+    filterRow: filterRowOpen,
+  })
+
+  const saveView = (name: string) => {
+    if (!name.trim()) return
+    persistViews(upsertView(views, currentView(name)))
+    setActiveView(name.trim())
+    setNewViewName("")
+    setSavingView(false)
+    toast.success(`Saved view "${name.trim()}"`)
+  }
+
+  const applyView = (name: string) => {
+    const view = findView(views, name)
+    if (!view) return
+    setColumnFilters(view.filters)
+    // Server-sorted grids own their sort through a callback, so pushing the
+    // saved sort into local state would be ignored and then contradict the
+    // arrows. Restore everything else and leave the sort as the server has it.
+    if (!server) setSorting(view.sorting)
+    setColumnVisibility(view.visibility)
+    setColumnSizing(view.sizing)
+    setSearch(view.search)
+    setFilterRowOpen(view.filterRow)
+    setActiveView(view.name)
+  }
+
+  const deleteView = (name: string) => {
+    persistViews(removeView(views, name))
+    if (activeView && sameName(activeView, name)) setActiveView(null)
+  }
+
   const activeFilterCount = columnFilters.length
   // From the table rather than the `sorting` state, which is not the state in
   // use when the grid is server-sorted.
@@ -425,6 +505,64 @@ export function VirtualGrid<T>({
   const columnSizes = visibleLeafColumns.map((c) => c.getSize())
   const columnSizesRef = useRef(columnSizes)
   columnSizesRef.current = columnSizes
+
+  // ---- Frozen columns ----------------------------------------------------
+  //
+  // Measured rather than assumed: the cap on how much of the grid may be frozen
+  // is a fraction of the scrollport, which only the DOM knows. ResizeObserver
+  // keeps it honest when the window or a parent panel changes.
+  const [viewportWidth, setViewportWidth] = useState(0)
+  useEffect(() => {
+    const element = parentRef.current
+    if (!element || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(([entry]) => {
+      setViewportWidth(entry.contentRect.width)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  const frozenLefts = useMemo(
+    () =>
+      spreadsheet
+        ? frozenOffsets({
+            count: spreadsheetOptions?.frozenColumns ?? 0,
+            widths: columnSizes,
+            gutterWidth,
+            viewportWidth,
+          })
+        : columnSizes.map(() => null),
+    // columnSizes is a fresh array each render; its signature is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [spreadsheet, spreadsheetOptions?.frozenColumns, columnSizes.join(","), gutterWidth, viewportWidth]
+  )
+  /** The rightmost frozen column, which carries the seam border. */
+  const lastFrozenIndex = frozenLefts.reduce((last, offset, i) => (offset !== null ? i : last), -1)
+
+  /**
+   * The sticky treatment for one column, in the four places columns are drawn:
+   * header, filter row, body and totals. Kept in one function because those
+   * four have to agree pixel for pixel — a frozen header over a scrolling body
+   * is worse than no freeze at all.
+   *
+   * `band` sets the stacking order. The row-number gutter sits at z-20 in the
+   * sticky bands and z-[1] in the body, so a frozen body cell has to clear the
+   * ordinary cells beside it without climbing over the gutter.
+   */
+  const frozenCell = (index: number, band: "sticky" | "body") => {
+    const left = frozenLefts[index]
+    if (left === null || left === undefined) return { className: undefined, style: undefined }
+    return {
+      className: cn(
+        "sticky",
+        band === "sticky" ? "z-[15]" : "z-[1]",
+        // Opaque, or the scrolling columns show through as they pass beneath.
+        band === "body" && "bg-background",
+        index === lastFrozenIndex && "border-r-2 border-r-border"
+      ),
+      style: { left },
+    }
+  }
 
   /**
    * Bring a cell into view. Vertically this goes through the virtualizer
@@ -622,6 +760,12 @@ export function VirtualGrid<T>({
   }
 
   const handleCellMouseEnter = (rowIdx: number, colIdx: number) => {
+    // A fill drag owns the pointer while it runs, so it must be checked first
+    // or the selection would follow the cursor instead of the fill preview.
+    if (fillingRef.current) {
+      setFillToRow(rowIdx)
+      return
+    }
     if (draggingRef.current) selectCell(rowIdx, colIdx, true)
   }
 
@@ -931,11 +1075,14 @@ export function VirtualGrid<T>({
   )
 
   const buildPlan = useCallback(
-    (matrix: string[][]) => {
-      if (!rect) return null
+    // `into` lets the fill handle target a rect other than the selection; paste
+    // always writes into the selection itself.
+    (matrix: string[][], into?: SelectionRect) => {
+      const target = into ?? rect
+      if (!target) return null
       return planPaste<T>({
         matrix,
-        rect,
+        rect: target,
         rows: rows.map((r) => ({ id: r.id, original: r.original })),
         colIds,
         columns: columnsById,
@@ -961,6 +1108,55 @@ export function VirtualGrid<T>({
     const plan = buildPlan(parseTsv(text))
     if (plan) applyPlan(plan)
   }
+
+  // ---- Fill handle -------------------------------------------------------
+  //
+  // Excel's corner drag. Downward only: a horizontal fill would carry a value
+  // across columns of different types, which in this app means pushing a BIN
+  // into a quantity.
+
+  /** The row the drag has reached, while it is in progress. */
+  const [fillToRow, setFillToRow] = useState<number | null>(null)
+  const fillingRef = useRef(false)
+
+  const fillRect = useMemo(
+    () => fillTarget(rect, fillToRow, rows.length),
+    [rect, fillToRow, rows.length]
+  )
+
+  const commitFill = useCallback(() => {
+    if (!rect || !fillRect) {
+      setFillToRow(null)
+      return
+    }
+    // The source block, copied as if it had gone to the clipboard — planPaste
+    // then repeats it down the target the same way a paste would, including the
+    // single-cell-fills-everything rule.
+    const source = buildMatrix({
+      rows: rows.slice(rect.r0, rect.r1 + 1),
+      colIds: colIds.slice(rect.c0, rect.c1 + 1),
+      columns: columnsById,
+      includeHeader: false,
+    })
+    setFillToRow(null)
+    if (!source.length) return
+    const plan = buildPlan(source, fillRect)
+    // Same confirmation rules as paste — filling a quantity column must not be
+    // a way around the dialog that paste deliberately forces.
+    if (plan) applyPlan(plan)
+  }, [rect, fillRect, rows, colIds, columnsById, buildPlan, applyPlan])
+
+  useEffect(() => {
+    if (!editable) return
+    const stop = () => {
+      if (fillingRef.current) {
+        fillingRef.current = false
+        commitFill()
+      }
+    }
+    window.addEventListener("mouseup", stop)
+    return () => window.removeEventListener("mouseup", stop)
+  }, [editable, commitFill])
 
   return (
     <Card
@@ -1006,6 +1202,102 @@ export function VirtualGrid<T>({
                 <ListFilter className="h-4 w-4 mr-1" />
                 Filters
               </Button>
+            )}
+            {/* Views need somewhere to live, so a grid with no storageKey
+                simply doesn't offer them. */}
+            {storageKey && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant={activeView ? "secondary" : "outline"}
+                    size="sm"
+                    className="h-8 max-w-[200px]"
+                    title="Save and recall filters, sort and column layout"
+                  >
+                    <Bookmark className="h-4 w-4 mr-1 shrink-0" />
+                    <span className="truncate">{activeView ?? "Views"}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  {views.length === 0 && (
+                    <DropdownMenuItem disabled>No saved views yet</DropdownMenuItem>
+                  )}
+                  {views.map((view) => (
+                    <DropdownMenuItem
+                      key={view.name}
+                      onClick={() => applyView(view.name)}
+                      className="justify-between gap-2"
+                    >
+                      <span className="truncate">{view.name}</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Delete view ${view.name}`}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          e.preventDefault()
+                          deleteView(view.name)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            deleteView(view.name)
+                          }
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  {activeView && (
+                    <DropdownMenuItem onClick={() => saveView(activeView)}>
+                      <Save className="h-4 w-4 mr-2" />
+                      Update &ldquo;{activeView}&rdquo;
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      // Keep the menu open — the next click goes into the name box.
+                      e.preventDefault()
+                      setSavingView(true)
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Save current as…
+                  </DropdownMenuItem>
+                  {savingView && (
+                    <div className="p-2">
+                      <Input
+                        autoFocus
+                        value={newViewName}
+                        placeholder="View name"
+                        className="h-7 text-xs"
+                        onChange={(e) => setNewViewName(e.target.value)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation()
+                          if (e.key === "Enter") saveView(newViewName)
+                          if (e.key === "Escape") {
+                            setSavingView(false)
+                            setNewViewName("")
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                  {activeView && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setActiveView(null)}>
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        Stop using this view
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1089,7 +1381,8 @@ export function VirtualGrid<T>({
               style={{ width: gutterWidth, minWidth: gutterWidth }}
             />
           )}
-          {table.getHeaderGroups()[0]?.headers.map((header) => {
+          {table.getHeaderGroups()[0]?.headers.map((header, headerIdx) => {
+            const frozen = frozenCell(headerIdx, "sticky")
             const col = gridColumns.find((c) => c.id === header.column.id)
             const align = col?.align
             const canSort = header.column.getCanSort()
@@ -1106,9 +1399,13 @@ export function VirtualGrid<T>({
                     ? "px-2 h-full text-[11px] font-semibold border-r border-border"
                     : "px-3 py-2 text-xs font-medium",
                   canSort && "cursor-pointer hover:text-foreground",
-                  align === "right" && "justify-end"
+                  align === "right" && "justify-end",
+                  // Frozen headers need the muted background repeated — the
+                  // band's own is behind them, not under each cell.
+                  frozen.className,
+                  frozen.className && "bg-muted"
                 )}
-                style={{ width: header.getSize(), minWidth: header.getSize() }}
+                style={{ width: header.getSize(), minWidth: header.getSize(), ...frozen.style }}
                 // Shift-click adds a second key rather than replacing the
                 // first. Server-backed grids stay single-sort: ServerGridOptions
                 // carries one column and one direction, so a second key here
@@ -1202,14 +1499,19 @@ export function VirtualGrid<T>({
                 style={{ width: gutterWidth, minWidth: gutterWidth }}
               />
             )}
-            {table.getHeaderGroups()[0]?.headers.map((header) => (
-              <FilterRowCell
-                key={header.id}
-                column={header.column}
-                width={header.getSize()}
-                disabled={!header.column.getFilterFn()}
-              />
-            ))}
+            {table.getHeaderGroups()[0]?.headers.map((header, headerIdx) => {
+              const frozen = frozenCell(headerIdx, "sticky")
+              return (
+                <FilterRowCell
+                  key={header.id}
+                  column={header.column}
+                  width={header.getSize()}
+                  disabled={!header.column.getFilterFn()}
+                  frozenClassName={frozen.className}
+                  frozenStyle={frozen.style}
+                />
+              )
+            })}
           </div>
         )}
 
@@ -1289,6 +1591,21 @@ export function VirtualGrid<T>({
                     // Editing rides on the cursor: the editor opens at the
                     // active cell and commits by moving it.
                     const cellEditable = cellCursor && canEditCell(row.original, colId)
+                    const frozen = frozenCell(colIdx, "body")
+                    // A frozen cell is already positioned by `sticky`; adding
+                    // `relative` for the focus ring would replace it and drop
+                    // the column out of the freeze.
+                    const positioned = frozen.className ? "" : "relative"
+                    // The grab corner lives in the bottom-right cell of the
+                    // selection; the preview tint marks where a drag would write.
+                    const isFillOrigin =
+                      editable && !!rect && virtualRow.index === rect.r1 && colIdx === rect.c1
+                    const inFillPreview =
+                      !!fillRect &&
+                      virtualRow.index >= fillRect.r0 &&
+                      virtualRow.index <= fillRect.r1 &&
+                      colIdx >= fillRect.c0 &&
+                      colIdx <= fillRect.c1
                     return (
                       <div
                         key={cell.id}
@@ -1299,14 +1616,26 @@ export function VirtualGrid<T>({
                             ? "px-2 h-full flex items-center border-r border-border text-xs"
                             : "px-3 py-2 self-center",
                           colDef?.align === "right" && (spreadsheet ? "justify-end text-right" : "text-right"),
+                          // Ahead of the selection and error tints, so those
+                          // still win over the frozen cell's opaque background.
+                          frozen.className,
                           selected && "bg-accent",
-                          isActive && "relative z-[2] ring-2 ring-inset ring-primary",
+                          inFillPreview && cn(positioned, "bg-primary/10 ring-1 ring-inset ring-primary/40"),
+                          // The corner is absolutely placed, so its cell needs
+                          // to be a positioning context even when it is not the
+                          // active cell.
+                          isFillOrigin && positioned,
+                          isActive && cn(positioned, "z-[2] ring-2 ring-inset ring-primary"),
                           cellEditable && !isEditingCell && "cursor-cell",
                           savingKeys.has(key) && "opacity-60",
-                          error && "relative bg-destructive/10 ring-1 ring-inset ring-destructive",
+                          error && cn(positioned, "bg-destructive/10 ring-1 ring-inset ring-destructive"),
                           isEditingCell && "px-0"
                         )}
-                        style={{ width: cell.column.getSize(), minWidth: cell.column.getSize() }}
+                        style={{
+                          width: cell.column.getSize(),
+                          minWidth: cell.column.getSize(),
+                          ...frozen.style,
+                        }}
                         onMouseDown={cellCursor ? (e) => handleCellMouseDown(e, virtualRow.index, colIdx) : undefined}
                         onMouseEnter={cellCursor ? () => handleCellMouseEnter(virtualRow.index, colIdx) : undefined}
                         onDoubleClick={
@@ -1338,6 +1667,21 @@ export function VirtualGrid<T>({
                           </div>
                         ) : (
                           rendered
+                        )}
+                        {/* The fill corner. Inset rather than overhanging,
+                            because the cell clips its overflow. */}
+                        {isFillOrigin && !isEditingCell && (
+                          <span
+                            role="presentation"
+                            title="Drag down to fill"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              fillingRef.current = true
+                              setFillToRow(virtualRow.index)
+                            }}
+                            className="absolute bottom-0 right-0 h-[7px] w-[7px] cursor-crosshair bg-primary ring-1 ring-background"
+                          />
                         )}
                       </div>
                     )
@@ -1391,18 +1735,21 @@ export function VirtualGrid<T>({
                   style={{ width: gutterWidth, minWidth: gutterWidth }}
                 />
               )}
-              {visibleLeafColumns.map((column) => {
+              {visibleLeafColumns.map((column, colIdx) => {
                 const col = columnsById.get(column.id)
                 const kind = col?.aggregate
                 const value = col ? aggregateColumn(aggregateRows, col) : null
+                const frozen = frozenCell(colIdx, "sticky")
                 return (
                   <div
                     key={column.id}
                     className={cn(
                       "shrink-0 h-full flex items-center px-2 text-[11px] border-r border-border overflow-hidden",
-                      col?.align === "right" ? "justify-end" : "justify-start"
+                      col?.align === "right" ? "justify-end" : "justify-start",
+                      frozen.className,
+                      frozen.className && "bg-muted"
                     )}
-                    style={{ width: column.getSize(), minWidth: column.getSize() }}
+                    style={{ width: column.getSize(), minWidth: column.getSize(), ...frozen.style }}
                     title={kind ? `${AGGREGATE_LABEL[kind]} of ${rows.length} rows shown` : undefined}
                   >
                     {kind && value !== null && (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { planPaste } from "./paste"
+import { planPaste, fillTarget } from "./paste"
 import type { VirtualGridColumn } from "./types"
 
 interface Row {
@@ -158,5 +158,44 @@ describe("planPaste", () => {
       rect: { r0: 0, r1: 0, c0: 0, c1: 0 },
     })
     expect(plan.columns.sort()).toEqual(["bin", "qty"])
+  })
+})
+
+describe("fillTarget", () => {
+  const rect = { r0: 2, r1: 4, c0: 1, c1: 3 }
+
+  it("returns the rows below the selection, across its own columns", () => {
+    expect(fillTarget(rect, 8, 100)).toEqual({ r0: 5, r1: 8, c0: 1, c1: 3 })
+  })
+
+  it("refuses to fill upward", () => {
+    expect(fillTarget(rect, 1, 100)).toBeNull()
+  })
+
+  it("does nothing when the drag ends inside the selection", () => {
+    expect(fillTarget(rect, 3, 100)).toBeNull()
+    expect(fillTarget(rect, 4, 100)).toBeNull()
+  })
+
+  it("clamps to the last row — a fill never invents records", () => {
+    expect(fillTarget(rect, 999, 10)).toEqual({ r0: 5, r1: 9, c0: 1, c1: 3 })
+  })
+
+  it("returns null with no selection or no drag", () => {
+    expect(fillTarget(null, 8, 100)).toBeNull()
+    expect(fillTarget(rect, null, 100)).toBeNull()
+  })
+
+  it("returns null when the selection already reaches the last row", () => {
+    expect(fillTarget({ r0: 0, r1: 9, c0: 0, c1: 0 }, 12, 10)).toBeNull()
+  })
+
+  it("fills a single cell downward", () => {
+    expect(fillTarget({ r0: 0, r1: 0, c0: 2, c1: 2 }, 3, 100)).toEqual({
+      r0: 1,
+      r1: 3,
+      c0: 2,
+      c1: 2,
+    })
   })
 })

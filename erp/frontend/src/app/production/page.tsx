@@ -438,6 +438,8 @@ export default function ProductionPage() {
               row.status.toLowerCase().includes(q)
             }
             spreadsheet
+            // The order number holds while the six stage columns scroll past.
+            spreadsheetOptions={{ frozenColumns: 1 }}
             storageKey="production-wip"
             getRowId={(row) => row.order_id}
             onRowActivate={(row) => setSelectedOrder(row.order_id)}

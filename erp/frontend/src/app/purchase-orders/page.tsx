@@ -1532,6 +1532,10 @@ export default function PurchaseOrdersPage() {
               editable: canEditTable && editUnlocked,
               onCommit: commitLineEdits,
               onAfterCommit: refetch,
+              // PO # and supplier stay put while the thirteen columns to their
+              // right scroll — without it, a cost cell six columns over belongs
+              // to no visible purchase order.
+              frozenColumns: 2,
             }}
             storageKey="po-lines"
             getRowId={(r) => r.rowKey}

@@ -22,6 +22,25 @@ export interface PastePlan<T> {
 }
 
 /**
+ * The block a fill drag would write: the rows below the selection, down to
+ * wherever the pointer has reached, across the selection's own columns.
+ *
+ * Returns null when there is nothing to do — dragging up, or back onto the
+ * selection itself. Downward only: a sideways fill would carry a value into a
+ * column of another type, which here means a BIN landing in a quantity.
+ */
+export function fillTarget(
+  rect: SelectionRect | null,
+  toRow: number | null,
+  rowCount: number
+): SelectionRect | null {
+  if (!rect || toRow === null) return null
+  const last = Math.min(toRow, rowCount - 1)
+  if (last <= rect.r1) return null
+  return { r0: rect.r1 + 1, r1: last, c0: rect.c0, c1: rect.c1 }
+}
+
+/**
  * Map a clipboard block onto the grid, Excel's way.
  *
  * The block lands at the top-left of the selection, not at the cursor. A single

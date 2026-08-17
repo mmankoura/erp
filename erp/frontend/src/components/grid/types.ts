@@ -85,6 +85,15 @@ export interface SpreadsheetOptions<T> {
    * to the page.
    */
   cellCursor?: boolean
+  /**
+   * Keep the first N columns in place while the rest scroll sideways, so a wide
+   * grid doesn't lose the column that says which record you are looking at.
+   *
+   * Counts *visible* columns, so hiding one doesn't silently freeze a different
+   * one. Capped at runtime — see `frozenOffsets` — because a freeze wider than
+   * the viewport leaves nothing to scroll.
+   */
+  frozenColumns?: number
   /** Row-number gutter down the left edge. Default true. */
   rowNumbers?: boolean
   /** Initial state of the filter row. Default true; a saved choice wins. */
@@ -209,6 +218,50 @@ export function gutterWidthFor(rowCount: number): number {
   // The extra room over the bare digits is for the status stripe down the
   // left edge.
   return Math.max(44, String(rowCount).length * 8 + 24)
+}
+
+/**
+ * Where each frozen column has to be pinned: the gutter's width plus the widths
+ * of the frozen columns to its left. One entry per column, `null` for the ones
+ * that scroll.
+ *
+ * The count is capped so the frozen block can never exceed `maxRatio` of the
+ * viewport. A freeze wider than the scrollport is not a cosmetic problem —
+ * there would be nothing left to scroll, and the columns the user was trying to
+ * reach become unreachable. Honouring less of the request is better than
+ * breaking the grid.
+ */
+export function frozenOffsets({
+  count,
+  widths,
+  gutterWidth,
+  viewportWidth,
+  maxRatio = 0.6,
+}: {
+  count: number
+  widths: number[]
+  gutterWidth: number
+  viewportWidth: number
+  maxRatio?: number
+}): (number | null)[] {
+  const offsets: (number | null)[] = widths.map(() => null)
+  if (count <= 0) return offsets
+
+  // Before the first measurement the viewport reads 0; freeze as asked rather
+  // than collapsing to nothing for one frame.
+  const budget = viewportWidth > 0 ? viewportWidth * maxRatio - gutterWidth : Infinity
+  let running = gutterWidth
+  let used = 0
+
+  for (let i = 0; i < Math.min(count, widths.length); i++) {
+    // The first column is always allowed: a grid whose identity column alone
+    // exceeds the budget is still better off pinning it than pinning nothing.
+    if (i > 0 && used + widths[i] > budget) break
+    offsets[i] = running
+    running += widths[i]
+    used += widths[i]
+  }
+  return offsets
 }
 
 /** Width of the stripe-only rail shown when there are no row numbers. */
