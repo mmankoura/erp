@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { FileText, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -91,7 +90,7 @@ export function RecorderPanel({ doc, onGoTo, onRemove, onComment }: RecorderPane
       </CardHeader>
 
       <CardContent className="flex-1 p-0">
-        <ScrollArea className="h-[560px]">
+        <div className="h-[560px] overflow-y-auto">
           <div className="px-4 pb-4 space-y-1">
             {/* Position 0 — the file before anything ran. */}
             <button
@@ -188,7 +187,7 @@ export function RecorderPanel({ doc, onGoTo, onRemove, onComment }: RecorderPane
               </p>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </CardContent>
     </Card>
   )

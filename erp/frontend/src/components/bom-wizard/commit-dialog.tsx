@@ -13,7 +13,7 @@ import {
   partNumbersToResolve,
   type PartNumberResolution,
 } from "@/lib/bom-wizard/commit"
-import type { WizardGrid } from "@/lib/bom-wizard/types"
+import type { GridWarning, WizardGrid } from "@/lib/bom-wizard/types"
 import {
   Dialog,
   DialogContent,
@@ -27,7 +27,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
   SelectContent,
@@ -46,6 +45,8 @@ interface CommitDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCommitted: (revision: BomRevision) => void
+  /** Preselected when the wizard was opened from a product's Import BOM button. */
+  defaultProductId?: string
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -58,12 +59,26 @@ const today = () => new Date().toISOString().slice(0, 10)
  */
 const WIZARD_SOURCE: BomSource = "IMPORT_CLIENT"
 
+/** Warnings are grouped under these, so one noisy kind cannot bury the others. */
+const WARNING_LABELS: Record<GridWarning["kind"], string> = {
+  quantity_mismatch: "Quantity disagrees with the designator count",
+  duplicate_designator: "A designator is used on more than one line",
+  duplicate_key: "Two lines share an identity — a replace would refuse this",
+  missing_ipn: "No internal part number",
+  invalid_quantity: "Quantity cannot be used",
+  unmapped_resource_type: "Resource type is not one the BOM can hold",
+}
+
+/** How many examples of each kind to show before collapsing the rest to a count. */
+const WARNING_EXAMPLES = 5
+
 export function CommitDialog({
   grid,
   sourceFileName,
   open,
   onOpenChange,
   onCommitted,
+  defaultProductId,
 }: CommitDialogProps) {
   const { hasRole } = useAuth()
   // Matches the @Roles on PUT /bom/revision/:id/items. Creating a revision is
@@ -71,7 +86,7 @@ export function CommitDialog({
   const canReplace = hasRole(UserRole.ADMIN)
 
   const [mode, setMode] = useState<CommitMode>("create")
-  const [productId, setProductId] = useState<string>("")
+  const [productId, setProductId] = useState<string>(defaultProductId ?? "")
   const [revisionNumber, setRevisionNumber] = useState("")
   const [revisionDate, setRevisionDate] = useState(today())
   const [changeSummary, setChangeSummary] = useState("")
@@ -83,6 +98,8 @@ export function CommitDialog({
   const [resolution, setResolution] = useState<PartNumberResolution | null>(null)
   const [resolving, setResolving] = useState(false)
   const [committing, setCommitting] = useState(false)
+  /** Shown in the dialog as well as a toast: a toast can be missed or land behind this. */
+  const [error, setError] = useState<string | null>(null)
 
   const { data: products } = useApi<Product[]>("/products", { enabled: open })
   const { data: revisions } = useApi<BomRevision[]>(`/bom/product/${productId}`, {
@@ -93,6 +110,19 @@ export function CommitDialog({
   const warnings = useMemo(() => findWarnings(rows), [rows])
   const resourceGroups = useMemo(() => unrecognisedResourceTypes(rows), [rows])
 
+  /** Commonest kind first — that is usually the one worth acting on. */
+  const warningGroups = useMemo(() => {
+    const byKind = new Map<GridWarning["kind"], GridWarning[]>()
+    for (const warning of warnings) {
+      const group = byKind.get(warning.kind)
+      if (group) group.push(warning)
+      else byKind.set(warning.kind, [warning])
+    }
+    return Array.from(byKind, ([kind, items]) => ({ kind, items })).sort(
+      (a, b) => b.items.length - a.items.length
+    )
+  }, [warnings])
+
   // Resolve part numbers whenever the dialog opens against a new set of rows.
   useEffect(() => {
     if (!open) return
@@ -100,7 +130,9 @@ export function CommitDialog({
     setMode("create")
     setConfirmOverwrite(false)
     setResolution(null)
+    setError(null)
     setRevisionDate(today())
+    if (defaultProductId) setProductId(defaultProductId)
     // Start from the suggestions; the table below is what makes them a choice.
     setResourceMapping(
       Object.fromEntries(resourceGroups.map((g) => [g.raw, g.suggestion]))
@@ -128,7 +160,7 @@ export function CommitDialog({
     return () => {
       cancelled = true
     }
-  }, [open, rows, resourceGroups])
+  }, [open, rows, resourceGroups, defaultProductId])
 
   const lookup = useMemo(
     () => (resolution ? materialLookup(resolution, acceptCase) : new Map<string, string>()),
@@ -154,6 +186,7 @@ export function CommitDialog({
 
   const commit = async () => {
     setCommitting(true)
+    setError(null)
     try {
       if (mode === "create") {
         const revision = await api.post<BomRevision>("/bom/revision/full", {
@@ -185,7 +218,9 @@ export function CommitDialog({
       }
       onOpenChange(false)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Commit failed")
+      const message = err instanceof Error ? err.message : "Commit failed"
+      setError(message)
+      toast.error(message)
     } finally {
       setCommitting(false)
     }
@@ -195,7 +230,7 @@ export function CommitDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Commit to a BOM revision</DialogTitle>
           <DialogDescription>
@@ -204,7 +239,13 @@ export function CommitDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 -mx-6 px-6">
+        {/*
+          min-h-0 is load-bearing: a flex item defaults to min-height:auto and
+          so refuses to shrink below its content, which grows the dialog past
+          max-h-[90vh] and pushes the footer — and the Commit button — off the
+          bottom of the screen.
+        */}
+        <div className="flex-1 min-h-0 overflow-y-auto -mx-6 px-6">
           <div className="space-y-5 pb-2">
             {/* ---- Mode ---- */}
             <div className="space-y-2">
@@ -392,7 +433,7 @@ export function CommitDialog({
                         Use the existing material for part numbers that differ only by case
                         <span className="block text-muted-foreground">
                           e.g. {resolution.case_mismatch[0].part_number} ⇢{" "}
-                          {resolution.case_mismatch[0].internal_part_number}. Unchecked, these
+                          {resolution.case_mismatch[0].suggested}. Unchecked, these
                           lines are skipped rather than creating a duplicate material.
                         </span>
                       </span>
@@ -460,7 +501,7 @@ export function CommitDialog({
                   {built.skipped.length} {built.skipped.length === 1 ? "line" : "lines"} will not
                   be imported
                 </Label>
-                <ScrollArea className="h-28 rounded-md border">
+                <div className="h-28 overflow-y-auto rounded-md border">
                   <div className="p-2 space-y-0.5">
                     {built.skipped.map((s) => (
                       <p key={s.srcIndex} className="text-xs">
@@ -469,7 +510,7 @@ export function CommitDialog({
                       </p>
                     ))}
                   </div>
-                </ScrollArea>
+                </div>
               </div>
             )}
 
@@ -482,19 +523,41 @@ export function CommitDialog({
                 <p className="text-xs text-muted-foreground">
                   These do not block the commit — they are things worth looking at first.
                 </p>
-                <ScrollArea className="h-32 rounded-md border">
-                  <div className="p-2 space-y-0.5">
-                    {warnings.map((w, i) => (
-                      <p key={`${w.kind}-${w.srcIndex}-${i}`} className="text-xs">
-                        {w.message}
+                <div className="max-h-56 overflow-y-auto rounded-md border divide-y">
+                  {warningGroups.map((group) => (
+                    <div key={group.kind} className="p-2 space-y-1">
+                      <p className="text-xs font-medium">
+                        {WARNING_LABELS[group.kind]}
+                        <span className="ml-2 text-muted-foreground font-normal">
+                          {group.items.length}
+                        </span>
                       </p>
-                    ))}
-                  </div>
-                </ScrollArea>
+                      <div className="space-y-0.5 pl-2">
+                        {group.items.slice(0, WARNING_EXAMPLES).map((w, i) => (
+                          <p
+                            key={`${w.kind}-${w.srcIndex}-${i}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            {w.message}
+                          </p>
+                        ))}
+                        {group.items.length > WARNING_EXAMPLES && (
+                          <p className="text-xs text-muted-foreground italic">
+                            and {group.items.length - WARNING_EXAMPLES} more like this
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
-        </ScrollArea>
+        </div>
+
+        {error && (
+          <p className="text-sm text-destructive border-t pt-3">{error}</p>
+        )}
 
         <DialogFooter className="border-t pt-3">
           <span className="mr-auto text-sm text-muted-foreground">

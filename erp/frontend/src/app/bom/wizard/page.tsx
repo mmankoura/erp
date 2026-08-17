@@ -11,7 +11,7 @@
  * operation.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react"
+import { Suspense, useCallback, useMemo, useRef, useState } from "react"
 import { replay } from "@/lib/bom-wizard/apply"
 import {
   appliedActions,
@@ -68,6 +68,7 @@ import {
   X,
 } from "lucide-react"
 import { toast } from "sonner"
+import { useSearchParams } from "next/navigation"
 
 type DialogKind =
   | "headers"
@@ -79,7 +80,11 @@ type DialogKind =
   | "load-recipe"
   | null
 
-export default function BomWizardPage() {
+function BomWizardScreen() {
+  // Set when the wizard was reached from a product's Import BOM button, so the
+  // commit dialog opens on that product instead of an empty picker.
+  const productId = useSearchParams().get("product") ?? undefined
+
   const [sheets, setSheets] = useState<WizardSource[] | null>(null)
   const [doc, setDoc] = useState<WizardDoc | null>(null)
   const [dialog, setDialog] = useState<DialogKind>(null)
@@ -343,6 +348,7 @@ export default function BomWizardPage() {
             open={dialog === "commit"}
             onOpenChange={(open) => setDialog(open ? "commit" : null)}
             onCommitted={() => setDialog(null)}
+            defaultProductId={productId}
           />
           <SaveRecipeDialog
             actions={doc.actions}
@@ -357,5 +363,18 @@ export default function BomWizardPage() {
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * `useSearchParams` opts a route into client rendering unless it sits under a
+ * Suspense boundary, which would otherwise fail the production build for this
+ * statically prerendered page.
+ */
+export default function BomWizardPage() {
+  return (
+    <Suspense fallback={<div className="text-muted-foreground">Loading…</div>}>
+      <BomWizardScreen />
+    </Suspense>
   )
 }

@@ -31,6 +31,7 @@ const pathLabels: Record<string, string> = {
   "customer-supplied": "Customer Supplied",
   "bom": "Bill of Materials",
   "validate": "Validate",
+  "wizard": "Formatting Wizard",
   "users": "Users",
   "settings": "Settings",
   "new": "New",

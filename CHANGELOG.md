@@ -6,6 +6,76 @@
 
 ---
 
+## REV-012 — 2026-08-13
+
+**Released by**: Mark Mankoura
+**Migration required**: **Yes** — `1769500000000-CreateBomWizardRecipes.ts` creates `bom_wizard_recipes`. Also adds seven endpoints, so this is a full backend + frontend release, not a static rebuild.
+
+**Backup taken**: [ ] (check before deploying)
+
+**Deploy note**: Re-read `deployment_known_issues.md` before starting, and pay closer attention than usual. REV-011 was frontend-only, so the deploy script's smart-skip breaking the documented migration-before-switch ordering did no harm. **This release has a migration, so that ordering actually matters.** Run the migration against the new release before switching, and confirm `bom_wizard_recipes` exists afterwards. `switch-release.bat` still ignores rotate failures.
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | BOM | **The BOM Formatting Wizard**, a new page at `/bom/wizard`. Opens a supplier's Excel or CSV file, reshapes it into importable BOM lines, and records every step taken so the same cleanup can be replayed on the next revision. Built for wrapped files the current importer mangles — the AEGIS format recovers 199 parts from 374 rows, and 207 from a second file. |
+| 2 | Feature | BOM | The file is read **in the browser**. Nothing is uploaded, and nothing is written until Commit. Every sheet in a workbook is offered; switching sheets starts a fresh document. |
+| 3 | Feature | BOM | **Three transformations**: promote a row to column headers, fill values down into the blanks beneath them, and merge a run of continuation rows into one line while concatenating their reference designators. Only *adjacent* rows merge, so two separate appearances of the same part stay two lines. |
+| 4 | Feature | BOM | **Column mapping** onto the BOM fields. Anything left unmapped is simply not imported; each field can only come from one column, so choosing it again moves it. |
+| 5 | Feature | BOM | **A recorder panel** listing every step in order, with a Comments column. Click a step to see the grid as it stood there; delete a step and the rest replay without it. Undone steps stay listed, greyed, because they are still part of the recipe. |
+| 6 | Feature | BOM | **Commit, two ways.** Create a new revision (Admin or Manager, changes nothing that exists), or replace an existing revision's items (Admin only). The dialog reports how many of how many lines are ready before anything is sent. |
+| 7 | Feature | BOM | **Recipes.** Save the recorded steps under a name, load them onto a different file, or export and import them as a `.bomrecipe.json` file. A recipe holds the transformation only — never any data from the file it was recorded against. |
+| 8 | Backend | API | `PUT /bom/revision/:id/items` — wholesale item replacement in one transaction. Lines are matched on a stable identity so a matched line keeps its row and therefore its alternates; delete-and-reinsert would have silently dropped every alternate on the revision. |
+| 9 | Backend | API | That endpoint refuses to rewrite a revision that orders depend on. Orders past ENTERED are refused outright; ENTERED orders require an explicit acknowledgement in the request. |
+| 10 | Backend | API | `GET/POST/PATCH/DELETE /bom/wizard/recipes` — recipe storage. Reading is open to all roles; writing is Admin or Manager. |
+| 11 | Backend | API | `POST /materials/resolve-part-numbers` — resolves a whole BOM's part numbers in one request, reporting exact matches, case-only matches and misses separately. |
+| 12 | Fix | BOM | **The wholesale replace could not set `resource_type`.** The field was missing from its payload while the create path has always had one, so of the two ways to put items on a revision only one could record what kind of part a line is. Wired through; a resource-type change now counts as a real change rather than reading as unchanged. |
+| 13 | Enhancement | BOM | **Resource types the enum cannot hold are mapped, not dropped.** AEGIS files carry `PROG IC`, `BLANK IC`, `BRACKET`, `CLAM`, `HTSNK`, `ADHESIVE` and `ASSY`; the enum holds only SMT, TH, MECH, PCB and DNP. The commit dialog shows an editable table seeded with a guess, and appends the file's own wording to the line's notes so nothing is lost. |
+| 14 | Enhancement | BOM | **Warnings before committing**: missing part numbers, unusable quantities, a quantity that disagrees with its designator count, a designator used on two lines, a duplicate line identity, and unrecognised resource types. None of them block the commit. |
+
+### Known behavior changes (worth communicating to users)
+
+- **Import BOM now opens the wizard.** The button on a product's page goes to the wizard with that product already selected, instead of the old full-screen import dialog. The old importer's code and its `/bom/import/*` endpoints are untouched and still work, but nothing in the interface reaches them any more — so the wizard is the import path, not an alternative to it.
+- **The wizard is also reachable on its own**, from Catalog → BOM Wizard, for importing without starting from a product.
+- **The wizard cannot create materials.** A part number with no material is listed and skipped — the rest of the file still imports. Create the missing materials first, then reopen the commit dialog. This is deliberate: the old importer's habit of inventing materials mid-import is what makes a bad BOM expensive to unpick.
+- **Replacing a revision's items is Admin-only; creating a new revision is Admin or Manager.** A manager can prepare and save a recipe, and import a new revision, but cannot overwrite an existing one.
+- **On a replace, a line with no resource type has its resource type cleared.** The endpoint replaces items wholesale, so an omitted field means "this line has none", not "leave what was there".
+- **Fill Down does nothing on AEGIS-shaped files.** Merge already absorbs the continuation rows, and the lead row carries the values Fill Down would have propagated. It is not broken — it is genuinely redundant for that file shape, and remains useful for files that are not merged. Worth saying out loud so nobody spends an afternoon on it.
+- **Recipes are shared by everyone**, not private per user. Saving under an existing name replaces that recipe's steps.
+- **Part numbers that differ only by case are not silently accepted.** The dialog offers to use the existing material and says which one; declining skips those lines rather than creating a near-duplicate material.
+- Switching to a different sheet **discards the recorded steps**, since they address rows and columns of the sheet they were recorded against.
+
+### Verification Steps
+
+- [ ] Run the migration, then confirm: `SELECT to_regclass('public.bom_wizard_recipes');` returns non-null
+- [ ] Open `/bom/wizard` → choose an AEGIS file → the grid appears with the row count in the toolbar
+- [ ] Use row as headers → the column headers take the file's own words; the row leaves the data
+- [ ] Merge continuation rows, grouped on the item column, joining the reference column → the row count drops to the number of real parts
+- [ ] A merged row shows a coloured stripe in the gutter; hover it → names how many rows of the file it was built from
+- [ ] Check a wrapped line: quantity is the file's stated figure, **not** the sum of the run, and the designator list runs from its first to its last
+- [ ] Undo → the rows come back; Redo → they collapse again
+- [ ] Click an earlier step in the recorder → the grid returns to that point; click the last → it catches up
+- [ ] Delete the middle step → the rest replay without it
+- [ ] Type a comment on a step, click away → it sticks; press Escape mid-edit → it reverts
+- [ ] Map columns → the headers show the mapped field beside each name
+- [ ] Save a recipe → reload the page, open a *different* file of the same format, Load that recipe → the same steps apply and the grid comes out right
+- [ ] Export the recipe → open the file → it contains `schema_version` and the steps, and no BOM data
+- [ ] Import that file back → same result
+- [ ] Edit the exported file to break a step (remove a merge's `separator`) → import → refused, naming the step
+- [ ] Commit → Create a new revision → pick a product, set a revision number → the new revision exists with the expected line count
+- [ ] Confirm the mapped resource types landed: `SELECT resource_type, count(*) FROM bom_items WHERE bom_revision_id='<id>' GROUP BY 1;`
+- [ ] Confirm the original wording survived: `SELECT notes FROM bom_items WHERE bom_revision_id='<id>' AND notes LIKE 'Resource type from file:%' LIMIT 5;`
+- [ ] Commit again with a part number that has no material → it is listed as skipped and the other lines still import
+- [ ] As a Manager: the replace option is disabled and marked Admin only; creating a revision still works
+- [ ] As an Admin: replace an existing revision's items → the counts reported (added/updated/removed/unchanged) match what you expect
+- [ ] Replace a revision that an ENTERED order references → refused until the acknowledgement is ticked; with an order further along → refused regardless
+- [ ] Confirm alternates survived the replace: an unchanged line still has its `bom_item_alternates` rows
+- [ ] As a Warehouse Clerk: recipes can be loaded and imported, but Save and Delete are unavailable
+- [ ] Products → BOM → the **old** import wizard still works exactly as it did in REV-011
+
+---
+
 ## REV-011 — 2026-08-11
 
 **Released by**: Mark Mankoura

@@ -75,7 +75,6 @@ import { useState, useEffect, useMemo } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { BomImportWizard } from "@/components/bom-import-wizard"
 import { useAuth, UserRole } from "@/contexts/auth-context"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { textCol, monoCol, numCol } from "@/components/grid/columns"
@@ -222,7 +221,6 @@ export default function ProductDetailPage() {
   const [showNewRevisionDialog, setShowNewRevisionDialog] = useState(false)
   const [showAddItemDialog, setShowAddItemDialog] = useState(false)
   const [editMode, setEditMode] = useState(false)
-  const [showImportWizard, setShowImportWizard] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [editingItem, setEditingItem] = useState<BomItem | null>(null)
   const [editingRevision, setEditingRevision] = useState<BomRevision | null>(null)
@@ -581,15 +579,17 @@ export default function ProductDetailPage() {
               <CardDescription>Manage bill of materials for this product</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <BomImportWizard
-                productId={productId}
-                open={showImportWizard}
-                onOpenChange={setShowImportWizard}
-                onSuccess={() => {
-                  refetchRevisions()
-                  refetchProduct()
-                }}
-              />
+              {/*
+                Import BOM goes to the wizard, which handles the wrapped and
+                merged files the old importer mangles. The product travels in
+                the query string so the commit dialog opens on this product.
+              */}
+              <Button variant="outline" asChild>
+                <Link href={`/bom/wizard?product=${productId}`}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import BOM
+                </Link>
+              </Button>
               <NewRevisionDialog
                 productId={productId}
                 open={showNewRevisionDialog}

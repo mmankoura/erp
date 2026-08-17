@@ -23,6 +23,7 @@ import {
   UserCog,
   LogOut,
   ChevronDown,
+  Wand2,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -52,6 +53,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Materials", url: "/materials", icon: Package },
       { title: "Products", url: "/products", icon: Box },
+      { title: "BOM Wizard", url: "/bom/wizard", icon: Wand2 },
       { title: "AML", url: "/aml", icon: ShieldCheck },
     ],
   },
