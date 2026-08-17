@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ArrowUp, ArrowDown, Search, Columns, X, ListFilter, RotateCcw } from "lucide-react"
+import { ArrowUp, ArrowDown, Search, Columns, X, ListFilter, RotateCcw, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ColumnFilterPopover } from "@/components/grid/column-filter-popover"
 import { FilterRowCell } from "@/components/grid/filter-row"
@@ -49,7 +49,6 @@ import {
   SHEET_FILTER_HEIGHT,
   STRIPE_RAIL_WIDTH,
   gutterWidthFor,
-  copyValueOf,
   cellKey,
   parseCellKey,
   parseCellInput,
@@ -62,6 +61,10 @@ import {
   type ServerGridOptions,
 } from "@/components/grid/types"
 import { CellEditor, type EditorExit } from "@/components/grid/cell-editor"
+import { buildMatrix, toCsv, coerceCell, exportFilename } from "@/components/grid/export"
+import { aggregateColumn, formatAggregate, AGGREGATE_LABEL } from "@/components/grid/aggregate"
+import { downloadWorkbook, downloadBlob } from "@/lib/export-utils"
+import * as XLSX from "xlsx"
 
 export type { VirtualGridColumn } from "@/components/grid/types"
 
@@ -358,6 +361,9 @@ export function VirtualGrid<T>({
   }
 
   const activeFilterCount = columnFilters.length
+  // From the table rather than the `sorting` state, which is not the state in
+  // use when the grid is server-sorted.
+  const activeSortCount = table.getState().sorting.length
   // A grid with stripes but no row numbers still needs somewhere to put them,
   // so it gets a bare rail. That's also what lets a classic grid carry stripes
   // before it converts to a sheet.
@@ -625,6 +631,17 @@ export function VirtualGrid<T>({
     () => new Map(gridColumns.map((c) => [c.id, c])),
     [gridColumns]
   )
+
+  // No column asked for an aggregate → no footer band at all, so the totals row
+  // costs nothing on the grids that don't use it.
+  const showTotals =
+    spreadsheet &&
+    rows.length > 0 &&
+    visibleLeafColumns.some((c) => columnsById.get(c.id)?.aggregate)
+  const aggregateRows = useMemo(
+    () => (showTotals ? rows.map((r) => r.original) : []),
+    [showTotals, rows]
+  )
   const editable = spreadsheet && !!spreadsheetOptions?.editable
   const onCommitRef = useRef(spreadsheetOptions?.onCommit)
   onCommitRef.current = spreadsheetOptions?.onCommit
@@ -825,22 +842,48 @@ export function VirtualGrid<T>({
       return
     }
 
-    const matrix: string[][] = []
-    for (let r = rect.r0; r <= rect.r1; r++) {
-      const row = rows[r]
-      if (!row) continue
-      const line: string[] = []
-      for (let c = rect.c0; c <= rect.c1; c++) {
-        const col = gridColumns.find((g) => g.id === colIds[c])
-        line.push(col ? copyValueOf(col, row.original) : "")
-      }
-      matrix.push(line)
-    }
+    // Same builder the export uses, so the clipboard and the file can't drift
+    // apart. A copy is the selected block only, and carries no header.
+    const matrix = buildMatrix({
+      rows: rows.slice(rect.r0, rect.r1 + 1),
+      colIds: colIds.slice(rect.c0, rect.c1 + 1),
+      columns: columnsById,
+      includeHeader: false,
+    })
     if (!matrix.length) return
 
     e.clipboardData.setData("text/plain", serializeTsv(matrix))
     e.clipboardData.setData("text/html", toHtmlTable(matrix))
     e.preventDefault()
+  }
+
+  // ---- Export ------------------------------------------------------------
+
+  /**
+   * What leaves the grid is what the user is looking at: `table.getRowModel()`
+   * is post-filter and post-sort, and the visible leaf columns are in their
+   * on-screen order with the hidden ones already gone.
+   */
+  const handleExport = (format: "xlsx" | "csv") => {
+    const matrix = buildMatrix({
+      rows: rows.map((r) => ({ original: r.original })),
+      colIds: visibleLeafColumns.map((c) => c.id),
+      columns: columnsById,
+    })
+    const filename = exportFilename(title, format, new Date())
+
+    if (format === "csv") {
+      // A BOM, so Excel opens a UTF-8 CSV without mangling accented text.
+      downloadBlob(new Blob(["﻿", toCsv(matrix)], { type: "text/csv;charset=utf-8" }), filename)
+    } else {
+      const [header, ...body] = matrix
+      const sheet = XLSX.utils.aoa_to_sheet([header, ...body.map((r) => r.map(coerceCell))])
+      const book = XLSX.utils.book_new()
+      // 31 characters is Excel's hard limit on a sheet name.
+      XLSX.utils.book_append_sheet(book, sheet, (title ?? "Data").slice(0, 31))
+      downloadWorkbook(book, filename)
+    }
+    toast.success(`Exported ${rows.length} row${rows.length === 1 ? "" : "s"}`)
   }
 
   // ---- Paste -------------------------------------------------------------
@@ -966,6 +1009,30 @@ export function VirtualGrid<T>({
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  disabled={!rows.length}
+                  title={
+                    rows.length
+                      ? "Download these rows — filters, sort and hidden columns included"
+                      : "Nothing to export"
+                  }
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                  Excel (.xlsx)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("csv")}>CSV</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8">
                   <Columns className="h-4 w-4 mr-1" />
                   Columns
@@ -1042,7 +1109,13 @@ export function VirtualGrid<T>({
                   align === "right" && "justify-end"
                 )}
                 style={{ width: header.getSize(), minWidth: header.getSize() }}
-                onClick={() => canSort && header.column.toggleSorting()}
+                // Shift-click adds a second key rather than replacing the
+                // first. Server-backed grids stay single-sort: ServerGridOptions
+                // carries one column and one direction, so a second key here
+                // would be shown but never sent.
+                onClick={(e) =>
+                  canSort && header.column.toggleSorting(undefined, !server && e.shiftKey)
+                }
               >
                 {/* A right-aligned header reverses the order so the label
                     still sits against the right edge. Both orders carry the
@@ -1051,11 +1124,26 @@ export function VirtualGrid<T>({
                 {(() => {
                   const label = flexRender(header.column.columnDef.header, header.getContext())
                   const sorted = header.column.getIsSorted()
-                  const sortIcon = !canSort ? null : sorted === "asc" ? (
+                  const arrow = !canSort ? null : sorted === "asc" ? (
                     <ArrowUp className="h-3 w-3" />
                   ) : sorted === "desc" ? (
                     <ArrowDown className="h-3 w-3" />
                   ) : null
+                  // With two keys in play an arrow alone doesn't say which one
+                  // wins, so each carries its position once there is more than
+                  // one. A single sort stays unnumbered.
+                  const sortIndex = header.column.getSortIndex()
+                  const sortIcon =
+                    arrow && activeSortCount > 1 && sortIndex >= 0 ? (
+                      <span className="inline-flex items-center gap-0.5">
+                        {arrow}
+                        <span className="text-[9px] tabular-nums text-muted-foreground">
+                          {sortIndex + 1}
+                        </span>
+                      </span>
+                    ) : (
+                      arrow
+                    )
                   const filterButton = canFilter ? (
                     <span onClick={(e) => e.stopPropagation()}>
                       <ColumnFilterPopover
@@ -1287,6 +1375,48 @@ export function VirtualGrid<T>({
             ))}
           {!isLoading && rows.length === 0 && (
             <div className="flex items-center justify-center h-40 text-muted-foreground">{emptyMessage}</div>
+          )}
+
+          {/* Totals — pinned to the bottom of the scrollport but inside the
+              width shim, so it holds its place vertically while tracking the
+              columns horizontally. */}
+          {showTotals && (
+            <div
+              className="flex sticky bottom-0 z-10 bg-muted border-t-2 border-border"
+              style={{ height: SHEET_ROW_HEIGHT }}
+            >
+              {showGutter && (
+                <div
+                  className="sticky left-0 z-20 shrink-0 bg-muted border-r border-border h-full"
+                  style={{ width: gutterWidth, minWidth: gutterWidth }}
+                />
+              )}
+              {visibleLeafColumns.map((column) => {
+                const col = columnsById.get(column.id)
+                const kind = col?.aggregate
+                const value = col ? aggregateColumn(aggregateRows, col) : null
+                return (
+                  <div
+                    key={column.id}
+                    className={cn(
+                      "shrink-0 h-full flex items-center px-2 text-[11px] border-r border-border overflow-hidden",
+                      col?.align === "right" ? "justify-end" : "justify-start"
+                    )}
+                    style={{ width: column.getSize(), minWidth: column.getSize() }}
+                    title={kind ? `${AGGREGATE_LABEL[kind]} of ${rows.length} rows shown` : undefined}
+                  >
+                    {kind && value !== null && (
+                      <span className="truncate font-mono tabular-nums font-semibold">
+                        <span className="mr-1 font-sans font-normal text-muted-foreground">
+                          {AGGREGATE_LABEL[kind]}
+                        </span>
+                        {formatAggregate(value, kind)}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           )}
           </div>
         </div>

@@ -1285,6 +1285,11 @@ export default function PurchaseOrdersPage() {
       header: "Qty Ord",
       size: 90,
       align: "right",
+      // Quantity totals cleanly because it carries no unit. Line Total
+      // deliberately does *not* get an aggregate: currency lives on the PO, this
+      // grid lists lines across many POs, and a footer adding USD to CAD would
+      // present a meaningless number as authoritative.
+      aggregate: "sum",
       accessorFn: (r) =>
         r.line ? parseFloat(String(r.line.quantity_ordered)) : 0,
       // Raw on the clipboard so Excel receives a number, not "1,250".

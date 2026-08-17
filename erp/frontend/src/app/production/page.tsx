@@ -249,6 +249,7 @@ export default function ProductionPage() {
     numCol("total_quantity", "Total Qty", (row) => row.total_quantity, {
       size: 90,
       decimals: 0,
+      aggregate: "sum",
     }),
     {
       id: "status",

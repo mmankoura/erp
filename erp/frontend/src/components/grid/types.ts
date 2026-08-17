@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import type { AggregateKind } from "./aggregate"
 
 /**
  * A column in a {@link VirtualGrid}.
@@ -29,6 +30,13 @@ export interface VirtualGridColumn<T> {
   copyValue?: (row: T) => string
   /** Present means the column can be typed into, once editing is unlocked. */
   edit?: ColumnEditConfig<T>
+  /**
+   * Show an aggregate for this column in the totals row. Opt-in per column, and
+   * a grid where no column opts in renders no footer at all.
+   *
+   * Computed over the filtered rows — see `aggregate.ts`.
+   */
+  aggregate?: AggregateKind
 }
 
 /** The value Ctrl+C writes for one cell. */

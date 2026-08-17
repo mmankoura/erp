@@ -9,10 +9,15 @@ import type {
   ApprovedManufacturer,
 } from "./api"
 
-// Helper to trigger download
-function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
+// Helper to trigger download. Exported because the grid's own export reuses it
+// rather than growing a second copy of the same few lines.
+export function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
   const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" })
-  const blob = new Blob([wbout], { type: "application/octet-stream" })
+  downloadBlob(new Blob([wbout], { type: "application/octet-stream" }), filename)
+}
+
+/** The download gesture on its own, so CSV doesn't have to go through a workbook. */
+export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url

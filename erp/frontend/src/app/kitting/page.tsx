@@ -791,9 +791,11 @@ function KittingItemsTable({ items }: { items: KittingItemWithStock[] }) {
     }),
     numCol("qty_required", "Qty Required", (item) => parseFloat(String(item.total_qty_required)), {
       size: 110,
+      aggregate: "sum",
     }),
     numCol("qty_on_hand", "On Hand", (item) => parseFloat(String(item.quantity_on_hand)), {
       size: 100,
+      aggregate: "sum",
     }),
     {
       id: "alternate",

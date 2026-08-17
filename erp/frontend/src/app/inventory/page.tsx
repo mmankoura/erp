@@ -651,11 +651,14 @@ export default function InventoryPage() {
       ipnSize: 150,
     }),
     { id: "resource_type", header: "Type", size: 80, sortable: true, filterable: true, filterAccessor: (s) => s.material?.resource_type || "-", accessorFn: (s) => s.material?.resource_type || "", cell: (s) => s.material?.resource_type ? <Chip>{s.material.resource_type}</Chip> : <span className="text-muted-foreground">{"\u2014"}</span> },
-    { id: "on_hand", header: "On Hand", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_hand, cell: (s) => <span className="font-mono tabular-nums">{s.quantity_on_hand.toLocaleString()}</span> },
-    { id: "required", header: "Required", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_required, cell: (s) => <span className={`font-mono tabular-nums ${s.quantity_required > 0 ? "text-purple-600" : ""}`}>{s.quantity_required.toLocaleString()}</span> },
-    { id: "allocated", header: "Allocated", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_allocated, cell: (s) => <AllocationPopover materialId={s.material_id} quantity={s.quantity_allocated} /> },
-    { id: "available", header: "Available", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_available, cell: (s) => <span className={`font-mono tabular-nums font-medium ${s.quantity_available <= 0 ? "text-red-600" : s.quantity_available < 10 ? "text-yellow-600" : "text-green-600"}`}>{s.quantity_available.toLocaleString()}</span> },
-    { id: "on_order", header: "On Order", size: 100, align: "right", sortable: true, accessorFn: (s) => s.quantity_on_order, cell: (s) => <span className={`font-mono tabular-nums ${s.quantity_on_order > 0 ? "text-blue-600" : ""}`}>{s.quantity_on_order.toLocaleString()}</span> },
+    // The quantity columns total in the footer over whatever the filters leave,
+    // so "how much of this customer's stock is on hand" becomes a filter plus a
+    // glance rather than an export.
+    { id: "on_hand", header: "On Hand", size: 100, align: "right", sortable: true, aggregate: "sum", accessorFn: (s) => s.quantity_on_hand, cell: (s) => <span className="font-mono tabular-nums">{s.quantity_on_hand.toLocaleString()}</span> },
+    { id: "required", header: "Required", size: 100, align: "right", sortable: true, aggregate: "sum", accessorFn: (s) => s.quantity_required, cell: (s) => <span className={`font-mono tabular-nums ${s.quantity_required > 0 ? "text-purple-600" : ""}`}>{s.quantity_required.toLocaleString()}</span> },
+    { id: "allocated", header: "Allocated", size: 100, align: "right", sortable: true, aggregate: "sum", accessorFn: (s) => s.quantity_allocated, cell: (s) => <AllocationPopover materialId={s.material_id} quantity={s.quantity_allocated} /> },
+    { id: "available", header: "Available", size: 100, align: "right", sortable: true, aggregate: "sum", accessorFn: (s) => s.quantity_available, cell: (s) => <span className={`font-mono tabular-nums font-medium ${s.quantity_available <= 0 ? "text-red-600" : s.quantity_available < 10 ? "text-yellow-600" : "text-green-600"}`}>{s.quantity_available.toLocaleString()}</span> },
+    { id: "on_order", header: "On Order", size: 100, align: "right", sortable: true, aggregate: "sum", accessorFn: (s) => s.quantity_on_order, cell: (s) => <span className={`font-mono tabular-nums ${s.quantity_on_order > 0 ? "text-blue-600" : ""}`}>{s.quantity_on_order.toLocaleString()}</span> },
     { id: "actions", header: "", size: 120, sortable: false, filterable: false, accessorFn: () => "", cell: (s) => (<div className="flex items-center gap-1"><TransactionHistoryDialog stock={s} trigger={<Button variant="ghost" size="icon" className="h-8 w-8"><History className="h-4 w-4" /></Button>} /></div>) },
   ]
 
