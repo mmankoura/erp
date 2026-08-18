@@ -273,13 +273,20 @@ export default function ProductsPage() {
       size: 100,
       sortable: true,
       filterable: true,
-      accessorFn: (product) => (product.active_bom_revision_id ? "Active" : "No BOM"),
-      filterAccessor: (product) => (product.active_bom_revision_id ? "Active" : "No BOM"),
+      // This column tracks whether an *active* revision is set, which is not the
+      // same as whether the product has a BOM at all: a product can hold
+      // several imported revisions with none of them activated. Saying "No BOM"
+      // there reads as "nothing was imported" and sends people looking for a
+      // failure that did not happen.
+      accessorFn: (product) => (product.active_bom_revision_id ? "Active" : "None active"),
+      filterAccessor: (product) => (product.active_bom_revision_id ? "Active" : "None active"),
       cell: (product) =>
         product.active_bom_revision_id ? (
           <Chip tone="success">Active</Chip>
         ) : (
-          <span className="text-muted-foreground text-sm">No BOM</span>
+          <span className="text-muted-foreground text-sm" title="No revision is set as active. The product may still have revisions — open it to see them.">
+            None active
+          </span>
         ),
     },
     {
