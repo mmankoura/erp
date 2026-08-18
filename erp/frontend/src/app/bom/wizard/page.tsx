@@ -27,6 +27,7 @@ import {
   undo,
 } from "@/lib/bom-wizard/doc"
 import { readBomFile } from "@/lib/bom-wizard/parse"
+import type { BomRevision } from "@/lib/api"
 import type {
   GridAction,
   RecordedAction,
@@ -68,7 +69,7 @@ import {
   X,
 } from "lucide-react"
 import { toast } from "sonner"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 
 type DialogKind =
   | "headers"
@@ -84,6 +85,20 @@ function BomWizardScreen() {
   // Set when the wizard was reached from a product's Import BOM button, so the
   // commit dialog opens on that product instead of an empty picker.
   const productId = useSearchParams().get("product") ?? undefined
+  const router = useRouter()
+
+  /**
+   * A commit is the end of the job, so the wizard gets out of the way and
+   * hands over to the revision it just wrote — deep-linked, so the page opens
+   * on that revision rather than defaulting to whichever one is active.
+   */
+  const onCommitted = useCallback(
+    (revision: BomRevision) => {
+      setDialog(null)
+      router.push(`/products/${revision.product_id}?revision=${revision.id}`)
+    },
+    [router]
+  )
 
   const [sheets, setSheets] = useState<WizardSource[] | null>(null)
   const [doc, setDoc] = useState<WizardDoc | null>(null)
@@ -347,7 +362,7 @@ function BomWizardScreen() {
             sourceFileName={doc.source.fileName}
             open={dialog === "commit"}
             onOpenChange={(open) => setDialog(open ? "commit" : null)}
-            onCommitted={() => setDialog(null)}
+            onCommitted={onCommitted}
             defaultProductId={productId}
           />
           <SaveRecipeDialog

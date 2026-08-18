@@ -74,7 +74,7 @@ import {
 import { useState, useEffect, useMemo } from "react"
 import { toast } from "sonner"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { useAuth, UserRole } from "@/contexts/auth-context"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { textCol, monoCol, numCol } from "@/components/grid/columns"
@@ -213,6 +213,8 @@ function BomChangedGrid({ changes }: { changes: BomChange[] }) {
 export default function ProductDetailPage() {
   const params = useParams()
   const productId = params.id as string
+  /** Set when the BOM wizard hands over after a commit, so the page opens on the revision just written. */
+  const requestedRevisionId = useSearchParams().get("revision")
   const { hasRole } = useAuth()
   const isAdmin = hasRole(UserRole.ADMIN)
   const canEditBom = hasRole(UserRole.ADMIN, UserRole.MANAGER)
@@ -250,13 +252,18 @@ export default function ProductDetailPage() {
     { enabled: !!selectedRevisionId }
   )
 
-  // Set initial selected revision to active one
+  // Set initial selected revision: the one asked for, else the active one.
   useEffect(() => {
     if (revisions && revisions.length > 0 && !selectedRevisionId) {
-      const activeRevision = revisions.find(r => r.is_active) || revisions[0]
+      // A revision imported without being made active would otherwise be
+      // invisible on arrival — the page would open on the active one instead.
+      const requested = requestedRevisionId
+        ? revisions.find((r) => r.id === requestedRevisionId)
+        : undefined
+      const activeRevision = requested || revisions.find(r => r.is_active) || revisions[0]
       setSelectedRevisionId(activeRevision.id)
     }
-  }, [revisions, selectedRevisionId])
+  }, [revisions, selectedRevisionId, requestedRevisionId])
 
   // Refetch revision when selection changes
   useEffect(() => {
