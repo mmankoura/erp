@@ -6,6 +6,23 @@ This is a bigger jump than the usual single-revision deploy: **three migrations*
 
 ---
 
+## Pre-flight results — 2026-08-18
+
+| Step | Result |
+|---|---|
+| §1.1 Pinned commit | `85b3e0507b4c0d77f64753487ed65ccdd23f0a93` (`85b3e05`), tree clean |
+| §1.2 Build | Backend `dist/` and frontend `.next/` built (BUILD_ID `QDkrp2zEcedLv068YuSZP`) |
+| §1.3 Verify | Backend tsc clean, **273 backend tests**; frontend tsc clean apart from the 12 known `export-utils.test.ts` errors, **319 frontend tests** |
+| §2.2 Case-duplicate usernames | **0 rows** — the non-partial username index will build |
+| §2.2 Case-duplicate emails | 4 NULL / **0 empty strings** — all four excluded by the index's `WHERE "email" IS NOT NULL`, so no violation and nothing to clean up |
+| §2.3 Production migration state | `AddPausedPhysicalCountStatus1769200000000` — as expected; all three pending migrations confirmed unapplied |
+
+`erp-sheet` had no backend `node_modules` (it had only ever run frontend tooling); `npm ci` was run there so the whole release builds from the one pinned checkout.
+
+**Still to do: §2.1 (dump), §2.4 (snapshot), §3–§7.**
+
+---
+
 ## 0. What makes this deploy different
 
 **Three migrations are pending** (last applied in production: `AddPausedPhysicalCountStatus1769200000000`):
