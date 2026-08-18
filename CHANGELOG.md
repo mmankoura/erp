@@ -6,6 +6,64 @@
 
 ---
 
+## REV-013 — 2026-08-18
+
+**Released by**: Mark Mankoura
+**Migration required**: No — frontend only. No schema change and no new endpoint; the editable grids reuse `PATCH /inventory/lots/:id` and `PATCH /purchase-orders/lines/:id`, both of which have been live since REV-010.
+
+**Backup taken**: [ ] (check before deploying)
+
+**Deploy note**: **This ships together with REV-010, REV-011 and REV-012 in one release** — production is on REV-009 and has not taken any of them. The combined deploy carries three migrations, so read `deployment_known_issues.md` in full first: the smart-skip breaks the documented migration-before-switch ordering, `AddCaseInsensitiveUserUniqueness` can legitimately abort the deploy, and REV-009's `node_modules` are junctions so this release **must materialize** them rather than junction again. See `DEPLOY_RUNBOOK_REV-013.md` for the ordered procedure.
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | Tables | **Every grid in the app is now a spreadsheet.** REV-011 piloted the format on Lots/Reels alone and left the other 22 untouched; this converts all of them. 26px rows, gridlines, a row-number gutter and a filter row under every header, roughly twice the rows per screen. |
+| 2 | Feature | Tables | **Download any grid**, as `.xlsx` or `.csv`, from a button in its toolbar. The file is what is on screen: current filters, current sort, hidden columns left out. Values export raw, so a quantity arrives as a number Excel can sum rather than the text `9,875`. |
+| 3 | Feature | Tables | **A totals row.** Columns opt in, and the total covers the rows the filters left — so "on-hand for this customer" is a filter and a glance. Live on the inventory quantity columns, kitting's required and on-hand, production's total quantity, and PO quantity ordered. |
+| 4 | Feature | Tables | **Frozen columns.** The first column or two hold still while the rest scroll sideways. On Purchase Orders the PO number and supplier stay put; on Production the order number does. |
+| 5 | Feature | Tables | **Saved views.** Name the current filters, sort, column widths and hidden columns, then recall them from the toolbar. Remembered per grid, in the browser, per user. |
+| 6 | Feature | Tables | **Sort on two columns** — shift-click a second header. Each sorted column shows its position so the order is never a guess. |
+| 7 | Feature | Tables | **Drag-to-fill**, the Excel corner handle, on the grids that allow editing. Downward only, and it copies rather than continuing a series. |
+| 8 | Feature | Purchasing | **The PO lines grid is editable in place** behind the existing Edit lock — quantity ordered and unit cost type directly into the cell, with the DRAFT-only rule enforced in the cell instead of arriving as a 400. Status is still changed from its dropdown, since that is a workflow transition rather than a field. |
+| 9 | Feature | Production | The six production stages were one cell of wrapping badges; they are now **six sortable columns**, so "which orders have anything in SMT" is a click. Stages you don't watch can be hidden and stay hidden. |
+| 10 | Feature | BOM | **The revision comparison tables are spreadsheets** — Added, Removed and Changed each scroll independently inside the dialog, so a 200-line Added no longer pushes Changed off the bottom. |
+| 11 | Enhancement | Tables | **IPN and description are separate columns** on Stock Levels, Low Stock, both Receiving Logs and the BOM tab. They used to be one stacked cell, which a fixed row height clips; split, the description is independently sortable, filterable and hideable for the first time. |
+| 12 | Enhancement | Tables | **Column widths and hidden columns are remembered** per grid, and a "Reset columns" item restores them. Status badges became sheet-sized chips, and row status moved to a coloured stripe in the gutter — in a sheet the cell background belongs to the selection. |
+| 13 | Refactor | Tables | Shared column factories (`grid/columns.tsx`) so date, number, text and part-number columns format, sort, filter and copy the same way everywhere rather than by review discipline. The transformation, export, aggregation, freeze-offset, fill and saved-view logic are pure modules under unit test — **319 tests**. |
+| 14 | Fix | Tables | Right-aligned columns never showed their filter funnel; the two header layouts had drifted apart. |
+
+### Known behavior changes (worth communicating to users)
+
+- **Cells clip instead of wrapping, everywhere.** A long description or a long reference-designator list is cut off rather than growing the row. Widen the column, or hover for the full value — every column that can overflow carries its full text as a tooltip.
+- **Manufacturer and MPN on the PO lines grid are now read-only.** They previously offered an edit box that **always failed**: `UpdateLineDto` accepts only quantity, unit cost and notes, and the API runs with `forbidNonWhitelisted`, so every one of those saves returned a 400 with the reason buried in a toast. Removing the control is the honest state until the DTO is widened. **The same broken editor still exists in the expanded PO detail panel** and has not been touched.
+- **Assign Customers deliberately has no Ctrl+C.** That page drives bulk assignment from the keyboard — arrows move the row focus, Space ticks, Escape clears — and a cell cursor would fight it for the same keys. It takes the spreadsheet's appearance and filter row only.
+- **Kitting's Pick Instruction, Location and Scanned UIDs are one line each**, joined with `; `, with the full list on hover and on the clipboard. This is more than the Location column showed before, which stopped at three and said "+N more".
+- **There is still no undo.** Quantity edits move stock and write an `ADJUSTMENT` transaction; pasting or filling into a quantity column still asks for confirmation every time, however few cells.
+- **Saved views and remembered columns live in the browser**, per user per machine. They do not follow a user to another PC.
+- **PO Line Total is deliberately not totalled.** Currency lives on the purchase order and that grid lists lines across many of them, so a footer would be adding USD to CAD.
+
+### Verification Steps
+
+- [ ] Open Inventory, Purchase Orders, Products, Materials, Kitting, Production, Receiving, Orders, Suppliers, Customers, AML, Physical Count, Consumable Orders → every grid is 26px rows with a filter row
+- [ ] Inventory → Stock Levels → filter by customer → the On Hand / Available totals at the foot change with the filter
+- [ ] Purchase Orders → scroll right → PO # and Supplier stay pinned, gutter and header stay aligned, nothing bleeds over the frozen columns
+- [ ] Purchase Orders → shift-click Supplier then IPN → both headers show a position number and rows order by supplier, then IPN
+- [ ] Any grid → Export → Excel → the file matches what is on screen, and quantities arrive as numbers not text
+- [ ] Apply a filter and hide a column → export again → the file reflects both
+- [ ] Export → CSV → opens in Excel with accented characters intact
+- [ ] Save a view, change the filters, recall the view, reload the page → the view is still listed and still applies
+- [ ] Purchase Orders → unlock editing → type a quantity on a DRAFT PO line → saves; try the same on a SUBMITTED line → refused in the cell, naming the status, with no round trip
+- [ ] Inventory → Lots/Reels → unlock → select a BIN cell → drag the corner handle down → the value fills; check the rows saved
+- [ ] Drag-fill into the quantity column → the confirmation dialog still appears
+- [ ] Production → the six stage columns each sort; hide two, reload, they stay hidden
+- [ ] Products → a product → BOM tab → Compare two revisions → all three sections render and scroll inside the dialog; Ref Des shows its full list on hover
+- [ ] Assign Customers → arrow keys still move the row focus and Space still ticks rows
+- [ ] Confirm the ledger still records edits: `SELECT transaction_type, quantity, reason, created_by FROM inventory_transactions ORDER BY created_at DESC LIMIT 5;`
+
+---
+
 ## REV-012 — 2026-08-13
 
 **Released by**: Mark Mankoura

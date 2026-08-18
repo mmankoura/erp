@@ -22,7 +22,17 @@ set REV_LABEL=%~1
 set REV=%~2
 set FORCE_FULL=%~3
 set SERVER=\\10.12.1.47\erp-deploy
-set PROJECT=C:\Users\mark.mankoura\Documents\projects\erp
+
+:: Build source. Defaults to the main worktree, as before. Override it to build
+:: from a different checkout without editing this file — which matters when the
+:: main worktree holds work in progress, since this script copies whatever build
+:: output is sitting there and cannot tell finished work from half-finished:
+::     set ERP_PROJECT=C:\Users\mark.mankoura\Documents\projects\erp-sheet
+if defined ERP_PROJECT (
+    set PROJECT=%ERP_PROJECT%
+) else (
+    set PROJECT=C:\Users\mark.mankoura\Documents\projects\erp
+)
 
 if "%REV_LABEL%"=="" (
     echo Usage: deploy.bat REV-LABEL RELEASE-FOLDER [--full]
