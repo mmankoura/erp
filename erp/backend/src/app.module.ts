@@ -21,6 +21,7 @@ import { PhysicalCountModule } from './modules/physical-count/physical-count.mod
 import { ProductionModule } from './modules/production/production.module';
 import { KittingModule } from './modules/kitting/kitting.module';
 import { ConsumableOrdersModule } from './modules/consumable-orders/consumable-orders.module';
+import { ManualStockModule } from './modules/manual-stock/manual-stock.module';
 import { SharedModule } from './modules/shared/shared.module';
 
 @Module({
@@ -52,6 +53,7 @@ import { SharedModule } from './modules/shared/shared.module';
     ProductionModule, // WIP / production tracking
     KittingModule, // Kitting list management
     ConsumableOrdersModule, // Consumable purchase orders (solder paste, stencils, etc.)
+    ManualStockModule, // Standalone hand-keyed warehouse stock list (does not touch inventory)
   ],
 })
 export class AppModule {}

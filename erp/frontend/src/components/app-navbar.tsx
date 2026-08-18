@@ -24,6 +24,7 @@ import {
   LogOut,
   ChevronDown,
   Wand2,
+  PackagePlus,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -61,6 +62,7 @@ const navGroups: NavGroup[] = [
     label: "Warehouse",
     items: [
       { title: "Inventory", url: "/inventory", icon: Warehouse },
+      { title: "Manual Stock Entry", url: "/manual-stock", icon: PackagePlus },
       { title: "Physical Count", url: "/physical-count", icon: ClipboardPen },
       { title: "Assign Customers", url: "/inventory/assign-customer", icon: UserPlus },
       { title: "Customer Inventory", url: "/reports/customer-inventory", icon: FileText },

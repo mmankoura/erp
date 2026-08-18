@@ -29,3 +29,4 @@ export * from './physical-count-lot.entity';
 export * from './physical-count-scan.entity';
 export * from './physical-count-discrepancy.entity';
 export * from './bom-wizard-recipe.entity';
+export * from './manual-stock-entry.entity';

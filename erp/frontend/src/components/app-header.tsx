@@ -22,6 +22,7 @@ const pathLabels: Record<string, string> = {
   "inventory": "Inventory",
   "mrp": "MRP / Shortages",
   "receiving": "Receiving",
+  "manual-stock": "Manual Stock Entry",
   "aml": "Approved Manufacturers",
   "audit": "Audit Log",
   "production": "WIP Tracking",
