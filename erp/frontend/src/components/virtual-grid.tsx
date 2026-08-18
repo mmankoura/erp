@@ -154,6 +154,16 @@ interface VirtualGridProps<T> {
    * row-number gutter. Cells clip instead of wrapping, so don't turn this on
    * for a grid whose cells rely on multi-line content.
    */
+  /**
+   * What the row-number gutter shows. Defaults to the row's position in the
+   * current view, which is what a spreadsheet means by a row number.
+   *
+   * Override where the row has an identity of its own that the user is being
+   * asked to act on — the BOM wizard numbers by position in the source file,
+   * so that a warning naming "row 47" points at the row the gutter calls 47,
+   * however much sorting, merging or deleting has happened since.
+   */
+  rowNumber?: (row: T, displayIndex: number) => ReactNode
   spreadsheet?: boolean
   spreadsheetOptions?: SpreadsheetOptions<T>
   /**
@@ -179,6 +189,7 @@ export function VirtualGrid<T>({
   rowClassName,
   onVisibleRowsChange,
   rowStripe,
+  rowNumber,
   getRowId,
   className,
   emptyMessage = "No data found",
@@ -1573,7 +1584,7 @@ export function VirtualGrid<T>({
                             style={{ width: showRowNumbers ? 3 : STRIPE_RAIL_WIDTH }}
                           />
                         )}
-                        {showRowNumbers && virtualRow.index + 1}
+                        {showRowNumbers && (rowNumber ? rowNumber(row.original, virtualRow.index) : virtualRow.index + 1)}
                       </div>
                     )
                   })()}

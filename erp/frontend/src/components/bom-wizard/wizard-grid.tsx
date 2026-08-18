@@ -53,6 +53,12 @@ export function WizardGridView({ grid, height = 560, onRowActivate }: WizardGrid
       spreadsheet
       height={height}
       getRowId={(row) => String(row.srcIndex)}
+      // Number by position in the file, not position on screen. Every warning
+      // and every recorded action addresses rows by srcIndex, so a gutter
+      // counting 1..n would disagree with them the moment a header row is
+      // deleted or a run is merged — and "row 47" would point at nothing
+      // findable.
+      rowNumber={(row) => row.srcIndex + 1}
       onRowActivate={onRowActivate}
       emptyMessage="Every row has been deleted by the actions above."
       // No storageKey on purpose. Column ids here are positional (F1..Fn), so a
