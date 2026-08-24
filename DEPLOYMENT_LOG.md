@@ -425,3 +425,89 @@ PM2 boot persistence was attempted via three approaches, all failed:
 - **node_modules**: **Junctioned** (fast) — safe this time because REV-008 (→ `previous`) had **real** node_modules from being materialized last deploy. Junction to a real release is good for exactly one rotation.
 - **Result**: Clean deploy, no issues. `taskkill` cleared the two orphaned node procs, rotate/junction/start all succeeded first try, health green. `current\` = REV-009 (backend/frontend node_modules junctioned → REV-008), `previous\` = REV-008 (real node_modules — solid rollback target).
 - **Lesson**: **REV-010 MUST materialize** (`npm ci`/`npm install`), not junction — REV-009's node_modules are junctions, so a second consecutive junction hop would self-reference. Rule of thumb: junction only when `previous` has real node_modules (i.e. the deploy right after a materialized one); otherwise materialize.
+
+---
+
+## REV-014 Deployment — August 20, 2026
+
+**One combined release carrying REV-010 → REV-014.** Production had been on REV-009 since July 1 and had taken none of the four revisions since.
+
+- **Pinned commit**: `40d228334f3016e845fe21fabd939fc5f6290622` (`40d2283`), tree clean, built from the **main** worktree `projects\erp` (`feat/bom-wizard`). Note this is *not* the commit the REV-013 runbook was pinned to (`85b3e05`, on `feat/spreadsheet-grid`) — four commits had landed since, adding manual-stock and three BOM fixes, so a fresh build and a fresh pre-flight were required.
+- **Release folder**: `2026-08-20_001`. Frontend BUILD_ID `IYzC5JiDU00xEgyyKe3LB` (later replaced — see Issue 4).
+- **Changes**: The whole spreadsheet-grid rollout (REV-010/011/013), the BOM Formatting Wizard (REV-012), and manual stock entry. See `CHANGELOG.md` REV-010 through REV-012; REV-013 and REV-014 entries still outstanding.
+- **Migration**: Yes — **4** migrations (prod was on `AddPausedPhysicalCountStatus1769200000000`):
+  - `AddRecountQtyToDiscrepancies1769300000000` — adds `recount_qty` column
+  - `AddCaseInsensitiveUserUniqueness1769400000000` — two unique indexes on `LOWER()`; **can legitimately abort**
+  - `CreateBomWizardRecipes1769500000000` — new table + name index
+  - `CreateManualStockEntries1769600000000` — new table + three indexes
+  - All four applied in a single transaction, `COMMIT` clean.
+- **Backup**: `C:\erp-backups\pre-rev014.dump` (2,473,554 bytes) + `manual-snapshot-REV014` (45,744 files / 961.51 MB, 0 failed — robocopy followed REV-009's junctions and copied real files, so this snapshot is genuinely self-contained).
+- **node_modules**: **Materialized** on both sides, as REV-009's lesson required. REV-009's were junctions → REV-008, so a second consecutive hop would have self-referenced.
+
+### Deployment sequence (as actually performed)
+
+Dev-side (WSL driving `cmd.exe`; Node/npm are Windows-only here and the frontend carries only the win32 SWC binary, so all builds went through `cmd.exe`):
+
+1. Confirmed tree clean, pinned `40d2283`.
+2. `npm run build` backend, then frontend.
+3. Verify: backend `tsc --noEmit` clean + **273/273** Jest; frontend `tsc --noEmit` = the 12 known pre-existing `export-utils.test.ts` errors only, + **319/319** vitest.
+4. Staged the patched `switch-release.bat` to the share as `switch-release-rev007.bat` (see Issue 1).
+5. `deploy.bat REV-014 2026-08-20_001` — aborted partway (Issue 2); remaining copy steps completed by hand.
+
+Server-side (RDP, cmd as Administrator):
+
+6. §2.1 `pg_dump` → `pre-rev014.dump`.
+7. §2.2 case-duplicate user check — **0** duplicate usernames; 4 blank emails, confirmed **4 NULL / 0 empty string** via `count(*) FILTER (WHERE email IS NULL / = '')`. NULLs are excluded by the email index's `WHERE "email" IS NOT NULL`, so no violation. Empty strings would have aborted the migration.
+8. §2.3 confirmed newest applied migration was `AddPausedPhysicalCountStatus1769200000000` — nothing deployed outside process.
+9. §2.4 `robocopy current → manual-snapshot-REV014`.
+10. §4 `npm ci --omit=dev` backend (286 packages, 4 min); frontend failed, recovered per Issue 3 (179 packages, 10 min).
+11. Verified both `node_modules` are real `<DIR>`, not `<JUNCTION>`.
+12. §5 migrations with `DATABASE_URL` set inline to the **postgres superuser** — all four applied, `COMMIT`.
+13. §6 `switch-release-rev007.bat 2026-08-20_001`, **no `--link-nm`**.
+14. §7 verify — interrupted by Issues 4 and 5.
+
+### Issues during deploy
+
+- **Issue 1 — the server's `switch-release.bat` was still the UNPATCHED April 9 version.** The REV-007 patch (commit `26e059d`, June 25 — wait for `STOPPED`, `exit /b 1` on rotate failure) was committed to the dev repo but **never copied to the server**. REV-007's switch was done by hand, so the patched script was never exercised or deployed, and the REV-013 runbook's assurance that "switch-release.bat is safe now" was false for the file production would actually run. Caught in pre-flight by comparing the share's copy (4,895 bytes, Apr 9) against the repo's (6,223 bytes, Jun 25). **Fix**: staged the patched script to the share as `switch-release-rev007.bat` and invoked that by name; the original was left untouched rather than overwritten mid-deploy. **The unpatched `C:\erp-deploy\switch-release.bat` is still there and still the default name** — see Outstanding.
+- **Issue 2 — `deploy.bat` smart-skip started a full frontend `node_modules` copy over SMB.** The REV-013 runbook predicted both locks would compare identical and both sides would skip. The backend did skip (its lock is unchanged since March), but the **frontend lock had changed on July 1** (commit `1c8ffaf`, the Issue-5 lock reconcile) and the server's `current-locks` snapshot predated it. `deploy.bat` therefore began a full ~1 GB robocopy over SMB — the multi-hour path. Compounding it: the tooling driving `cmd.exe` has a 10-minute cap, which killed the wrapper but left **robocopy running as an orphan** that had to be killed separately. **Fix**: killed the robocopy, and rather than re-running `deploy.bat` (which would have restarted the copy), completed its remaining steps by hand — `frontend\public`, `frontend\package.json`, `frontend\package-lock.json`. Verified the build outputs had copied completely (`dist` 758/758 files, `.next` 5241/5241, BUILD_ID matching). The ~679 MB partial `node_modules` was deliberately **left in place** — `npm ci` removes it itself, and deleting it over SMB would have been far slower than letting the server do it locally.
+- **Issue 3 — frontend `npm ci` failed with `EUSAGE ... Missing: @emnapi/core@1.10.0 from lock file`,** despite `npm ci --omit=dev --dry-run` passing on the dev machine that morning. **This is not the REV-008 lock-desync problem returning — the lock is fine.** It is an **npm version mismatch**: dev is Node 25.2.1 / **npm 11.6.2**, the server is Node 22.22.2 / **npm 10.9.7**. `@emnapi/core` and `@emnapi/runtime` are `optional: true` bundleDependencies of `@tailwindcss/oxide-wasm32-wasi`, a platform-mismatched package. npm 11 skips that branch entirely; npm 10 computes the tree wanting `1.10.0` and calls the lock incomplete (the lock pins `1.11.1`). The dry-run validated the lock against the **wrong npm**. **Fix**: `npx -y npm@11.6.2 ci --omit=dev` — ran the install under the same npm that validated the lock, without changing the server's global npm. 179 packages, 10 min. **Deliberately did NOT fall back to REV-008's `npm install --omit=dev`**, which re-resolves from `package.json` rather than the lock and could have installed versions that were never built or tested.
+- **Issue 4 — the BOM wizard crashed in production: `Uncaught TypeError: crypto.randomUUID is not a function`.** `crypto.randomUUID()` is a **secure-context-only** API. Dev runs on `http://localhost:3000`, and localhost counts as a secure context, so it works there. Production is `http://erp.atacanada.ca` — plain HTTP on a real hostname, which is **not** a secure context, so the property is undefined. This is precisely the risk of the wizard never having been clicked through in a browser before deploying it. **Fix**: added `newId()` to `frontend/src/lib/utils.ts` — tries `crypto.randomUUID()`, falls back to assembling a v4 UUID from `crypto.getRandomValues()` (which carries **no** secure-context restriction), and degrades to a timestamp only if `crypto` is absent entirely. Four call sites updated:
+  - `app/bom/wizard/page.tsx` — crashed on every recorded action (the reported failure)
+  - `components/bom-wizard/recipe-dialogs.tsx` — would have crashed on recipe import
+  - `components/relational-filter-builder.tsx` — **latent since February 2026**, live on the Materials page, fires when adding a filter. Unrelated to this release; this deploy merely surfaced the class of bug.
+  - `app/receiving/new/page.v2.tsx` — dead code (`.v2.tsx` is not a Next.js route), fixed for consistency.
+
+  Rebuilt frontend (`tsc` clean apart from the same 12 known errors, 319/319 vitest), BUILD_ID `-GbRPZTg9_eL2hCi_3ko_`, staged to `C:\erp-deploy\hotfix\rev014a\.next` so the slow SMB transfer happened while the site was still up.
+- **Issue 5 — frontend outage during the hotfix swap; `.next` was lost entirely.** After the swap attempt, IIS returned **502 (invalid response from upstream)**, `sc query erp-frontend` reported the unusual state **`PAUSED`**, nothing was listening on port 3000, and `frontend-error.log` read `Could not find a production build in the '.next' directory`. A `dir` confirmed **both `.next` and the `.next-rev014` backup were gone** from `current\frontend`. The exact command sequence that removed both was not established. **Recovery**: `net stop erp-frontend` (needed — the service was PAUSED, not stopped), then a **local** robocopy from `C:\erp-deploy\hotfix\rev014a\.next` → `current\frontend\.next` (5241/5241 files, 0 failed, **32 seconds** local vs 6 min 32 s for the same content over SMB), then `net start`. Staging the hotfix to a local folder on the server first is what made this a 30-second recovery instead of a rebuild-and-retransfer.
+
+### Result
+
+REV-014 live. Frontend serving the **hotfixed** build (`-GbRPZTg9_eL2hCi_3ko_`), not the originally staged one. All four migrations applied and committed. `/bom/wizard` confirmed loading in production.
+
+- `current\` = REV-014 + REV-014a frontend hotfix, **real node_modules both sides** (self-contained → the next deploy may junction to it for exactly one cycle).
+- `previous\` = REV-009, whose node_modules are junctions → REV-008 (now rotated away), so **rollback to `previous\` would need `npm ci` first**.
+- `manual-snapshot-REV014` = full real-file copy of REV-009 — **the better rollback target of the two**.
+- `pre-rev014.dump` is the DB safety net.
+
+**Verification is incomplete.** Only the wizard load was confirmed. The REV-010/011/012/013 changelog verification checklists — four revisions' worth — have not been worked. `/manual-stock` has no automated test coverage and was not exercised.
+
+### Lessons
+
+- **Verify the server's copy of the deploy tooling matches the repo before trusting a runbook that makes claims about it.** A fix committed on dev is not a fix in production. Issue 1 sat undetected for two deploys.
+- **Validate `npm ci` with the server's npm, not dev's.** A green `--dry-run` on a different npm major proves nothing. The underlying drift — dev on Node 25 / npm 11, server on Node 22 / npm 10 — should be closed rather than worked around each deploy.
+- **Secure-context-only browser APIs cannot be used while production is served over plain HTTP.** `crypto.randomUUID`, and the same applies to `crypto.subtle`, clipboard APIs, service workers, geolocation. localhost masks this completely in dev. Worth an ESLint rule; better, finish the HTTPS hardening deferred since April.
+- **Click through a new feature in a real browser before shipping it.** The wizard's failure was on page load, not in an edge case — any single manual pass would have caught it.
+- **Stage hotfixes to a local folder on the server, then swap locally.** 32 seconds vs 6.5 minutes, and a failed transfer cannot damage the running release. This is what made Issue 5 survivable.
+- **A renamed backup directory is not a backup** if the next command in the sequence can delete it. Issue 5 lost both copies; only the independently-staged hotfix folder saved it.
+- **`deploy.bat`'s smart-skip is only as trustworthy as `current-locks`.** A stale snapshot silently inverts its decision.
+
+### Outstanding after this deploy
+
+- [ ] **`current-locks` NOT updated** — deliberately deferred so an aborted deploy could not leave snapshots claiming these locks shipped. Now safe to run:
+      `copy /Y C:\apps\erp\current\backend\package-lock.json C:\erp-deploy\current-locks\backend-package-lock.json` (and the frontend equivalent).
+- [ ] **Replace the unpatched `C:\erp-deploy\switch-release.bat`** with the REV-007 patched version, so the next deploy cannot pick up the old one by habit. Back up the old first.
+- [ ] **Rotate the `postgres` superuser password** — it was entered inline and is in shell history.
+- [ ] **The `crypto.randomUUID` fix is uncommitted** in the dev working tree.
+- [ ] **CHANGELOG entries for REV-013 and REV-014** — REV-013's entry and `DEPLOY_RUNBOOK_REV-013.md` exist only on `feat/spreadsheet-grid`; manual-stock and the hotfix have no entry at all.
+- [ ] **Work the REV-010/011/012/013 verification checklists** — none have been run.
+- [ ] **Phase 7 backups still not built** — flagged as required before go-live in April. Backups for this deploy are the manual dump only.
