@@ -28,9 +28,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import { newId } from "@/lib/utils"
 
 /** Ids for actions arriving from a file or an older save that lacks them. */
-const makeId = (index: number) => `imported-${index}-${crypto.randomUUID().slice(0, 8)}`
+const makeId = (index: number) => `imported-${index}-${newId().slice(0, 8)}`
 
 /**
  * Matches the @Roles on POST/PATCH/DELETE /bom/wizard/recipes. Reading them is

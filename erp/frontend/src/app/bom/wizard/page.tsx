@@ -70,6 +70,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useRouter, useSearchParams } from "next/navigation"
+import { newId } from "@/lib/utils"
 
 type DialogKind =
   | "headers"
@@ -141,7 +142,7 @@ function BomWizardScreen() {
     setDoc((prev) =>
       prev
         ? record(prev, action, {
-            id: crypto.randomUUID(),
+            id: newId(),
             recorded_at: new Date().toISOString(),
           })
         : prev

@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Plus, X, Filter } from "lucide-react"
+import { newId } from "@/lib/utils"
 
 export interface FilterGroup {
   type: "product_revision" | "order"
@@ -65,7 +66,7 @@ export function RelationalFilterBuilder({
     setFilters((prev) => [
       ...prev,
       {
-        id: crypto.randomUUID(),
+        id: newId(),
         type: "product_revision",
         productId: "",
         revisionIds: [],
@@ -77,7 +78,7 @@ export function RelationalFilterBuilder({
     setFilters((prev) => [
       ...prev,
       {
-        id: crypto.randomUUID(),
+        id: newId(),
         type: "order",
         orderIds: [],
       },

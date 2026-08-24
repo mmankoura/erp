@@ -55,6 +55,7 @@ import {
   Scan,
 } from "lucide-react"
 import { toast } from "sonner"
+import { newId } from "@/lib/utils"
 
 const PACKAGE_TYPES: PackageType[] = ["REEL", "TUBE", "TRAY", "BAG", "BOX", "BULK", "TR", "OTHER"]
 
@@ -260,7 +261,7 @@ export default function ReceivingNewPage() {
 
   const handleConfirmReceive = (flagged = false, reason = "") => {
     if (!session || !itemIpn || !itemQty) return
-    const clientRequestId = crypto.randomUUID()
+    const clientRequestId = newId()
 
     const dto: any = {
       client_request_id: clientRequestId,
