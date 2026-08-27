@@ -13,6 +13,8 @@ import {
   CreateMaterialDto,
   UpdateMaterialDto,
   BulkCreateMaterialDto,
+  BulkUpdateMaterialDto,
+  BulkUpdateMaterialItemDto,
 } from './dto';
 import { FilterMaterialsDto } from './dto/filter-materials.dto';
 import { AuditService } from '../audit/audit.service';
@@ -20,6 +22,17 @@ import {
   AuditEventType,
   AuditEntityType,
 } from '../../entities/audit-event.entity';
+
+/**
+ * The master fields a bulk update may settle. Everything else on a material is
+ * deliberately out of reach of this path.
+ */
+const UPDATABLE_FIELDS = [
+  'description',
+  'manufacturer',
+  'manufacturer_pn',
+  'resource_type',
+] as const;
 
 /** Outcome of a bulk part-number lookup, partitioned by how confident the match is. */
 export interface ResolvePartNumbersResult {
@@ -34,11 +47,20 @@ export interface ResolvePartNumbersResult {
     resource_type: Material['resource_type'];
     customer_id: string | null;
   }>;
-  /** Found only by ignoring case. Offered as a suggestion for the caller to accept. */
+  /**
+   * Found only by ignoring case. Offered as a suggestion for the caller to
+   * accept. Carries the same fields as a match, because a caller that accepts
+   * one needs to reason about its master data exactly as it would for an exact
+   * hit — without them, an accepted case mismatch cannot be classified at all.
+   */
   case_mismatch: Array<{
     part_number: string;
     suggested: string;
     material_id: string;
+    description: string | null;
+    manufacturer: string | null;
+    manufacturer_pn: string | null;
+    resource_type: Material['resource_type'];
   }>;
   /** No material exists; importing these would create them. */
   missing: string[];
@@ -189,6 +211,10 @@ export class MaterialsService {
           part_number: partNumber,
           suggested: nearly.internal_part_number,
           material_id: nearly.id,
+          description: nearly.description,
+          manufacturer: nearly.manufacturer,
+          manufacturer_pn: nearly.manufacturer_pn,
+          resource_type: nearly.resource_type,
         });
         continue;
       }
@@ -253,6 +279,108 @@ export class MaterialsService {
     }
 
     return { created, errors };
+  }
+
+  /**
+   * Settle master fields on materials that already exist.
+   *
+   * Exists for the BOM import, where the file is often the only place a bare
+   * material's description or resource type has ever been written down. The
+   * server's guarantee is deliberately narrow: no field that was not named is
+   * touched, and no named field becomes null or empty. Which materials to
+   * touch, and whether to overwrite a value that is already there, is the
+   * caller's decision — "keep the file's answer" has to be expressible.
+   *
+   * Tolerant like `bulkCreate`: one bad row is reported, not thrown, so a
+   * single clash cannot lose the rest of a two-hundred-line import.
+   */
+  async bulkUpdate(
+    bulkUpdateDto: BulkUpdateMaterialDto,
+    actor?: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<{
+    updated: Material[];
+    unchanged: string[];
+    errors: Array<{ id: string; error: string }>;
+  }> {
+    const updated: Material[] = [];
+    const unchanged: string[] = [];
+    const errors: Array<{ id: string; error: string }> = [];
+
+    // First instruction for an id wins. Unlike `bulkCreate` this does not
+    // throw: there is no unique index to protect here, only an ambiguous
+    // instruction, and refusing the batch over one repeat would lose the rest.
+    const seen = new Set<string>();
+    const items: BulkUpdateMaterialItemDto[] = [];
+    for (const item of bulkUpdateDto.materials) {
+      if (seen.has(item.id)) {
+        errors.push({ id: item.id, error: 'Repeated in this request' });
+        continue;
+      }
+      seen.add(item.id);
+      items.push(item);
+    }
+
+    const found = await this.materialRepository.find({
+      where: { id: In(items.map((i) => i.id)) },
+    });
+    const byId = new Map(found.map((m) => [m.id, m]));
+
+    for (const item of items) {
+      const material = byId.get(item.id);
+      if (!material) {
+        errors.push({ id: item.id, error: 'Material not found' });
+        continue;
+      }
+
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+
+      for (const field of UPDATABLE_FIELDS) {
+        const raw = item[field];
+        if (raw === undefined) continue;
+        const value = typeof raw === 'string' ? raw.trim() : raw;
+        // Guarded again here rather than trusting the DTO: this is the
+        // invariant the whole endpoint exists to keep.
+        if (!value) continue;
+        // An equal value is dropped so an unchanged material neither bumps
+        // `updated_at` nor emits an audit event saying nothing happened.
+        if (material[field] === value) continue;
+        before[field] = material[field] ?? null;
+        after[field] = value;
+      }
+
+      if (Object.keys(after).length === 0) {
+        unchanged.push(item.id);
+        continue;
+      }
+
+      try {
+        Object.assign(material, after);
+        const saved = await this.materialRepository.save(material);
+        updated.push(saved);
+
+        // Nothing else in this service emits MATERIAL_UPDATED — `update()`
+        // does not — so a material settled by an import is more traceable than
+        // one edited by hand. Worth keeping that way.
+        await this.auditService.emitStateChange(
+          AuditEventType.MATERIAL_UPDATED,
+          AuditEntityType.MATERIAL,
+          saved.id,
+          before,
+          after,
+          actor,
+          metadata,
+        );
+      } catch (err) {
+        errors.push({
+          id: item.id,
+          error: err instanceof Error ? err.message : 'Could not save',
+        });
+      }
+    }
+
+    return { updated, unchanged, errors };
   }
 
   async update(

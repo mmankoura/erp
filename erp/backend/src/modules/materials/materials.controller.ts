@@ -17,13 +17,15 @@ import {
   CreateMaterialDto,
   UpdateMaterialDto,
   BulkCreateMaterialDto,
+  BulkUpdateMaterialDto,
   ResolvePartNumbersDto,
 } from './dto';
 import { FilterMaterialsDto } from './dto/filter-materials.dto';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '../../entities/user.entity';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { User, UserRole } from '../../entities/user.entity';
 
 @Controller('materials')
 @UseGuards(AuthenticatedGuard, RolesGuard)
@@ -67,6 +69,24 @@ export class MaterialsController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   async bulkCreate(@Body() bulkCreateDto: BulkCreateMaterialDto) {
     return this.materialsService.bulkCreate(bulkCreateDto);
+  }
+
+  /**
+   * Settle master fields on materials that already exist. Used by the BOM
+   * wizard, where the file is often the only place a bare material's
+   * description or resource type has ever been written down.
+   *
+   * MUST stay above `@Patch(':id')`: Nest matches in declaration order, and
+   * below it `ParseUUIDPipe` would take "bulk" for an id and fail with a
+   * validation error that reads like a client bug.
+   */
+  @Patch('bulk')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async bulkUpdate(
+    @Body() bulkUpdateDto: BulkUpdateMaterialDto,
+    @CurrentUser() user?: User,
+  ) {
+    return this.materialsService.bulkUpdate(bulkUpdateDto, user?.username);
   }
 
   @Patch(':id')

@@ -52,7 +52,10 @@ describe('MaterialsService', () => {
         { provide: getRepositoryToken(BomItem), useValue: bomItemRepo },
         { provide: getRepositoryToken(BomRevision), useValue: bomRevisionRepo },
         { provide: getRepositoryToken(Order), useValue: orderRepo },
-        { provide: AuditService, useValue: { emitDelete: jest.fn() } },
+        {
+          provide: AuditService,
+          useValue: { emitDelete: jest.fn(), emitStateChange: jest.fn() },
+        },
       ],
     }).compile();
     service = module.get(MaterialsService);
@@ -338,8 +341,18 @@ describe('MaterialsService', () => {
       const out = await service.resolveByPartNumbers(['or1015']);
 
       expect(out.matched).toEqual([]);
+      // Carries the same master fields as a match: a caller that accepts the
+      // suggestion has to reason about them exactly as it would for an exact hit.
       expect(out.case_mismatch).toEqual([
-        { part_number: 'or1015', suggested: 'OR1015', material_id: 'mat-1' },
+        {
+          part_number: 'or1015',
+          suggested: 'OR1015',
+          material_id: 'mat-1',
+          description: 'Resistor',
+          manufacturer: 'Vishay',
+          manufacturer_pn: 'CRCW040',
+          resource_type: null,
+        },
       ]);
       expect(out.missing).toEqual([]);
     });
@@ -378,4 +391,127 @@ describe('MaterialsService', () => {
       expect(out.missing).toEqual(['Do Not Populate']);
     });
   });
+
+  describe('bulkUpdate', () => {
+    const audit = () =>
+      (service as unknown as { auditService: { emitStateChange: jest.Mock } })
+        .auditService.emitStateChange;
+
+    const arrange = (materials: Material[]) => {
+      (materialRepo.find as jest.Mock).mockResolvedValue(materials);
+      (materialRepo.save as jest.Mock).mockImplementation(async (m: Material) => m);
+    };
+
+    it('sets only the fields it was given, leaving the rest of the material alone', async () => {
+      const existing = buildMaterial({ id: 'm1', description: 'Kept', uom: 'EA' });
+      arrange([existing]);
+
+      const out = await service.bulkUpdate({
+        materials: [{ id: 'm1', manufacturer: 'Yageo' }],
+      });
+
+      expect(out.updated).toHaveLength(1);
+      expect(out.updated[0].manufacturer).toBe('Yageo');
+      expect(out.updated[0].description).toBe('Kept');
+      expect(out.updated[0].uom).toBe('EA');
+    });
+
+    it('fills a blank resource type', async () => {
+      arrange([buildMaterial({ id: 'm1', resource_type: null })]);
+      const out = await service.bulkUpdate({
+        materials: [{ id: 'm1', resource_type: 'SMT' as Material['resource_type'] }],
+      });
+      expect(out.updated[0].resource_type).toBe('SMT');
+    });
+
+    it('never writes an empty or whitespace value over one that exists', async () => {
+      arrange([buildMaterial({ id: 'm1', description: 'Real' })]);
+      const out = await service.bulkUpdate({
+        materials: [{ id: 'm1', description: '   ' }],
+      });
+      expect(out.unchanged).toEqual(['m1']);
+      expect(materialRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('treats a value equal to the current one as unchanged, without saving', async () => {
+      arrange([buildMaterial({ id: 'm1', description: 'Same' })]);
+      const out = await service.bulkUpdate({
+        materials: [{ id: 'm1', description: 'Same' }],
+      });
+      expect(out.unchanged).toEqual(['m1']);
+      expect(out.updated).toEqual([]);
+      expect(materialRepo.save).not.toHaveBeenCalled();
+      expect(audit()).not.toHaveBeenCalled();
+    });
+
+    it('reports an unknown id and still saves the rest', async () => {
+      arrange([buildMaterial({ id: 'm1' })]);
+      const out = await service.bulkUpdate({
+        materials: [
+          { id: 'm1', manufacturer: 'Yageo' },
+          { id: 'gone', manufacturer: 'Murata' },
+        ],
+      });
+      expect(out.updated).toHaveLength(1);
+      expect(out.errors).toEqual([{ id: 'gone', error: 'Material not found' }]);
+    });
+
+    it('does not let one failed save abort the batch', async () => {
+      (materialRepo.find as jest.Mock).mockResolvedValue([
+        buildMaterial({ id: 'm1' }),
+        buildMaterial({ id: 'm2' }),
+      ]);
+      (materialRepo.save as jest.Mock)
+        .mockRejectedValueOnce(new Error('deadlock'))
+        .mockImplementation(async (m: Material) => m);
+
+      const out = await service.bulkUpdate({
+        materials: [
+          { id: 'm1', manufacturer: 'Yageo' },
+          { id: 'm2', manufacturer: 'Murata' },
+        ],
+      });
+
+      expect(out.errors).toEqual([{ id: 'm1', error: 'deadlock' }]);
+      expect(out.updated.map((m) => m.id)).toEqual(['m2']);
+    });
+
+    it('applies a repeated id once and reports the repeat', async () => {
+      arrange([buildMaterial({ id: 'm1' })]);
+      const out = await service.bulkUpdate({
+        materials: [
+          { id: 'm1', manufacturer: 'First' },
+          { id: 'm1', manufacturer: 'Second' },
+        ],
+      });
+      expect(out.updated[0].manufacturer).toBe('First');
+      expect(out.errors).toEqual([{ id: 'm1', error: 'Repeated in this request' }]);
+    });
+
+    it('audits each change with before and after limited to what moved', async () => {
+      arrange([buildMaterial({ id: 'm1', description: 'Old', manufacturer: 'Keep' })]);
+
+      await service.bulkUpdate(
+        { materials: [{ id: 'm1', description: 'New', manufacturer: 'Keep' }] },
+        'mark',
+      );
+
+      expect(audit()).toHaveBeenCalledTimes(1);
+      const [, , entityId, before, after, actor] = audit().mock.calls[0];
+      expect(entityId).toBe('m1');
+      // `manufacturer` was equal, so it is in neither side.
+      expect(before).toEqual({ description: 'Old' });
+      expect(after).toEqual({ description: 'New' });
+      expect(actor).toBe('mark');
+    });
+
+    it('records a filled blank as a move from null', async () => {
+      arrange([buildMaterial({ id: 'm1', description: null })]);
+      await service.bulkUpdate({ materials: [{ id: 'm1', description: 'Now set' }] });
+      const [, , , before, after] = audit().mock.calls[0];
+      expect(before).toEqual({ description: null });
+      expect(after).toEqual({ description: 'Now set' });
+    });
+  });
+
 });
