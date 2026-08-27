@@ -4,6 +4,7 @@ import { NotFoundException, ConflictException } from '@nestjs/common';
 import { In } from 'typeorm';
 import { MaterialsService } from './materials.service';
 import { Material } from '../../entities/material.entity';
+import { ResourceType } from '../../entities/bom-item.entity';
 import { BomItem } from '../../entities/bom-item.entity';
 import { BomRevision } from '../../entities/bom-revision.entity';
 import { Order, OrderStatus } from '../../entities/order.entity';
@@ -417,9 +418,10 @@ describe('MaterialsService', () => {
     });
 
     it('fills a blank resource type', async () => {
-      arrange([buildMaterial({ id: 'm1', resource_type: null })]);
+      // buildMaterial already defaults resource_type to null.
+      arrange([buildMaterial({ id: 'm1' })]);
       const out = await service.bulkUpdate({
-        materials: [{ id: 'm1', resource_type: 'SMT' as Material['resource_type'] }],
+        materials: [{ id: 'm1', resource_type: ResourceType.SMT }],
       });
       expect(out.updated[0].resource_type).toBe('SMT');
     });
@@ -506,7 +508,8 @@ describe('MaterialsService', () => {
     });
 
     it('records a filled blank as a move from null', async () => {
-      arrange([buildMaterial({ id: 'm1', description: null })]);
+      // description defaults to null, which is the blank this is about.
+      arrange([buildMaterial({ id: 'm1' })]);
       await service.bulkUpdate({ materials: [{ id: 'm1', description: 'Now set' }] });
       const [, , , before, after] = audit().mock.calls[0];
       expect(before).toEqual({ description: null });
