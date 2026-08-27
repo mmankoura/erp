@@ -33,12 +33,27 @@ interface ActionDialogProps {
   onRecord: (action: GridAction) => void
 }
 
+/**
+ * Long enough to recognise a value by, short enough that three of them still
+ * read as a sample rather than as the data.
+ */
+const SAMPLE_MAX = 40
+
+/**
+ * A merged reference cell holds every designator on the line — hundreds of
+ * characters, where a sample needs a dozen. Clipped here as well as in the
+ * layout: the point of the line is "which column is this", and a value long
+ * enough to need scrolling has stopped answering that.
+ */
+const clip = (value: string) =>
+  value.length > SAMPLE_MAX ? `${value.slice(0, SAMPLE_MAX)}…` : value
+
 /** Up to three real values from a column, to show the user what they are picking. */
 function samplesOf(grid: WizardGrid, columnId: ColumnId, limit = 3): string {
   const found: string[] = []
   for (const row of grid.rows) {
     const value = row.cells[columnId]
-    if (value && value.trim() !== "") found.push(value)
+    if (value && value.trim() !== "") found.push(clip(value.trim()))
     if (found.length === limit) break
   }
   return found.join(" · ")
@@ -216,14 +231,28 @@ export function HeaderRowDialog({
 
 // =============== Fill down ===============
 
-export function FillDownDialog({ grid, open, onOpenChange, onRecord }: ActionDialogProps) {
+interface FillDownDialogProps extends ActionDialogProps {
+  /** What detection made of the file, so the dialog does not open blank. */
+  seed?: { columns: ColumnId[]; anchorColumn?: ColumnId }
+}
+
+export function FillDownDialog({
+  grid,
+  open,
+  onOpenChange,
+  onRecord,
+  seed,
+}: FillDownDialogProps) {
   const [columns, setColumns] = useState<ColumnId[]>([])
   const [anchor, setAnchor] = useState<ColumnId | undefined>(undefined)
 
+  // Seeded on the open transition only. `seed` is rebuilt whenever the grid is,
+  // so following it would reset the user's choices mid-edit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (open) {
-      setColumns([])
-      setAnchor(undefined)
+      setColumns(seed?.columns ?? [])
+      setAnchor(seed?.anchorColumn)
     }
   }, [open])
 
@@ -283,17 +312,30 @@ export function FillDownDialog({ grid, open, onOpenChange, onRecord }: ActionDia
 
 // =============== Merge references ===============
 
-export function MergeReferencesDialog({ grid, open, onOpenChange, onRecord }: ActionDialogProps) {
+interface MergeReferencesDialogProps extends ActionDialogProps {
+  /** What detection made of the file, so the dialog does not open blank. */
+  seed?: { keyColumns: ColumnId[]; mergeColumn?: ColumnId }
+}
+
+export function MergeReferencesDialog({
+  grid,
+  open,
+  onOpenChange,
+  onRecord,
+  seed,
+}: MergeReferencesDialogProps) {
   const [keyColumns, setKeyColumns] = useState<ColumnId[]>([])
   const [mergeColumn, setMergeColumn] = useState<ColumnId | undefined>(undefined)
   const [separator, setSeparator] = useState(",")
   const [joinWith, setJoinWith] = useState(", ")
   const [dedupe, setDedupe] = useState(false)
 
+  // Seeded on the open transition only — see FillDownDialog.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (open) {
-      setKeyColumns([])
-      setMergeColumn(undefined)
+      setKeyColumns(seed?.keyColumns ?? [])
+      setMergeColumn(seed?.mergeColumn)
       setSeparator(",")
       setJoinWith(", ")
       setDedupe(false)
@@ -396,12 +438,31 @@ export function MergeReferencesDialog({ grid, open, onOpenChange, onRecord }: Ac
 
 // =============== Column mapping ===============
 
-export function MappingDialog({ grid, open, onOpenChange, onRecord }: ActionDialogProps) {
+interface MappingDialogProps extends ActionDialogProps {
+  /** Detection's reading of the headers, used only when nothing is mapped yet. */
+  seed?: Record<ColumnId, SemanticField>
+}
+
+export function MappingDialog({
+  grid,
+  open,
+  onOpenChange,
+  onRecord,
+  seed,
+}: MappingDialogProps) {
   const [mapping, setMapping] = useState<Record<ColumnId, SemanticField>>({})
 
+  // On the open transition only. `grid.mapping` is a fresh object on every
+  // replay, so depending on it meant any recorded action — anywhere — threw
+  // away whatever the user had picked so far without telling them.
+  // A mapping that already exists always beats detection's guess.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (open) setMapping({ ...grid.mapping })
-  }, [open, grid.mapping])
+    if (!open) return
+    setMapping(
+      Object.keys(grid.mapping).length > 0 ? { ...grid.mapping } : { ...(seed ?? {}) }
+    )
+  }, [open])
 
   /** A field belongs to one column, so picking it elsewhere moves it. */
   const assign = (columnId: ColumnId, field: SemanticField | undefined) =>

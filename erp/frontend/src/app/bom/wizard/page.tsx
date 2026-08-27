@@ -27,6 +27,14 @@ import {
   undo,
 } from "@/lib/bom-wizard/doc"
 import { readBomFile } from "@/lib/bom-wizard/parse"
+import { detectStructure, wouldChangeAnything, type Detection } from "@/lib/bom-wizard/detect"
+import {
+  canRunStep,
+  commitBlockers,
+  deriveSteps,
+  skippedByRecipe,
+  type StepId,
+} from "@/lib/bom-wizard/steps"
 import type { BomRevision } from "@/lib/api"
 import type {
   GridAction,
@@ -36,6 +44,8 @@ import type {
   WizardSource,
 } from "@/lib/bom-wizard/types"
 import { WizardGridView } from "@/components/bom-wizard/wizard-grid"
+import { WizardStepper } from "@/components/bom-wizard/wizard-stepper"
+import { DetectionDialog } from "@/components/bom-wizard/detection-dialog"
 import { RecorderPanel } from "@/components/bom-wizard/recorder-panel"
 import { CommitDialog } from "@/components/bom-wizard/commit-dialog"
 import { LoadRecipeDialog, SaveRecipeDialog } from "@/components/bom-wizard/recipe-dialogs"
@@ -56,8 +66,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   ArrowDownToLine,
   Check,
+  ChevronDown,
   Columns3,
   FileUp,
   FolderOpen,
@@ -66,6 +83,7 @@ import {
   Redo2,
   Save,
   Undo2,
+  Wand2,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -73,6 +91,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { newId } from "@/lib/utils"
 
 type DialogKind =
+  | "detect"
   | "headers"
   | "fill"
   | "merge"
@@ -106,6 +125,18 @@ function BomWizardScreen() {
   const [dialog, setDialog] = useState<DialogKind>(null)
   /** Last row double-clicked, offered as the default when picking a header row. */
   const [activatedRow, setActivatedRow] = useState<number | undefined>(undefined)
+  /**
+   * What the wizard made of this file. Held per sheet rather than derived from
+   * `doc`, because it depends only on the source — recomputing it on every
+   * recorded action would hand the dialogs a new seed object each render.
+   */
+  const [detection, setDetection] = useState<Detection | null>(null)
+  /**
+   * Steps the user passed on. Intent, not fact, so it lives here and never in
+   * the document: a recipe replayed on another file must not inherit somebody
+   * else's decision to skip a step that file does need.
+   */
+  const [skipped, setSkipped] = useState<ReadonlySet<StepId>>(new Set())
   const fileInput = useRef<HTMLInputElement>(null)
 
   // The one derivation that matters: the grid is a fold, never a mutated copy.
@@ -114,6 +145,32 @@ function BomWizardScreen() {
     [doc]
   )
 
+  /**
+   * Whether a merge would still collapse anything, asked of the live grid.
+   * `applyAction` hands back the identical object when it changed nothing, so
+   * this is the file's answer rather than an estimate — which is what lets the
+   * step say "not needed" instead of merely sitting there undone.
+   */
+  const mergeNeeded = useMemo(() => {
+    if (!grid || !detection) return undefined
+    const { key, reference } = detection.roles
+    if (!key || !reference) return undefined
+    return wouldChangeAnything(grid, {
+      type: "merge_references",
+      keyColumns: [key],
+      mergeColumn: reference,
+      separator: ",",
+      joinWith: ", ",
+      dedupe: false,
+    })
+  }, [grid, detection])
+
+  const steps = useMemo(
+    () => deriveSteps({ doc, grid, skipped, mergeNeeded }),
+    [doc, grid, skipped, mergeNeeded]
+  )
+  const blockers = useMemo(() => commitBlockers(grid), [grid])
+
   const openFile = async (file: File) => {
     try {
       const parsed = await readBomFile(file)
@@ -121,6 +178,11 @@ function BomWizardScreen() {
       setSheets(usable)
       setDoc(emptyDoc(usable[0]))
       setActivatedRow(undefined)
+      setSkipped(new Set())
+      setDetection(detectStructure(usable[0]))
+      // Proposed, never applied: the confirm step is the whole difference
+      // between this and the importer that used to invent things mid-run.
+      setDialog("detect")
       toast.success(
         `Loaded ${file.name}${usable.length > 1 ? ` — ${usable.length} sheets` : ""}`
       )
@@ -133,9 +195,24 @@ function BomWizardScreen() {
     const sheet = sheets?.find((s) => s.sheetName === sheetName)
     if (!sheet) return
     // Switching sheets starts a new document: the actions recorded so far
-    // address rows and columns of the sheet they were recorded against.
+    // address rows and columns of the sheet they were recorded against. That
+    // discard used to be silent, which is a poor way to lose an afternoon.
+    if (
+      doc &&
+      doc.actions.length > 0 &&
+      !window.confirm(
+        `Switching to "${sheetName}" discards the ${doc.actions.length} recorded ` +
+          `${doc.actions.length === 1 ? "step" : "steps"}, because they address rows ` +
+          `and columns of this sheet. Save them as a recipe first if you want them.`
+      )
+    ) {
+      return
+    }
     setDoc(emptyDoc(sheet))
     setActivatedRow(undefined)
+    setSkipped(new Set())
+    setDetection(detectStructure(sheet))
+    setDialog("detect")
   }
 
   const onRecord = useCallback((action: GridAction) => {
@@ -151,6 +228,37 @@ function BomWizardScreen() {
 
   const onRowActivate = useCallback((row: WizardRow) => setActivatedRow(row.srcIndex), [])
 
+  /** Record the proposed steps, each as its own entry so any one can be deleted. */
+  const applyDetection = useCallback(() => {
+    if (!detection) return
+    setDoc((prev) =>
+      prev
+        ? detection.actions.reduce(
+            (next, action) =>
+              record(next, action, { id: newId(), recorded_at: new Date().toISOString() }),
+            prev
+          )
+        : prev
+    )
+    setDialog(null)
+    toast.success(
+      `Recorded ${detection.actions.length} ${detection.actions.length === 1 ? "step" : "steps"}`
+    )
+  }, [detection])
+
+  const onSkip = useCallback((id: StepId) => {
+    setSkipped((prev) => new Set(prev).add(id))
+  }, [])
+
+  /** Open a step from the stepper. Only reached for steps the flow allows. */
+  const onSelectStep = useCallback((id: StepId) => {
+    if (id === "file") fileInput.current?.click()
+    else if (id === "headers") setDialog("headers")
+    else if (id === "merge") setDialog("merge")
+    else if (id === "mapping") setDialog("mapping")
+    else if (id === "commit") setDialog("commit")
+  }, [])
+
   const onGoTo = useCallback((cursor: number) => {
     setDoc((prev) => (prev ? goTo(prev, cursor) : prev))
   }, [])
@@ -165,6 +273,9 @@ function BomWizardScreen() {
 
   const onLoadRecipe = useCallback((actions: RecordedAction[], name: string) => {
     setDoc((prev) => (prev ? loadRecipe(prev, actions) : prev))
+    // A recipe is a decision already made about a format: the optional steps it
+    // leaves out are ones that format does not need, so do not park on them.
+    setSkipped(skippedByRecipe(actions.map((a) => a.action)))
     toast.success(`Loaded "${name}" — ${actions.length} steps applied`)
   }, [])
 
@@ -173,6 +284,8 @@ function BomWizardScreen() {
     setDoc(null)
     setDialog(null)
     setActivatedRow(undefined)
+    setDetection(null)
+    setSkipped(new Set())
     if (fileInput.current) fileInput.current.value = ""
   }
 
@@ -278,23 +391,69 @@ function BomWizardScreen() {
                 </Button>
               </div>
 
+              <div className="border-t pt-3">
+                <WizardStepper steps={steps} onSelect={onSelectStep} onSkip={onSkip} />
+              </div>
+
               <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-                <Button variant="outline" size="sm" onClick={() => setDialog("headers")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canRunStep(steps, "headers")}
+                  title={canRunStep(steps, "headers") ? undefined : "Not this step yet"}
+                  onClick={() => setDialog("headers")}
+                >
                   <Heading className="h-4 w-4 mr-2" />
                   Use row as headers
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setDialog("fill")}>
-                  <ArrowDownToLine className="h-4 w-4 mr-2" />
-                  Fill down
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setDialog("merge")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canRunStep(steps, "merge")}
+                  title={
+                    mergeNeeded === false
+                      ? "No continuation rows on this file"
+                      : canRunStep(steps, "merge")
+                        ? undefined
+                        : "Not this step yet"
+                  }
+                  onClick={() => setDialog("merge")}
+                >
                   <Merge className="h-4 w-4 mr-2" />
                   Merge continuation rows
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setDialog("mapping")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canRunStep(steps, "mapping")}
+                  title={canRunStep(steps, "mapping") ? undefined : "Not this step yet"}
+                  onClick={() => setDialog("mapping")}
+                >
                   <Columns3 className="h-4 w-4 mr-2" />
                   Map columns
                 </Button>
+
+                {/* Outside the guided flow: real capabilities, rarely the next thing to do. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm">
+                      Advanced
+                      <ChevronDown className="h-4 w-4 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => setDialog("fill")}>
+                      <ArrowDownToLine className="h-4 w-4 mr-2" />
+                      Fill down…
+                    </DropdownMenuItem>
+                    {detection && (
+                      <DropdownMenuItem onClick={() => setDialog("detect")}>
+                        <Wand2 className="h-4 w-4 mr-2" />
+                        Review detected structure…
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
                 <div className="flex-1" />
 
@@ -312,7 +471,12 @@ function BomWizardScreen() {
                   Save recipe
                 </Button>
 
-                <Button size="sm" onClick={() => setDialog("commit")}>
+                <Button
+                  size="sm"
+                  disabled={blockers.length > 0}
+                  title={blockers.length > 0 ? blockers.join("; ") : undefined}
+                  onClick={() => setDialog("commit")}
+                >
                   <Check className="h-4 w-4 mr-2" />
                   Commit…
                 </Button>
@@ -333,30 +497,58 @@ function BomWizardScreen() {
 
       {doc && grid && (
         <>
+          {detection && (
+            <DetectionDialog
+              source={doc.source}
+              detection={detection}
+              open={dialog === "detect"}
+              onOpenChange={(open) => setDialog(open ? "detect" : null)}
+              onApply={applyDetection}
+            />
+          )}
           <HeaderRowDialog
             grid={grid}
             open={dialog === "headers"}
             onOpenChange={(open) => setDialog(open ? "headers" : null)}
             onRecord={onRecord}
-            defaultRow={activatedRow}
+            defaultRow={activatedRow ?? detection?.roles.headerRow ?? undefined}
           />
           <FillDownDialog
             grid={grid}
             open={dialog === "fill"}
             onOpenChange={(open) => setDialog(open ? "fill" : null)}
             onRecord={onRecord}
+            seed={
+              detection?.roles.key
+                ? {
+                    columns: grid.columns
+                      .map((c) => c.id)
+                      .filter((id) => id !== detection.roles.reference),
+                    anchorColumn: detection.roles.key,
+                  }
+                : undefined
+            }
           />
           <MergeReferencesDialog
             grid={grid}
             open={dialog === "merge"}
             onOpenChange={(open) => setDialog(open ? "merge" : null)}
             onRecord={onRecord}
+            seed={
+              detection?.roles.key && detection.roles.reference
+                ? {
+                    keyColumns: [detection.roles.key],
+                    mergeColumn: detection.roles.reference,
+                  }
+                : undefined
+            }
           />
           <MappingDialog
             grid={grid}
             open={dialog === "mapping"}
             onOpenChange={(open) => setDialog(open ? "mapping" : null)}
             onRecord={onRecord}
+            seed={detection?.roles.mapping}
           />
           <CommitDialog
             grid={grid}

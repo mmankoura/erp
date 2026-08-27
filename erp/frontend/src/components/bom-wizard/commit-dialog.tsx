@@ -10,10 +10,17 @@ import {
   buildCreateItems,
   buildReplaceItems,
   materialLookup,
+  materialUpdatePayloads,
   partNumbersToResolve,
+  planMasterData,
+  settledResourceTypes,
+  type ConflictChoices,
+  type FillEdits,
   type PartNumberResolution,
 } from "@/lib/bom-wizard/commit"
 import type { GridWarning, WizardGrid } from "@/lib/bom-wizard/types"
+import { MissingMaterials } from "./missing-materials"
+import { MasterData } from "./master-data"
 import {
   Dialog,
   DialogContent,
@@ -84,6 +91,8 @@ export function CommitDialog({
   // Matches the @Roles on PUT /bom/revision/:id/items. Creating a revision is
   // ADMIN+MANAGER, so only the destructive path is gated here.
   const canReplace = hasRole(UserRole.ADMIN)
+  // Matches the @Roles on POST /materials/bulk and PATCH /materials/bulk.
+  const canWriteMaterials = hasRole(UserRole.ADMIN, UserRole.MANAGER)
 
   const [mode, setMode] = useState<CommitMode>("create")
   const [productId, setProductId] = useState<string>(defaultProductId ?? "")
@@ -96,6 +105,12 @@ export function CommitDialog({
   const [acceptCase, setAcceptCase] = useState(true)
   const [resourceMapping, setResourceMapping] = useState<Record<string, ResourceType>>({})
   const [resolution, setResolution] = useState<PartNumberResolution | null>(null)
+  /** Bumped to look the part numbers up again after writing to materials. */
+  const [resolveNonce, setResolveNonce] = useState(0)
+  /** Settling the master record: what to fill, and who wins where they differ. */
+  const [applyFills, setApplyFills] = useState(true)
+  const [choices, setChoices] = useState<ConflictChoices>({})
+  const [fillEdits, setFillEdits] = useState<FillEdits>({})
   const [resolving, setResolving] = useState(false)
   const [committing, setCommitting] = useState(false)
   /** Shown in the dialog as well as a toast: a toast can be missed or land behind this. */
@@ -123,20 +138,29 @@ export function CommitDialog({
     )
   }, [warnings])
 
-  // Resolve part numbers whenever the dialog opens against a new set of rows.
+  // Reset the form when the dialog opens. Deliberately separate from the
+  // resolution below: creating the missing materials re-resolves, and that must
+  // not throw away the product, revision number and mapping already chosen.
   useEffect(() => {
     if (!open) return
 
     setMode("create")
     setConfirmOverwrite(false)
-    setResolution(null)
     setError(null)
     setRevisionDate(today())
+    setApplyFills(true)
     if (defaultProductId) setProductId(defaultProductId)
     // Start from the suggestions; the table below is what makes them a choice.
     setResourceMapping(
       Object.fromEntries(resourceGroups.map((g) => [g.raw, g.suggestion]))
     )
+  }, [open, resourceGroups, defaultProductId])
+
+  // Resolve part numbers on open, and again whenever materials are created.
+  useEffect(() => {
+    if (!open) return
+
+    setResolution(null)
 
     const partNumbers = partNumbersToResolve(rows)
     if (partNumbers.length === 0) {
@@ -160,21 +184,64 @@ export function CommitDialog({
     return () => {
       cancelled = true
     }
-  }, [open, rows, resourceGroups, defaultProductId])
+  }, [open, rows, resolveNonce])
+
+  // A decision is keyed to a material and field that a fresh resolution may no
+  // longer report. Keeping a stale choice would silently apply it to nothing,
+  // or worse, to something else.
+  useEffect(() => {
+    setChoices({})
+    setFillEdits({})
+  }, [resolution])
 
   const lookup = useMemo(
     () => (resolution ? materialLookup(resolution, acceptCase) : new Map<string, string>()),
     [resolution, acceptCase]
   )
 
+  /** What this file would settle on the materials it matched. */
+  const plan = useMemo(
+    () =>
+      resolution
+        ? planMasterData(rows, resolution, resourceMapping, acceptCase)
+        : { fills: [], conflicts: [], kept: [], agreed: 0 },
+    [rows, resolution, resourceMapping, acceptCase]
+  )
+
+  /** The checkbox drops the fills; a decided disagreement still stands. */
+  const effectivePlan = useMemo(
+    () => (applyFills ? plan : { ...plan, fills: [] }),
+    [plan, applyFills]
+  )
+
+  /**
+   * What each material's resource type ends up as. Empty when nothing will be
+   * written, so the lines keep recording what the file said rather than being
+   * forced to a master value the user has no way to correct.
+   */
+  const settled = useMemo(
+    () =>
+      resolution && canWriteMaterials
+        ? settledResourceTypes(effectivePlan, choices, fillEdits, resolution, acceptCase)
+        : new Map<string, never>(),
+    [effectivePlan, choices, fillEdits, resolution, acceptCase, canWriteMaterials]
+  )
+
   const built = useMemo(() => {
-    const options = { materialByPartNumber: lookup, resourceMapping }
+    const options = {
+      materialByPartNumber: lookup,
+      resourceMapping,
+      settledResourceType: settled,
+    }
     return mode === "create"
       ? buildCreateItems(rows, options)
       : buildReplaceItems(rows, options)
-  }, [mode, rows, lookup, resourceMapping])
+  }, [mode, rows, lookup, resourceMapping, settled])
 
   const targetRevision = revisions?.find((r) => r.id === targetRevisionId)
+
+  /** New materials belong to the product's customer; blank until one is picked. */
+  const selectedCustomerId = products?.find((p) => p.id === productId)?.customer_id ?? ""
 
   const ready =
     !resolving &&
@@ -188,6 +255,30 @@ export function CommitDialog({
     setCommitting(true)
     setError(null)
     try {
+      // Materials first, deliberately. If this lands and the revision then
+      // fails, the re-resolve returns the settled values, so the retry finds
+      // nothing left to fill and writes only the revision. The other order is
+      // the bug this exists to fix: a correct import over a blank master.
+      if (canWriteMaterials) {
+        const updates = materialUpdatePayloads(effectivePlan, choices, fillEdits)
+        if (updates.length > 0) {
+          const result = await api.patch<{
+            updated: unknown[]
+            unchanged: string[]
+            errors: { id: string; error: string }[]
+          }>("/materials/bulk", { materials: updates })
+
+          if (result.errors.length > 0) {
+            // Reported, not thrown: the endpoint settles what it can and hands
+            // back the rest, so one clash must not lose the others.
+            toast.warning(
+              `${result.errors.length} ${result.errors.length === 1 ? "material" : "materials"} could not be updated`
+            )
+          }
+          setResolveNonce((n) => n + 1)
+        }
+      }
+
       if (mode === "create") {
         const revision = await api.post<BomRevision>("/bom/revision/full", {
           product_id: productId,
@@ -440,18 +531,26 @@ export function CommitDialog({
                     </label>
                   )}
 
-                  {missingCount > 0 && (
-                    <div className="rounded-md border bg-muted/30 p-2">
-                      <p className="text-xs text-muted-foreground mb-1">
-                        These have no material and will not be imported. Create them in
-                        Materials first, then reopen this dialog.
-                      </p>
-                      <p className="text-xs font-mono break-words">
-                        {resolution.missing.slice(0, 30).join(", ")}
-                        {missingCount > 30 && ` … and ${missingCount - 30} more`}
-                      </p>
-                    </div>
-                  )}
+                  <MissingMaterials
+                    rows={rows}
+                    missing={resolution.missing}
+                    resourceMapping={resourceMapping}
+                    customerId={selectedCustomerId}
+                    canCreate={canWriteMaterials}
+                    onCreated={() => setResolveNonce((n) => n + 1)}
+                  />
+
+                  <MasterData
+                    plan={plan}
+                    choices={choices}
+                    onChoicesChange={setChoices}
+                    fillEdits={fillEdits}
+                    onFillEditsChange={setFillEdits}
+                    applyFills={applyFills}
+                    onApplyFillsChange={setApplyFills}
+                    canUpdate={canWriteMaterials}
+                    sourceFileName={sourceFileName}
+                  />
                 </div>
               ) : null}
             </div>
@@ -562,6 +661,9 @@ export function CommitDialog({
         <DialogFooter className="border-t pt-3">
           <span className="mr-auto text-sm text-muted-foreground">
             {built.items.length} of {rows.length} lines ready
+            {canWriteMaterials && effectivePlan.fills.length > 0 && (
+              <> · {effectivePlan.fills.length} material fields will be filled</>
+            )}
           </span>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={committing}>
             Cancel
