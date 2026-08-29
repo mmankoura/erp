@@ -31,12 +31,63 @@ export interface ExtractedRow {
   lineKey: string
 }
 
-/** Split a designator cell the way the merge action joined it. */
+/** A run like `C50-C54`, or `C50-54` where the prefix is not repeated. */
+const DESIGNATOR_RANGE = /^([A-Za-z]+)(\d+)\s*-\s*([A-Za-z]*)(\d+)$/
+
+/**
+ * Beyond this a dash is far more likely to be part of a part number than a run
+ * of designators, and expanding it would be both wrong and enormous.
+ */
+const MAX_RANGE = 1000
+
+/**
+ * `C50-C54` -> the five designators it stands for.
+ *
+ * Real BOMs abbreviate long runs, and counting the token instead of what it
+ * means made every such line look like its quantity was wrong: one file listed
+ * 21 tokens standing for 83 designators against a stated quantity of 83, and
+ * the warning called it a disagreement. It also hid genuine duplicates, since
+ * `C52` elsewhere never matched the `C50-C54` that already contained it.
+ *
+ * Anything that is not unambiguously a run is left exactly as written —
+ * mismatched prefixes, backwards bounds, absurd spans.
+ */
+function expandDesignator(token: string): string[] {
+  const match = DESIGNATOR_RANGE.exec(token)
+  if (!match) return [token]
+
+  const [, prefix, startText, endPrefix, endText] = match
+  // "C50-R54" is two designators joined by a dash, not a run between them.
+  if (endPrefix !== "" && endPrefix.toUpperCase() !== prefix.toUpperCase()) return [token]
+
+  const start = Number(startText)
+  const end = Number(endText)
+  if (end < start || end - start + 1 > MAX_RANGE) return [token]
+
+  // Keep zero padding, so an expanded C007 still matches a literal C007.
+  const width =
+    startText.length === endText.length && startText.startsWith("0") ? startText.length : 0
+
+  const out: string[] = []
+  for (let n = start; n <= end; n++) {
+    out.push(`${prefix}${width ? String(n).padStart(width, "0") : n}`)
+  }
+  return out
+}
+
+/**
+ * Split a designator cell the way the merge action joined it, expanding any
+ * abbreviated runs so the count means what the BOM means.
+ *
+ * Only ever used to count and to find duplicates — the string stored on the
+ * line stays exactly as the file wrote it, ranges and all.
+ */
 export function designatorsOf(value: string | undefined): string[] {
   return (value ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
+    .flatMap(expandDesignator)
 }
 
 /**

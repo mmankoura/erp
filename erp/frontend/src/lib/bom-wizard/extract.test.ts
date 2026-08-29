@@ -357,3 +357,49 @@ describe("the real AEGIS file", () => {
     expect(item4.values.quantity_required).toBe("39")
   })
 })
+
+/**
+ * Real BOMs abbreviate long runs. Counting the token instead of what it stands
+ * for made every such line read as a quantity disagreement — one file listed 21
+ * tokens standing for 83 designators against a stated quantity of 83.
+ */
+describe("designatorsOf on abbreviated runs", () => {
+  it("expands a run into the designators it stands for", () => {
+    expect(designatorsOf("C50-C54")).toEqual(["C50", "C51", "C52", "C53", "C54"])
+  })
+
+  it("expands a run whose end does not repeat the prefix", () => {
+    expect(designatorsOf("C50-54")).toEqual(["C50", "C51", "C52", "C53", "C54"])
+  })
+
+  it("counts a real cell the way the BOM means it", () => {
+    const cell =
+      "C7,C13,C14,C26,C32,  C34,C35,C36,C38,C39,C41,  C42,C46,C50-C54,C56-C60,  " +
+      "C62-C84,C88-C95,   C97-C100,C102-C108,   C110-C123,C125-C128"
+    expect(designatorsOf(cell)).toHaveLength(83)
+  })
+
+  it("mixes singles and runs in order", () => {
+    expect(designatorsOf("R1, C3-C5, R9")).toEqual(["R1", "C3", "C4", "C5", "R9"])
+  })
+
+  it("leaves two different designators joined by a dash alone", () => {
+    expect(designatorsOf("C50-R54")).toEqual(["C50-R54"])
+  })
+
+  it("leaves a backwards run alone rather than guessing", () => {
+    expect(designatorsOf("C54-C50")).toEqual(["C54-C50"])
+  })
+
+  it("leaves an absurd span alone — that dash is part of a part number", () => {
+    expect(designatorsOf("C1-C99999")).toEqual(["C1-C99999"])
+  })
+
+  it("keeps zero padding so an expanded designator still matches a literal one", () => {
+    expect(designatorsOf("C007-C010")).toEqual(["C007", "C008", "C009", "C010"])
+  })
+
+  it("is unchanged for a cell with no runs in it", () => {
+    expect(designatorsOf("C1, C2, C3")).toEqual(["C1", "C2", "C3"])
+  })
+})
