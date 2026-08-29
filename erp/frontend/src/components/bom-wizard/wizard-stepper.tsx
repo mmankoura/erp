@@ -101,7 +101,7 @@ export function WizardStepper({ steps, onSelect, onSkip }: WizardStepperProps) {
               className="h-6 px-2 text-xs ml-auto"
               onClick={() => onSkip(current.id)}
             >
-              Skip this step
+              Skip {current.label}
             </Button>
           )}
         </div>

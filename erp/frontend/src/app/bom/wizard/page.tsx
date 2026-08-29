@@ -50,6 +50,7 @@ import { RecorderPanel } from "@/components/bom-wizard/recorder-panel"
 import { CommitDialog } from "@/components/bom-wizard/commit-dialog"
 import { LoadRecipeDialog, SaveRecipeDialog } from "@/components/bom-wizard/recipe-dialogs"
 import {
+  DeleteRowsDialog,
   FillDownDialog,
   HeaderRowDialog,
   MappingDialog,
@@ -82,6 +83,7 @@ import {
   Merge,
   Redo2,
   Save,
+  Trash2,
   Undo2,
   Wand2,
   X,
@@ -93,6 +95,7 @@ import { newId } from "@/lib/utils"
 type DialogKind =
   | "detect"
   | "headers"
+  | "delete-rows"
   | "fill"
   | "merge"
   | "mapping"
@@ -170,6 +173,8 @@ function BomWizardScreen() {
     [doc, grid, skipped, mergeNeeded]
   )
   const blockers = useMemo(() => commitBlockers(grid), [grid])
+  /** Named in the tooltip of every locked button, so "why is this grey" has an answer. */
+  const currentLabel = steps.find((s) => s.status === "current")?.label ?? "Commit"
 
   const openFile = async (file: File) => {
     try {
@@ -400,7 +405,11 @@ function BomWizardScreen() {
                   variant="outline"
                   size="sm"
                   disabled={!canRunStep(steps, "headers")}
-                  title={canRunStep(steps, "headers") ? undefined : "Not this step yet"}
+                  title={
+                    canRunStep(steps, "headers")
+                      ? undefined
+                      : `Not this step — you are on ${currentLabel}`
+                  }
                   onClick={() => setDialog("headers")}
                 >
                   <Heading className="h-4 w-4 mr-2" />
@@ -415,7 +424,7 @@ function BomWizardScreen() {
                       ? "No continuation rows on this file"
                       : canRunStep(steps, "merge")
                         ? undefined
-                        : "Not this step yet"
+                        : `Not this step — you are on ${currentLabel}`
                   }
                   onClick={() => setDialog("merge")}
                 >
@@ -426,7 +435,11 @@ function BomWizardScreen() {
                   variant="outline"
                   size="sm"
                   disabled={!canRunStep(steps, "mapping")}
-                  title={canRunStep(steps, "mapping") ? undefined : "Not this step yet"}
+                  title={
+                    canRunStep(steps, "mapping")
+                      ? undefined
+                      : `Not this step — you are on ${currentLabel}`
+                  }
                   onClick={() => setDialog("mapping")}
                 >
                   <Columns3 className="h-4 w-4 mr-2" />
@@ -442,6 +455,10 @@ function BomWizardScreen() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => setDialog("delete-rows")}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete rows…
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setDialog("fill")}>
                       <ArrowDownToLine className="h-4 w-4 mr-2" />
                       Fill down…
@@ -512,6 +529,12 @@ function BomWizardScreen() {
             onOpenChange={(open) => setDialog(open ? "headers" : null)}
             onRecord={onRecord}
             defaultRow={activatedRow ?? detection?.roles.headerRow ?? undefined}
+          />
+          <DeleteRowsDialog
+            grid={grid}
+            open={dialog === "delete-rows"}
+            onOpenChange={(open) => setDialog(open ? "delete-rows" : null)}
+            onRecord={onRecord}
           />
           <FillDownDialog
             grid={grid}

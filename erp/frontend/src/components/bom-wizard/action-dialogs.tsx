@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { ColumnId, GridAction, SemanticField, WizardGrid } from "@/lib/bom-wizard/types"
+import { parseRowSpec, formatRowSpec } from "@/lib/bom-wizard/row-spec"
 import { SEMANTIC_FIELDS } from "@/lib/bom-wizard/fields"
 
 /** The Select primitive cannot hold an empty value, so "unset" needs a sentinel. */
@@ -222,6 +223,128 @@ export function HeaderRowDialog({
             }}
           >
             Use as headers
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// =============== Delete rows ===============
+
+/** Everything on a row, joined, so a preview line is recognisable. */
+function rowSummary(grid: WizardGrid, srcIndex: number): string {
+  const row = grid.rows.find((r) => r.srcIndex === srcIndex)
+  if (!row) return ""
+  const cells = grid.columns
+    .map((c) => row.cells[c.id]?.trim())
+    .filter((v): v is string => !!v)
+  return cells.join(" · ") || "(empty)"
+}
+
+/** How many preview lines before it stops being a preview. */
+const PREVIEW_ROWS = 8
+
+/**
+ * Remove rows from the grid.
+ *
+ * Real files open with a preamble — a title, who wrote the list, the date —
+ * before the header row, and a BOM cannot be read until that is gone. The
+ * engine has always been able to delete rows; nothing in the interface reached
+ * it, so the preamble had to be cut in Excel first.
+ *
+ * Rows are named by the number in the gutter, because that is the number the
+ * user can see. `parseRowSpec` converts to the `srcIndex` every action stores.
+ */
+export function DeleteRowsDialog({ grid, open, onOpenChange, onRecord }: ActionDialogProps) {
+  const [spec, setSpec] = useState("")
+
+  useEffect(() => {
+    if (open) setSpec("")
+  }, [open])
+
+  const parsed = useMemo(() => parseRowSpec(spec), [spec])
+  const error = "error" in parsed ? parsed.error : undefined
+  const wanted = "error" in parsed ? [] : parsed.rows
+
+  // A row already removed by an earlier step cannot be removed again.
+  const present = useMemo(() => new Set(grid.rows.map((r) => r.srcIndex)), [grid])
+  const targets = useMemo(() => wanted.filter((r) => present.has(r)), [wanted, present])
+  const gone = wanted.length - targets.length
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Delete rows</DialogTitle>
+          <DialogDescription>
+            Removes rows from the grid by the number shown in the gutter. Nothing is
+            written to the file, and deleting the step puts them back.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="row-spec">Rows to delete</Label>
+            <Input
+              id="row-spec"
+              value={spec}
+              onChange={(e) => setSpec(e.target.value)}
+              placeholder="e.g. 1-6, 12"
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              A run like <span className="font-mono">1-6</span>, single rows like{" "}
+              <span className="font-mono">12</span>, or both:{" "}
+              <span className="font-mono">1-6, 12</span>. Usually the preamble above the
+              header row.
+            </p>
+          </div>
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+
+          {!error && targets.length > 0 && (
+            <div className="space-y-2">
+              <Label>
+                {targets.length} {targets.length === 1 ? "row" : "rows"} will be removed
+                {gone > 0 && (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    ({gone} already gone)
+                  </span>
+                )}
+              </Label>
+              <div className="max-h-56 overflow-auto rounded-md border">
+                <div className="p-2 space-y-0.5">
+                  {targets.slice(0, PREVIEW_ROWS).map((srcIndex) => (
+                    <p key={srcIndex} className="text-xs truncate">
+                      <span className="text-muted-foreground">Row {srcIndex + 1}:</span>{" "}
+                      <span className="font-mono">{rowSummary(grid, srcIndex)}</span>
+                    </p>
+                  ))}
+                  {targets.length > PREVIEW_ROWS && (
+                    <p className="text-xs text-muted-foreground">
+                      … and {targets.length - PREVIEW_ROWS} more
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={targets.length === 0}
+            onClick={() => {
+              onRecord({ type: "delete_rows", rows: targets })
+              onOpenChange(false)
+            }}
+          >
+            Delete {formatRowSpec(targets) || ""}
           </Button>
         </DialogFooter>
       </DialogContent>
