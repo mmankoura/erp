@@ -331,12 +331,13 @@ export function VirtualGrid<T>({
     // neighbours.
     getItemKey: (index) => rows[index]?.id ?? index,
     // Dynamic row heights: measure each rendered row so cells with wrapping
-    // content (e.g. multi-line ref designators) aren't clipped. Spreadsheet
-    // mode is deliberately fixed-height, so measuring is switched off there —
-    // this has to go together with dropping the measureElement ref on the row,
-    // since attaching that ref is what triggers a measurement.
+    // content aren't clipped. This used to be off in spreadsheet mode to keep
+    // every row exactly 26px, which looks right until a cell holds something
+    // like 83 reference designators and the data simply cannot be read. Rows
+    // now grow to fit; `rowHeight` becomes the floor rather than the rule, so
+    // the ordinary short row is still 26px and the sheet still scans.
     measureElement:
-      !spreadsheet && typeof window !== "undefined"
+      typeof window !== "undefined"
         ? (el) => el?.getBoundingClientRect().height ?? rowHeight
         : undefined,
   })
@@ -1534,7 +1535,7 @@ export function VirtualGrid<T>({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  ref={spreadsheet ? undefined : virtualizer.measureElement}
+                  ref={virtualizer.measureElement}
                   className={cn(
                     "flex border-b hover:bg-muted/30 transition-colors",
                     spreadsheet ? "border-border items-center select-none" : "items-stretch",
@@ -1545,9 +1546,7 @@ export function VirtualGrid<T>({
                     top: 0,
                     left: 0,
                     width: "100%",
-                    ...(spreadsheet
-                      ? { height: `${rowHeight}px` }
-                      : { minHeight: `${rowHeight}px` }),
+                    minHeight: `${rowHeight}px`,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
@@ -1671,9 +1670,11 @@ export function VirtualGrid<T>({
                             onCancel={closeEditor}
                           />
                         ) : spreadsheet ? (
-                          /* truncate has to sit on a block child — on the flex
-                             container itself it does nothing. */
-                          <div className="truncate w-full">
+                          /* Wrapping has to sit on a block child — on the flex
+                             container itself it does nothing. `break-words` is
+                             what stops one very long designator run from
+                             widening the cell instead of wrapping inside it. */
+                          <div className="w-full whitespace-normal break-words">
                             {pendingValue !== undefined ? String(pendingValue ?? "") : rendered}
                           </div>
                         ) : (
