@@ -511,3 +511,73 @@ REV-014 live. Frontend serving the **hotfixed** build (`-GbRPZTg9_eL2hCi_3ko_`),
 - [ ] **CHANGELOG entries for REV-013 and REV-014** — REV-013's entry and `DEPLOY_RUNBOOK_REV-013.md` exist only on `feat/spreadsheet-grid`; manual-stock and the hotfix have no entry at all.
 - [ ] **Work the REV-010/011/012/013 verification checklists** — none have been run.
 - [ ] **Phase 7 backups still not built** — flagged as required before go-live in April. Backups for this deploy are the manual dump only.
+
+---
+
+## REV-015 Deployment — August 27, 2026
+
+- **Pinned commit**: `030c27ae0c6ac96c496b136768384488c9c1761b` (`030c27a`), built from the main worktree `projects\erp` on `feat/bom-wizard`, tree clean.
+- **Release folder**: `2026-08-27_001`. Frontend BUILD_ID `9AK6P81Ka9M-dbZcgNbrX`.
+- **Changes**: missing-materials creation, structure detection + guided stepper, master-data settling (`PATCH /materials/bulk`), the dialog-overflow fix. See `CHANGELOG.md` REV-015.
+- **Migration**: **None**. The first deploy since REV-009 with no schema change, which removed the whole postgres-superuser step and the only part of REV-014 that could abort.
+- **Backup**: `pre-rev015.dump` + `manual-snapshot-REV015` (49,021 files / 1.449 GB, 0 failed — larger than REV-014's snapshot because `current\` by then had real `node_modules` on both sides).
+- **node_modules**: **Junctioned** to REV-014. Legal for exactly one cycle, because REV-014 had materialized real ones and `previous\` becomes REV-014 after the rotate. Saved ~11 minutes of `npm ci`.
+
+### Both REV-014 leftovers fixed before this deploy
+
+- **`current-locks` was stale from REV-009.** Its frontend lock was 390,424 bytes (Apr 27) against the repo's 393,363 (the Jul 1 reconcile), so `deploy.bat` would have started the ~1 GB frontend `node_modules` copy all over again. Updating both snapshots first made the script correctly report **both SKIPPED**, and it then ran to completion instead of being stranded behind a robocopy the way REV-014 was.
+- **The unpatched Apr-9 `switch-release.bat` was retired.** The REV-007 patched script now sits under the default name; the old one is kept as `switch-release-apr09.bak`.
+
+### Issues during deploy
+
+- **THE ROTATE FAILED THREE TIMES — and `node.exe` was never the whole cause.** `[2/6] Rotating releases` returned "Access is denied" on the first attempt, and again after `taskkill /F /IM node.exe` had cleared every orphan. The actual holder was **IIS**: `appcmd list vdir` shows `VDIR "ERP/" (physicalPath:C:\apps\erp\current\frontend)`, so `w3wp.exe` holds an open handle on the site root and blocks `rename current previous`. **`iisreset /stop` before the rotate, `iisreset /start` after.** This had been misattributed to orphaned `node.exe` alone since REV-006 — that was an incomplete diagnosis for three releases.
+  - Contributing: the operator's command prompt was sitting in `C:\apps\erp\current\frontend` on the first attempt. A prompt's working directory is a handle too. `cd /d C:\apps\erp` first.
+  - **The patched script did its job every time.** It aborted before mutating anything and restored state, so `previous\` survived all three failures. On the unpatched script the first failure would have destroyed it.
+- **The junction step prints a false warning.** `[4/6]` reported "WARNING: Backend junction link failed. Falling back..." for both sides while `mklink` printed "Junction created for..." immediately above. The script opens with plain `setlocal`, not `setlocal enabledelayedexpansion`, so `!ERRORLEVEL!` is never expanded and the comparison tests the literal string — always non-zero. **It will cry wolf on every successful junction.** Cosmetic, but on the one step you most need to trust. Not yet fixed.
+- **`git push` was blocked** by the local tooling on the first attempt and succeeded later with the same command. The released commit existed only on the deploy machine for part of the window.
+
+### Result
+
+REV-015 live. `current\` = REV-015 with `node_modules` junctioned to `previous\`; `previous\` = REV-014 with **real** `node_modules`, verified `<DIR>` — a clean rollback target, better than REV-014 started from. Health green, database connected.
+
+### Lessons
+
+- **Stop IIS before the rotate.** It is the file lock, not `node.exe`. Both, in fact — kill orphaned node *and* stop IIS.
+- **Never launch the switch from a prompt inside `current\`.**
+- **`current-locks` is load-bearing.** A stale snapshot silently inverts `deploy.bat`'s skip decision and starts an hour-long copy.
+- **REV-016 MUST materialize `node_modules`** — REV-015's are junctions, and a second consecutive hop self-references.
+
+---
+
+## REV-016 Deployment — August 31, 2026
+
+- **Pinned commit**: `12fa3dffcc2744c9d16ee01a77ee0b64b2104e22` (`12fa3df`), built from `projects\erp`, tree clean. Pushed to `origin/feat/bom-wizard` **and** `origin/master` before the build — both fast-forwards.
+- **Release folder**: `2026-08-31_001`. Frontend BUILD_ID `SVJ20L1tvfc9F2XTDkiNl`.
+- **Changes**: designator ranges counted for what they stand for; grid rows grow to fit their content; Delete rows; the Skip button names its step. See `CHANGELOG.md` REV-016.
+- **Migration**: **None**.
+- **Lockfiles**: byte-identical to REV-015's, so `deploy.bat` correctly reported **both SKIPPED**.
+- **Verification before staging**: backend `tsc` clean + 282 tests; frontend `tsc` at the 12 known `export-utils.test.ts` errors + 420 tests; `dist` 760/760 and `.next` 5758/5758 files staged, BUILD_ID matching, `node_modules` absent from both sides as required.
+- **node_modules**: **MATERIALIZED** with `npm ci`, switch run **without** `--link-nm`. Required: REV-015's were junctions, and a second consecutive hop self-references (Issue 4).
+
+### Issues during deploy
+
+- **`deploy.bat` printed "will use junction link" for both sides.** That is what it always says when the lockfiles match; it has no notion of the junction chain and cannot know a second hop is unsafe. Its "Next steps" output likewise instructs a manual rotate plus two `mklink` commands — **wrong for this deploy, and wrong in general now that the patched `switch-release.bat` does the rotate with a STOPPED wait and an abort-on-failure the hand sequence lacks.** The script's guidance is stale and should be rewritten.
+- **The frontend `npm ci` failed with `EUSAGE ... Missing: @emnapi/core@1.10.0 from lock file`** — Issue 6, for the second deploy running. Not a broken lock: dev is Node 25 / **npm 11.6.2**, the server is Node 22 / **npm 10.9.7**, and the two resolve the platform-mismatched `wasm32-wasi` bundled deps differently. **Recovered with `npx -y npm@11.6.2 ci --omit=dev`**, which runs the install under the npm that validated the lock without changing the server's global npm. The backend side installed cleanly (286 packages) as it has no such packages in its tree.
+- **IIS was stopped up front this time**, rather than discovered as the cause three attempts in.
+
+### Result
+
+*(To be completed once the switch is confirmed.)* Expected: `current\` = REV-016 with **real** `node_modules` both sides — self-contained, which resets the chain so REV-017 may junction for one cycle. `previous\` = REV-015, whose `node_modules` are junctions into a rotated-away release, so **rollback to `previous\` would need `npm ci` first**; `manual-snapshot-REV016` is the better target.
+
+### Lessons
+
+- **Close the npm/Node drift rather than remembering the incantation.** `npx -y npm@11.6.2` is now load-bearing on every deploy. Either bring the server's Node up to match dev or pin dev down; validating a lock with `npm ci --dry-run` on the dev machine proves nothing about the server.
+- **`deploy.bat`'s closing instructions are stale** and contradict the patched switch script. Rewrite them before someone follows them.
+- **The false junction warning in `switch-release.bat` is still unfixed** (REV-015, Issue 2).
+- **REV-017 may junction** — REV-016 materialized.
+
+### Still outstanding across releases
+
+- Phase 7 backups — nightly `pg_dump`, cross-VM copy, restore test. Flagged as required before go-live in April; still not built.
+- The `postgres` superuser password was entered inline during REV-014 and is in shell history. Not rotated.
+- The REV-013 changelog entry and `DEPLOY_RUNBOOK_REV-013.md` still live only on `feat/spreadsheet-grid` and have never reached `master`, so the spreadsheet-grid rollout has no entry on the mainline.

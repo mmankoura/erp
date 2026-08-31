@@ -6,6 +6,129 @@
 
 ---
 
+## REV-016 — 2026-08-31
+
+**Released by**: Mark Mankoura
+**Migration required**: **No** — the newest migration is still `CreateManualStockEntries1769600000000`, applied in REV-014.
+
+**Backup taken**: [ ] (check before deploying)
+
+**Deploy note**: **`node_modules` MUST be materialized with `npm ci`, not junctioned.** REV-015's are junctions into REV-014; a second consecutive hop self-references and the backend loses every module (see `deployment_known_issues.md`, Issue 4). Switch **without** `--link-nm`. Stop IIS before the rotate — it holds `C:\apps\erp\current\frontend` as the ERP site's physical path and is what actually blocks the rename.
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Fix | BOM | **A designator range is counted for what it stands for.** `C62-C84` was counted as one designator instead of twenty-three, so any line abbreviating a long run read as a quantity disagreement. One real file listed 21 comma-separated tokens against a stated quantity of 83 — expanded, they come to exactly 83. The file was right and the warning was wrong. |
+| 2 | Fix | BOM | The same blindness hid real errors the other way: a `C52` listed elsewhere never matched the `C50-C54` that already contained it, so **genuine duplicate designators went unreported**. |
+| 3 | Fix | Grid | **A row grows to fit what is in it.** Spreadsheet mode pinned every row to 26px and truncated the cell, which is right until a cell holds 83 reference designators and the data cannot be read at all. `rowHeight` is now a floor: short rows are still 26px and the sheet still scans, a row with more in it grows. **Applies to every grid in the app.** |
+| 4 | Feature | BOM | **Delete rows**, under Advanced. Real files open with a preamble — a title, who wrote the list, the date — above the header row, and a BOM cannot be read until that is gone. The engine has had `delete_rows` since the v1 action set; nothing in the interface ever reached it, so the preamble had to be cut in Excel first. |
+| 5 | Enhancement | BOM | Rows are named by the number in the **gutter**, because that is the number on screen. A backwards range is refused rather than helpfully swapped, and the dialog shows what each row contains before you commit to losing it. |
+| 6 | Fix | BOM | **The stepper's Skip button names its step.** It said "Skip this step" without saying which; on the headers step that reads as a refusal to skip the merge, and was taken for one. A locked toolbar button now also says which step you are actually on rather than "Not this step yet". |
+
+### Known behavior changes (worth communicating to users)
+
+- **Rows are no longer uniform height in any grid.** A grid where one cell holds a long value now has a taller row for it. This was verified on Inventory and Materials before release; if it ever reads worse than truncation, the change is isolated in `virtual-grid.tsx` and revertable on its own.
+- **A quantity that used to be flagged may now agree.** Lines abbreviating designator runs stop appearing in the quantity-mismatch warning. Nothing about the stored data changed — `reference_designators` is still whatever the file wrote, ranges and all. Only the counting changed.
+- **New duplicate-designator warnings may appear** on BOMs that always had the overlap, because ranges were never expanded before. These are real findings, not new faults.
+- Deleting rows is an ordinary recorded step: it undoes, replays, and saves into a recipe like any other.
+
+### Verification Steps
+
+- [ ] Open a BOM with a preamble → Advanced → Delete rows → `1-6` → the preview names what each row holds, and the button reads "Delete 1-6"
+- [ ] `8-3` is refused as running backwards; `0` and `abc` are refused too
+- [ ] Undo restores the rows; deleting the step from the recorder does the same
+- [ ] A line abbreviating designators no longer reports a quantity disagreement
+- [ ] A `C52` on one line and `C50-C54` on another now report as a duplicate designator
+- [ ] After commit, `reference_designators` in the database still reads as the file wrote it
+- [ ] The Skip button names the current step; a greyed toolbar button says which step you are on
+- [ ] Inventory and Materials: long values wrap, short rows are still 26px, nothing overlaps
+- [ ] Sort a grid with mixed row heights — a tall row carries its height and leaves no gap
+- [ ] Frozen columns still align against a tall row; cell selection and fill still work
+
+---
+
+## REV-015 — 2026-08-27
+
+**Released by**: Mark Mankoura
+**Migration required**: **No**.
+
+**Backup taken**: [ ] (check before deploying)
+
+**Deploy note**: Junctioned `node_modules` to REV-014, which was legal for exactly one cycle because REV-014 materialized real ones. **REV-016 must materialize again.**
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | BOM | **The wizard can create the materials a BOM implies.** REV-012 refused to, on the grounds that the old importer's habit of inventing them mid-import is what makes a bad BOM expensive to unpick. That reasoning holds; what it got wrong was leaving someone to hand-key thirty materials in another screen and come back. Creation is now a reviewed, editable table seeded from the file's own columns — never a side effect of pressing Commit. |
+| 2 | Feature | BOM | **Structure detection.** Opening a file proposes a header row, the item/reference/quantity/part-number columns and a row-to-line count, with sample values. Nothing is applied until confirmed. |
+| 3 | Feature | BOM | **A guided order.** Numbered steps — Open file, Set headers, Merge continuation rows, Map columns, Commit — with actions outside the current step disabled. Position is derived from the document, so undo, deleting a recorded step and loading a recipe all move the flow with no special handling. |
+| 4 | Feature | BOM | Fill down moved out of the guided path into **Advanced**. It is not inert on wrapped files — it rewrites every continuation row — but merge then takes all its cells from the lead row and discards them. Redundant, not useless, and pinned as such in a test. |
+| 5 | Feature | Materials | **The material is the master, and an import settles it.** Where a material's field is blank the file fills it; where both speak and disagree the user chooses, defaulting to keeping the material. The BOM line records what was settled, so a line and its material cannot drift apart. |
+| 6 | Backend | API | `PATCH /materials/bulk` — settles `resource_type`, `description`, `manufacturer` and `manufacturer_pn` on materials that already exist. Admin or Manager. Tolerant like the bulk create: an unknown id or a failed save is reported, not thrown. |
+| 7 | Backend | API | Every change emits **`MATERIAL_UPDATED`** with before and after narrowed to the fields that moved. That event type had existed since the audit module landed and nothing ever emitted it — `update()` still does not — so a material settled by an import is better documented than one edited by hand. |
+| 8 | Backend | API | `resolve-part-numbers` now returns the same four fields on a case mismatch as on an exact hit. Without them a caller accepting the suggestion could not reason about that material at all. |
+| 9 | Fix | UI | **Dialogs stopped escaping their own box.** `DialogContent` is a grid, so every child's automatic minimum size is its min-content width, and `truncate` sets `white-space: nowrap` — one long designator list forced the child, and the whole dialog, out through the side of the screen. Affects every dialog in the app. |
+| 10 | Fix | BOM | Column samples in the action dialogs are clipped at 40 characters. A value long enough to need scrolling has stopped answering "which column is this". |
+| 11 | Fix | BOM | **The mapping dialog stopped silently discarding work.** Its effect depended on `grid.mapping`, a fresh object on every replay, so any recorded action anywhere reset whatever the user had picked. |
+| 12 | Fix | BOM | Commit is disabled until the required fields are mapped, and **says which are missing**. It was previously always clickable, reporting "0 of 3,412 lines ready" with no explanation. |
+
+### Known behavior changes (worth communicating to users)
+
+- **The wizard is a guided flow now.** Actions outside the current step are disabled. Optional steps carry a Skip.
+- **Filling a blank material field is an import changing master data**, which REV-012 set out to stop. The line drawn is that its objection was to change that is silent, unreviewable and unattributable: this is counted, listed, editable, declinable with one checkbox, incapable of clearing a value, and audited.
+- **On a replace, a line with no resource type now inherits the material's** rather than being cleared. REV-012 documented the clearing; it becomes much rarer.
+- **A line's `resource_type` may legitimately differ from its file column.** REV-012's verification query still runs but no longer proves the file was read correctly — the `Resource type from file: …` notes are what prove that now.
+- **Customer wording becomes ATA master data.** Filling description or manufacturer from a customer's spreadsheet puts their vocabulary in the master record. The fill summary names the source file for that reason.
+
+### Verification Steps
+
+- [ ] Open an AEGIS file → detection proposes the header row and columns; the internal part number reads `Alazar P/N`, not `Part`
+- [ ] Apply → the steps land in the recorder and the stepper advances to Commit
+- [ ] Commit dialog → missing materials offers "Review and create N", editable before creating
+- [ ] Master data lists the blank fields it will fill, editable; clearing a value skips that field
+- [ ] A disagreement shows both values and defaults to keeping the material
+- [ ] Commit → a part that showed no Type on the product BOM tab now shows one
+- [ ] Re-import the same file → zero fills, zero conflicts
+- [ ] `SELECT ... FROM audit_events WHERE event_type='MATERIAL_UPDATED'` shows one row per changed material
+- [ ] As a Warehouse Clerk the section collapses and no material changes
+- [ ] Open Fill down after a merge → the sample ends in an ellipsis **inside** the dialog border
+
+---
+
+## REV-014 — 2026-08-20
+
+**Released by**: Mark Mankoura
+**Migration required**: **Yes** — four, the first production had taken since REV-009: `AddRecountQtyToDiscrepancies`, `AddCaseInsensitiveUserUniqueness`, `CreateBomWizardRecipes`, `CreateManualStockEntries`. All applied in one transaction.
+
+**Backup taken**: [x] `pre-rev014.dump`
+
+**Deploy note**: Carried REV-010 through REV-014 at once. See `DEPLOYMENT_LOG.md` for what that cost.
+
+### Changes
+
+| # | Type | Module | Description |
+|---|------|--------|-------------|
+| 1 | Feature | Inventory | **Manual stock entry** at `/manual-stock` — a hand-keyed stock list, deliberately isolated from inventory. New `manual_stock_entries` table. |
+| 2 | Fix | BOM | The wizard hands over to the revision it just wrote, deep-linked, rather than leaving you to find it. |
+| 3 | Fix | Products | "No BOM" was reported for products that have one. |
+| 4 | Fix | BOM | Warnings named rows the gutter numbered differently. |
+| 5 | Fix | Frontend | **`crypto.randomUUID` is not available over plain HTTP** — it is a secure-context API. Dev runs on localhost, which counts as secure; production does not, so the BOM wizard threw on load the first time anyone opened it there. Shipped same-day as REV-014a. |
+| 6 | Fix | Materials | The same fault had been live on the Materials page since February, firing whenever a filter was added. |
+
+### Known behavior changes
+
+- **Secure-context browser APIs cannot be used while production is served over plain HTTP.** `crypto.randomUUID`, `crypto.subtle`, the async clipboard, service workers. Use `newId()` from `lib/utils` instead. localhost hides this class of bug completely in dev.
+
+### Verification Steps
+
+- [x] `/bom/wizard` loads and accepts a file (this is what REV-014a fixed)
+- [ ] `/manual-stock` loads and a row can be keyed and saved
+- [ ] Materials → add a filter → no client-side exception
+
+---
+
 ## REV-012 — 2026-08-13
 
 **Released by**: Mark Mankoura
