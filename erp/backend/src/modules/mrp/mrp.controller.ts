@@ -1,21 +1,41 @@
 import {
   Controller,
   Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
   Param,
   ParseUUIDPipe,
   Query,
+  Req,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
 import { MrpService } from './mrp.service';
+import { MrpAdmissionService } from './mrp-admission.service';
+import {
+  AdmitOrderDto,
+  CreateScratchJobDto,
+  UpdateDemandLineDto,
+} from './dto/demand-line.dto';
 import { OrderStatus } from '../../entities/order.entity';
+import { UserRole } from '../../entities/user.entity';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { AuthenticatedGuard } from '../auth/guards/authenticated.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Controller('mrp')
 @UseGuards(AuthenticatedGuard, RolesGuard) // Read-only, all authenticated users can access
 export class MrpController {
-  constructor(private readonly mrpService: MrpService) {}
+  constructor(
+    private readonly mrpService: MrpService,
+    private readonly admissionService: MrpAdmissionService,
+  ) {}
+
+  private actor(req: any): string {
+    return req?.user?.username ?? req?.user?.email ?? 'unknown';
+  }
 
   // Helper to parse status query parameter
   private parseStatuses(statuses?: string): OrderStatus[] | undefined {
@@ -108,5 +128,78 @@ export class MrpController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
   ) {
     return this.mrpService.getOrderAvailability(orderId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Admission — which jobs the run is planning for.
+  //
+  // Reads are open to any authenticated user, as the reports are. Writes change
+  // what the whole company's shortage numbers are based on, so they match the
+  // purchase-order module and are restricted to ADMIN/MANAGER.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * GET /mrp/demand-lines
+   * The admitted jobs, in the buyer's column order.
+   */
+  @Get('demand-lines')
+  async getDemandLines() {
+    return this.admissionService.getDemandLines();
+  }
+
+  /**
+   * GET /mrp/admittable-orders
+   * Orders eligible for the run, each flagged with whether it is already in it.
+   */
+  @Get('admittable-orders')
+  async getAdmittableOrders() {
+    return this.admissionService.getAdmittableOrders();
+  }
+
+  /**
+   * POST /mrp/demand-lines
+   * Add an order to the MRP run.
+   */
+  @Post('demand-lines')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async admitOrder(@Body() dto: AdmitOrderDto, @Req() req: any) {
+    return this.admissionService.admitOrder(dto, this.actor(req));
+  }
+
+  /**
+   * POST /mrp/demand-lines/scratch
+   * Add a hypothetical job. Writes nothing to `orders`.
+   */
+  @Post('demand-lines/scratch')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async createScratchJob(
+    @Body() dto: CreateScratchJobDto,
+    @Req() req: any,
+  ) {
+    return this.admissionService.createScratchJob(dto, this.actor(req));
+  }
+
+  /**
+   * PATCH /mrp/demand-lines/:id
+   * Quantity, due date, priority, status note, column order, or park it.
+   */
+  @Patch('demand-lines/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async updateDemandLine(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDemandLineDto,
+  ) {
+    return this.admissionService.updateDemandLine(id, dto);
+  }
+
+  /**
+   * DELETE /mrp/demand-lines/:id
+   * Take a job out of the run. Parking via PATCH is the non-destructive option
+   * and keeps the line's notes and alternate choices.
+   */
+  @Delete('demand-lines/:id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async removeDemandLine(@Param('id', ParseUUIDPipe) id: string) {
+    return this.admissionService.removeDemandLine(id);
   }
 }

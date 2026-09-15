@@ -33,6 +33,7 @@ import {
   TrendingDown,
   Truck,
   CheckCircle,
+  Scale,
 } from "lucide-react"
 import {
   ShortageReportToolbar,
@@ -40,6 +41,7 @@ import {
   ShortageByResourceType,
   OrderBuildability,
   AffectedAssemblies,
+  MrpDemandPanel,
   type ShortageView,
 } from "@/components/shortage-reports"
 import {
@@ -177,11 +179,14 @@ const shortagesColumns: Column<EnhancedShortageWithId>[] = [
     filterable: true,
     sortAccessor: (item) => Math.abs(item.shortage),
     filterAccessor: (item) => Math.abs(item.shortage).toLocaleString(),
-    cell: (item) => (
-      <span className="font-mono font-bold text-red-600">
-        {Math.abs(item.shortage).toLocaleString()}
-      </span>
-    ),
+    cell: (item) =>
+      item.shortage === 0 ? (
+        <span className="font-mono text-muted-foreground">0</span>
+      ) : (
+        <span className="font-mono font-bold text-red-600">
+          {Math.abs(item.shortage).toLocaleString()}
+        </span>
+      ),
   },
   {
     key: "status",
@@ -191,16 +196,43 @@ const shortagesColumns: Column<EnhancedShortageWithId>[] = [
     sortable: true,
     filterable: true,
     sortAccessor: (item) => {
+      if (item.state === "EXACT") return 2
+      if (item.state === "COVERED_BY_PO") return 4
       if (item.use_alternates && item.shortage === 0) return 3
       const severity = getSeverity(item.shortage, item.total_required)
       return severity === "critical" ? 0 : severity === "warning" ? 1 : 2
     },
     filterAccessor: (item) => {
+      if (item.state === "EXACT") return "Exact Qty"
+      if (item.state === "COVERED_BY_PO") return "On PO"
       if (item.use_alternates && item.shortage === 0) return "Use Alternate"
       const severity = getSeverity(item.shortage, item.total_required)
       return severity === "critical" ? "Critical" : severity === "warning" ? "Warning" : "Low"
     },
     cell: (item) => {
+      // Zero margin: nothing is missing yet, but there is no room for a single
+      // scrapped part. Distinct from both "short" and "fine".
+      if (item.state === "EXACT") {
+        return (
+          <Badge
+            className="bg-purple-100 text-purple-800 border-purple-200"
+            title="Supply exactly equals demand — any scrap or miscount makes this short"
+          >
+            Exact Qty
+          </Badge>
+        )
+      }
+      // Covered only because a purchase order is still open.
+      if (item.state === "COVERED_BY_PO") {
+        return (
+          <Badge
+            className="bg-blue-100 text-blue-800 border-blue-200"
+            title="Covered only by an open purchase order — short if that PO slips"
+          >
+            On PO
+          </Badge>
+        )
+      }
       if (item.use_alternates && item.shortage === 0) {
         return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Use Alternate</Badge>
       }
@@ -436,20 +468,58 @@ export default function MRPPage() {
   const [shortFilterResourceType, setShortFilterResourceType] = useState<string>("")
 
   // Basic shortages/requirements data
-  const { data: shortagesResponse, isLoading: shortagesLoading } =
-    useApi<MrpShortagesResponse>("/mrp/shortages")
-  const { data: requirementsResponse, isLoading: requirementsLoading } =
-    useApi<MrpRequirementsResponse>("/mrp/requirements")
+  const {
+    data: shortagesResponse,
+    isLoading: shortagesLoading,
+    refetch: refetchShortages,
+  } = useApi<MrpShortagesResponse>("/mrp/shortages")
+  const {
+    data: requirementsResponse,
+    isLoading: requirementsLoading,
+    refetch: refetchRequirements,
+  } = useApi<MrpRequirementsResponse>("/mrp/requirements")
 
   // Enhanced shortage data for different views
-  const { data: enhancedShortagesResponse, isLoading: enhancedLoading } =
-    useApi<EnhancedShortageReport>("/mrp/shortages/enhanced")
-  const { data: byCustomerResponse, isLoading: byCustomerLoading } =
-    useApi<ShortagesByCustomerResponse>("/mrp/shortages/by-customer")
-  const { data: byResourceTypeResponse, isLoading: byResourceTypeLoading } =
-    useApi<ShortagesByResourceTypeResponse>("/mrp/shortages/by-resource-type")
-  const { data: buildabilityResponse, isLoading: buildabilityLoading } =
-    useApi<OrderBuildabilityResponse>("/mrp/orders/buildability")
+  const {
+    data: enhancedShortagesResponse,
+    isLoading: enhancedLoading,
+    refetch: refetchEnhanced,
+  } = useApi<EnhancedShortageReport>("/mrp/shortages/enhanced")
+  const {
+    data: byCustomerResponse,
+    isLoading: byCustomerLoading,
+    refetch: refetchByCustomer,
+  } = useApi<ShortagesByCustomerResponse>("/mrp/shortages/by-customer")
+  const {
+    data: byResourceTypeResponse,
+    isLoading: byResourceTypeLoading,
+    refetch: refetchByResourceType,
+  } = useApi<ShortagesByResourceTypeResponse>("/mrp/shortages/by-resource-type")
+  const {
+    data: buildabilityResponse,
+    isLoading: buildabilityLoading,
+    refetch: refetchBuildability,
+  } = useApi<OrderBuildabilityResponse>("/mrp/orders/buildability")
+
+  // Admitting or parking a job changes what MRP is planning for, so every
+  // report on the page has to be recomputed — not just the one on screen.
+  const refetchAllReports = useCallback(() => {
+    void Promise.all([
+      refetchShortages(),
+      refetchRequirements(),
+      refetchEnhanced(),
+      refetchByCustomer(),
+      refetchByResourceType(),
+      refetchBuildability(),
+    ])
+  }, [
+    refetchShortages,
+    refetchRequirements,
+    refetchEnhanced,
+    refetchByCustomer,
+    refetchByResourceType,
+    refetchBuildability,
+  ])
 
   // AML data for export
   const { data: amlEntries } = useApi<ApprovedManufacturer[]>("/aml")
@@ -606,6 +676,9 @@ export default function MRPPage() {
     shortages?.reduce((sum, item) => sum + Math.abs(item.shortage), 0) || 0
   const totalRequired =
     requirements?.reduce((sum, item) => sum + item.total_required, 0) || 0
+  // Parts with supply exactly equal to demand. Not short, but one scrapped
+  // reel away from it — and invisible in this report until now.
+  const totalExactQty = shortagesResponse?.total_materials_exact ?? 0
   const totalOnOrder =
     requirements?.reduce((sum, item) => sum + item.quantity_on_order, 0) || 0
 
@@ -814,7 +887,7 @@ export default function MRPPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4 print:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5 print:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Required</CardTitle>
@@ -867,6 +940,26 @@ export default function MRPPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Exact Qty</CardTitle>
+            <Scale className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-8 w-20" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-purple-600">
+                  {totalExactQty.toLocaleString()}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  zero margin — no room for scrap
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Shortage Qty</CardTitle>
             <TrendingDown className="h-4 w-4 text-red-500" />
           </CardHeader>
@@ -897,6 +990,7 @@ export default function MRPPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="requirements">All Requirements</TabsTrigger>
+          <TabsTrigger value="jobs">Jobs in Run</TabsTrigger>
         </TabsList>
 
         <TabsContent value="shortages" className="space-y-4">
@@ -925,6 +1019,10 @@ export default function MRPPage() {
               {renderShortageView()}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="jobs" className="space-y-4">
+          <MrpDemandPanel onDemandChanged={refetchAllReports} />
         </TabsContent>
 
         <TabsContent value="requirements" className="space-y-4">

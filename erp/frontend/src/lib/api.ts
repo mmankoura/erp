@@ -442,6 +442,20 @@ export interface FloorStockReturnResult {
   transaction?: InventoryTransaction
 }
 
+/**
+ * Why a material appears in a shortage report.
+ *
+ * `EXACT` is the one that is easy to miss: supply equals demand with no margin,
+ * so `shortage` is 0 but any scrap or miscount makes the part short. These rows
+ * used to be filtered out of the report entirely.
+ */
+export type MrpMaterialState =
+  | "SHORT"
+  | "EXACT"
+  | "COVERED_BY_PO"
+  | "OK"
+  | "DORMANT"
+
 export interface MrpShortage {
   material_id: string
   material: Material
@@ -451,11 +465,56 @@ export interface MrpShortage {
   quantity_on_order: number
   total_required: number
   shortage: number
+  state: MrpMaterialState
+}
+
+/**
+ * One admitted job — one column of the MRP plan.
+ *
+ * Demand is taken from `quantity` here rather than the order's, because buyers
+ * routinely plan to a different number than the order carries.
+ */
+export interface MrpDemandLine {
+  id: string
+  run_id: string
+  source: "ORDER" | "SCRATCH"
+  order_id: string | null
+  order?: Order | null
+  product_id: string | null
+  product?: Product | null
+  bom_revision_id: string | null
+  label: string
+  quantity: number
+  due_date: string | null
+  /** Hand-typed build rank. Null sorts last and means unranked. */
+  priority: number | null
+  status_note: string | null
+  /** Park a job without deleting it, keeping its notes. */
+  include_in_totals: boolean
+  sort_order: number
+  notes: string | null
+  created_by: string
+}
+
+/** An order eligible for the run, flagged with whether it is already in it. */
+export interface MrpAdmittableOrder {
+  order_id: string
+  order_number: string
+  product_id: string
+  product_name: string
+  product_part_number: string
+  customer_name: string
+  quantity: number
+  due_date: string
+  status: string
+  is_admitted: boolean
 }
 
 export interface MrpShortagesResponse {
   generated_at: string
   total_materials_with_shortage: number
+  /** Materials with real demand and exactly zero margin. */
+  total_materials_exact: number
   total_orders_analyzed: number
   shortages: MrpShortage[]
 }
@@ -517,6 +576,7 @@ export interface EnhancedMaterialShortage {
   quantity_on_order: number
   total_required: number
   shortage: number
+  state: MrpMaterialState
   use_alternates: boolean
   alternates: AlternateInfo[]
   orders: EnhancedOrderInfo[]
@@ -531,6 +591,8 @@ export interface EnhancedMaterialShortage {
 export interface EnhancedShortageReport {
   generated_at: string
   total_materials_with_shortage: number
+  /** Materials with real demand and exactly zero margin. */
+  total_materials_exact: number
   total_orders_analyzed: number
   shortages: EnhancedMaterialShortage[]
 }

@@ -8,6 +8,18 @@ import { Customer } from '../../entities/customer.entity';
 import { OrderMaterialSource, SupplySource } from '../../entities/order-material-source.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { PurchaseOrdersService } from '../purchase-orders/purchase-orders.service';
+import { MrpAdmissionService } from './mrp-admission.service';
+import { MrpDemandSource } from '../../entities/mrp-demand-line.entity';
+import {
+  DEFAULT_MRP_STATUSES,
+  QTY_EPSILON,
+  lineDemand,
+  roundQty,
+  isProcurable,
+  classifyState,
+  isReportable,
+  type MaterialState,
+} from './mrp-demand';
 
 export interface MaterialRequirement {
   material_id: string;
@@ -39,6 +51,11 @@ export interface MaterialShortage {
   quantity_on_order: number;
   total_required: number;
   shortage: number;
+  /**
+   * Why this material is listed. `EXACT` means supply equals demand with zero
+   * margin: reportable even though `shortage` is 0.
+   */
+  state: MaterialState;
   orders: Array<{
     order_id: string;
     order_number: string;
@@ -52,6 +69,8 @@ export interface MaterialShortage {
 export interface ShortageReport {
   generated_at: Date;
   total_materials_with_shortage: number;
+  /** Materials with real demand and exactly zero margin (state === 'EXACT'). */
+  total_materials_exact: number;
   total_orders_analyzed: number;
   shortages: MaterialShortage[];
 }
@@ -94,6 +113,11 @@ export interface EnhancedMaterialShortage {
   quantity_on_order: number;
   total_required: number;
   shortage: number;
+  /**
+   * Why this material is listed. `EXACT` means supply equals demand with zero
+   * margin: reportable even though `shortage` is 0.
+   */
+  state: MaterialState;
   use_alternates: boolean;
   alternates: AlternateInfo[];
   orders: EnhancedOrderInfo[];
@@ -108,6 +132,8 @@ export interface EnhancedMaterialShortage {
 export interface EnhancedShortageReport {
   generated_at: Date;
   total_materials_with_shortage: number;
+  /** Materials with real demand and exactly zero margin (state === 'EXACT'). */
+  total_materials_exact: number;
   total_orders_analyzed: number;
   shortages: EnhancedMaterialShortage[];
 }
@@ -198,6 +224,16 @@ export interface OrderBuildabilityReport {
   orders: OrderBuildability[];
 }
 
+/**
+ * Scratch (what-if) jobs are not orders, so they can hold no allocations. The
+ * prefix keeps their synthetic ids out of every allocation lookup, which would
+ * otherwise be handed a non-UUID.
+ */
+const SCRATCH_ID_PREFIX = 'scratch:';
+
+const isRealOrderId = (id: string): boolean =>
+  !id.startsWith(SCRATCH_ID_PREFIX);
+
 @Injectable()
 export class MrpService {
   constructor(
@@ -212,7 +248,76 @@ export class MrpService {
     private readonly inventoryService: InventoryService,
     @Inject(forwardRef(() => PurchaseOrdersService))
     private readonly purchaseOrdersService: PurchaseOrdersService,
+    private readonly admissionService: MrpAdmissionService,
   ) {}
+
+  /**
+   * Resolve the demand the run is planning for.
+   *
+   * Demand now comes from what the buyer has admitted, not from whatever
+   * happens to be at an in-flight status. Each admitted line is returned shaped
+   * like an Order so that every downstream explosion keeps working unchanged —
+   * with `quantity` and `due_date` taken from the line, since a buyer plans to
+   * their own number rather than the order's.
+   *
+   * Falls back to the old status query when nothing has been admitted, so a
+   * database that has not run the seed migration still reports.
+   */
+  private async resolveDemand(statuses?: OrderStatus[]): Promise<Order[]> {
+    const fallback = () =>
+      this.orderRepository.find({
+        where: { status: In(statuses ?? [...DEFAULT_MRP_STATUSES]) },
+        relations: ['product', 'bom_revision', 'customer'],
+        order: { due_date: 'ASC' },
+      });
+
+    let lines;
+    try {
+      lines = await this.admissionService.getDemandLines(false);
+    } catch {
+      // Admission tables absent (migration not yet run): behave as before.
+      return fallback();
+    }
+    if (!lines || lines.length === 0) return fallback();
+
+    const resolved: Order[] = [];
+    for (const line of lines) {
+      if (line.source === MrpDemandSource.SCRATCH) {
+        if (!line.bom_revision_id) continue;
+        // A hypothetical job. It has no order and therefore no allocations; the
+        // sentinel id keeps it out of every allocation lookup.
+        resolved.push({
+          id: `${SCRATCH_ID_PREFIX}${line.id}`,
+          order_number: line.label,
+          quantity: line.quantity,
+          bom_revision_id: line.bom_revision_id,
+          product_id: line.product_id ?? '',
+          customer_id: '',
+          due_date: line.due_date,
+          status: OrderStatus.ENTERED,
+          product: line.product ?? { name: line.label },
+          customer: { name: 'What-if', code: '' },
+        } as unknown as Order);
+        continue;
+      }
+
+      const order = line.order;
+      if (!order) continue;
+      if (statuses && !statuses.includes(order.status)) continue;
+
+      resolved.push({
+        ...order,
+        quantity: line.quantity,
+        due_date: line.due_date ?? order.due_date,
+      } as Order);
+    }
+
+    return resolved.sort((a, b) => {
+      const at = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+      const bt = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+      return at - bt;
+    });
+  }
 
   /**
    * Calculate material requirements for a single order
@@ -240,16 +345,18 @@ export class MrpService {
       const bomQuantity = parseFloat(String(item.quantity_required));
       const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
 
-      // required = order_qty × bom_qty × (1 + scrap_factor / 100)
-      const requiredQuantity =
-        order.quantity * bomQuantity * (1 + scrapFactor / 100);
+      const requiredQuantity = lineDemand(
+        order.quantity,
+        item.quantity_required,
+        item.scrap_factor,
+      );
 
       return {
         material_id: item.material_id,
         material: item.material,
         bom_quantity: bomQuantity,
         scrap_factor: scrapFactor,
-        required_quantity: Math.ceil(requiredQuantity * 10000) / 10000, // Round to 4 decimals
+        required_quantity: roundQty(requiredQuantity),
         reference_designators: item.reference_designators,
         resource_type: item.material?.resource_type ?? null,
       };
@@ -278,24 +385,16 @@ export class MrpService {
     includeStatuses?: OrderStatus[],
   ): Promise<ShortageReport> {
     // Default to orders that need materials
-    const statuses = includeStatuses ?? [
-      OrderStatus.ENTERED,
-      OrderStatus.KITTING,
-      OrderStatus.SMT,
-      OrderStatus.TH,
-    ];
+    const statuses = includeStatuses ?? [...DEFAULT_MRP_STATUSES];
 
     // Get all active orders
-    const orders = await this.orderRepository.find({
-      where: { status: In(statuses) },
-      relations: ['product', 'bom_revision'],
-      order: { due_date: 'ASC' },
-    });
+    const orders = await this.resolveDemand(statuses);
 
     if (orders.length === 0) {
       return {
         generated_at: new Date(),
         total_materials_with_shortage: 0,
+        total_materials_exact: 0,
         total_orders_analyzed: 0,
         shortages: [],
       };
@@ -322,7 +421,7 @@ export class MrpService {
     const orderIds = orders.map((o) => o.id);
     const allocationsByOrder = new Map<string, Map<string, number>>();
 
-    for (const orderId of orderIds) {
+    for (const orderId of orderIds.filter(isRealOrderId)) {
       const allocations = await this.inventoryService.getAllocationsByOrder(orderId, false);
       const materialMap = new Map<string, number>();
       for (const alloc of allocations) {
@@ -363,10 +462,17 @@ export class MrpService {
       for (const item of items) {
         // Skip customer-supplied materials
         if (csKeysBasic.has(`${order.id}:${item.material_id}`)) continue;
+        // Skip do-not-populate lines: they record a component deliberately
+        // left off the board, so procuring them buys parts that are never
+        // placed. kitting.service.ts:679 has always skipped these.
+        if (!isProcurable(item.material?.resource_type)) continue;
         const bomQuantity = parseFloat(String(item.quantity_required));
         const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
-        const requiredQuantity =
-          order.quantity * bomQuantity * (1 + scrapFactor / 100);
+        const requiredQuantity = lineDemand(
+          order.quantity,
+          item.quantity_required,
+          item.scrap_factor,
+        );
         const allocatedQuantity = orderAllocations.get(item.material_id) ?? 0;
 
         const existing = materialRequirements.get(item.material_id);
@@ -425,11 +531,18 @@ export class MrpService {
       const stock = stockLevels.get(materialId) ?? { on_hand: 0, allocated: 0, available: 0, on_order: 0 };
 
       // Effective supply = on_hand + on_order (materials expected from open POs)
-      // Shortage is calculated against this effective supply
       const effectiveSupply = stock.on_hand + stock.on_order;
       const shortage = req.total_required - effectiveSupply;
+      const state = classifyState(
+        stock.on_hand,
+        stock.on_order,
+        req.total_required,
+      );
 
-      if (shortage > 0) {
+      // Report anything the buyer must act on. This deliberately includes
+      // EXACT — supply equal to demand with no margin — which the previous
+      // `shortage > 0` test dropped, hiding every zero-slack part in the system.
+      if (isReportable(state)) {
         shortages.push({
           material_id: materialId,
           material: req.material,
@@ -437,23 +550,28 @@ export class MrpService {
           quantity_allocated: stock.allocated,
           quantity_available: stock.available,
           quantity_on_order: stock.on_order,
-          total_required: Math.ceil(req.total_required * 10000) / 10000,
-          shortage: Math.ceil(shortage * 10000) / 10000,
+          total_required: roundQty(req.total_required),
+          shortage: shortage > QTY_EPSILON ? roundQty(shortage) : 0,
+          state,
           orders: req.orders.map((o) => ({
             ...o,
-            required_quantity: Math.ceil(o.required_quantity * 10000) / 10000,
-            allocated_quantity: Math.ceil(o.allocated_quantity * 10000) / 10000,
+            required_quantity: roundQty(o.required_quantity),
+            allocated_quantity: roundQty(o.allocated_quantity),
           })),
         });
       }
     }
 
-    // Sort by shortage amount (descending)
+    // Worst first, then zero-slack parts, mirroring how the buyer's own
+    // spreadsheet is sorted by Net ascending.
     shortages.sort((a, b) => b.shortage - a.shortage);
 
     return {
       generated_at: new Date(),
-      total_materials_with_shortage: shortages.length,
+      total_materials_with_shortage: shortages.filter(
+        (s) => s.state !== 'EXACT',
+      ).length,
+      total_materials_exact: shortages.filter((s) => s.state === 'EXACT').length,
       total_orders_analyzed: orders.length,
       shortages,
     };
@@ -479,17 +597,9 @@ export class MrpService {
       net_requirement: number;
     }>;
   }> {
-    const statuses = [
-      OrderStatus.ENTERED,
-      OrderStatus.KITTING,
-      OrderStatus.SMT,
-      OrderStatus.TH,
-    ];
+    const statuses = [...DEFAULT_MRP_STATUSES];
 
-    const orders = await this.orderRepository.find({
-      where: { status: In(statuses) },
-      relations: ['product', 'bom_revision'],
-    });
+    const orders = await this.resolveDemand(statuses);
 
     const bomRevisionIds = [...new Set(orders.map((o) => o.bom_revision_id))];
 
@@ -505,6 +615,22 @@ export class MrpService {
       bomItemsByRevision.set(item.bom_revision_id, items);
     }
 
+    // Customer-supplied lines must be excluded here exactly as they are in the
+    // shortage views. Without this, the All Requirements tab counted demand the
+    // Shortages tab did not, and the two disagreed about the same part.
+    const summaryOrderIds = orders.map((o) => o.id);
+    const csSourcesSummary = summaryOrderIds.length > 0
+      ? await this.omsRepository.find({
+          where: {
+            order_id: In(summaryOrderIds),
+            supply_source: SupplySource.CUSTOMER,
+          },
+        })
+      : [];
+    const csKeysSummary = new Set(
+      csSourcesSummary.map((s) => `${s.order_id}:${s.material_id}`),
+    );
+
     const materialRequirements = new Map<
       string,
       { material: Material; total_required: number }
@@ -514,10 +640,18 @@ export class MrpService {
       const items = bomItemsByRevision.get(order.bom_revision_id) ?? [];
 
       for (const item of items) {
-        const bomQuantity = parseFloat(String(item.quantity_required));
-        const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
-        const requiredQuantity =
-          order.quantity * bomQuantity * (1 + scrapFactor / 100);
+        if (csKeysSummary.has(`${order.id}:${item.material_id}`)) continue;
+
+        // Skip do-not-populate lines: they record a component deliberately
+        // left off the board, so procuring them buys parts that are never
+        // placed. kitting.service.ts:679 has always skipped these.
+        if (!isProcurable(item.material?.resource_type)) continue;
+
+        const requiredQuantity = lineDemand(
+          order.quantity,
+          item.quantity_required,
+          item.scrap_factor,
+        );
 
         const existing = materialRequirements.get(item.material_id);
         if (existing) {
@@ -658,9 +792,15 @@ export class MrpService {
     const batchStock = await this.inventoryService.getStockByMaterialIds(bomMaterialIds);
 
     for (const item of bomItems) {
-      const bomQuantity = parseFloat(String(item.quantity_required));
-      const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
-      const requiredQuantity = order.quantity * bomQuantity * (1 + scrapFactor / 100);
+      // Do-not-populate lines are never fitted, so they can neither be short
+      // nor hold up a build.
+      if (!isProcurable(item.material?.resource_type)) continue;
+
+      const requiredQuantity = lineDemand(
+        order.quantity,
+        item.quantity_required,
+        item.scrap_factor,
+      );
 
       const stock = batchStock.get(item.material_id) ?? { quantity_on_hand: 0, quantity_allocated: 0, quantity_available: 0 };
       const allocatedToOrder = allocationMap.get(item.material_id) ?? 0;
@@ -714,24 +854,16 @@ export class MrpService {
   async getEnhancedShortages(
     includeStatuses?: OrderStatus[],
   ): Promise<EnhancedShortageReport> {
-    const statuses = includeStatuses ?? [
-      OrderStatus.ENTERED,
-      OrderStatus.KITTING,
-      OrderStatus.SMT,
-      OrderStatus.TH,
-    ];
+    const statuses = includeStatuses ?? [...DEFAULT_MRP_STATUSES];
 
     // Get all active orders with customer info
-    const orders = await this.orderRepository.find({
-      where: { status: In(statuses) },
-      relations: ['product', 'bom_revision', 'customer'],
-      order: { due_date: 'ASC' },
-    });
+    const orders = await this.resolveDemand(statuses);
 
     if (orders.length === 0) {
       return {
         generated_at: new Date(),
         total_materials_with_shortage: 0,
+        total_materials_exact: 0,
         total_orders_analyzed: 0,
         shortages: [],
       };
@@ -755,7 +887,7 @@ export class MrpService {
     const orderIds = orders.map((o) => o.id);
     const allocationsByOrder = new Map<string, Map<string, number>>();
 
-    for (const orderId of orderIds) {
+    for (const orderId of orderIds.filter(isRealOrderId)) {
       const allocations = await this.inventoryService.getAllocationsByOrder(orderId, false);
       const materialMap = new Map<string, number>();
       for (const alloc of allocations) {
@@ -795,11 +927,18 @@ export class MrpService {
         if (customerSuppliedKeys.has(`${order.id}:${item.material_id}`)) {
           continue;
         }
+        // Skip do-not-populate lines: they record a component deliberately
+        // left off the board, so procuring them buys parts that are never
+        // placed. kitting.service.ts:679 has always skipped these.
+        if (!isProcurable(item.material?.resource_type)) continue;
 
         const bomQuantity = parseFloat(String(item.quantity_required));
         const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
-        const requiredQuantity =
-          order.quantity * bomQuantity * (1 + scrapFactor / 100);
+        const requiredQuantity = lineDemand(
+          order.quantity,
+          item.quantity_required,
+          item.scrap_factor,
+        );
         const allocatedQuantity = orderAllocations.get(item.material_id) ?? 0;
         const resourceType = item.material?.resource_type ?? 'UNKNOWN';
 
@@ -965,8 +1104,18 @@ export class MrpService {
         shortage = Math.max(0, remainingShortage);
       }
 
-      // Only report if still short after alternates, OR if using alternates (buyer needs to know)
-      if (shortage > 0 || useAlternates) {
+      // Classify against the primary's own supply, before alternates. A part
+      // rescued only by a substitution is not comfortable, and a part with
+      // exactly enough stock (EXACT) must surface even though it is not short.
+      const state = classifyState(
+        stock.on_hand,
+        stock.on_order,
+        req.total_required,
+      );
+
+      // Report if still short after alternates, if a substitution is being
+      // relied on, or if the primary has zero margin.
+      if (shortage > QTY_EPSILON || useAlternates || isReportable(state)) {
         shortages.push({
           material_id: materialId,
           material: req.material,
@@ -974,8 +1123,9 @@ export class MrpService {
           quantity_allocated: stock.allocated,
           quantity_available: stock.available,
           quantity_on_order: stock.on_order,
-          total_required: Math.ceil(req.total_required * 10000) / 10000,
-          shortage: Math.ceil(shortage * 10000) / 10000,
+          total_required: roundQty(req.total_required),
+          shortage: shortage > QTY_EPSILON ? roundQty(shortage) : 0,
+          state,
           use_alternates: useAlternates,
           alternates: alternateInfos,
           orders: req.orders.map((o) => ({
@@ -1001,7 +1151,10 @@ export class MrpService {
 
     return {
       generated_at: new Date(),
-      total_materials_with_shortage: shortages.length,
+      total_materials_with_shortage: shortages.filter(
+        (s) => s.state !== 'EXACT',
+      ).length,
+      total_materials_exact: shortages.filter((s) => s.state === 'EXACT').length,
       total_orders_analyzed: orders.length,
       shortages,
     };
@@ -1154,18 +1307,9 @@ export class MrpService {
   async getOrderBuildability(
     includeStatuses?: OrderStatus[],
   ): Promise<OrderBuildabilityReport> {
-    const statuses = includeStatuses ?? [
-      OrderStatus.ENTERED,
-      OrderStatus.KITTING,
-      OrderStatus.SMT,
-      OrderStatus.TH,
-    ];
+    const statuses = includeStatuses ?? [...DEFAULT_MRP_STATUSES];
 
-    const orders = await this.orderRepository.find({
-      where: { status: In(statuses) },
-      relations: ['product', 'bom_revision', 'customer'],
-      order: { due_date: 'ASC' },
-    });
+    const orders = await this.resolveDemand(statuses);
 
     if (orders.length === 0) {
       return {
@@ -1224,10 +1368,16 @@ export class MrpService {
       for (const item of items) {
         // Skip customer-supplied
         if (csKeysEarly.has(`${order.id}:${item.material_id}`)) continue;
+        // Skip do-not-populate lines: they record a component deliberately
+        // left off the board, so procuring them buys parts that are never
+        // placed. kitting.service.ts:679 has always skipped these.
+        if (!isProcurable(item.material?.resource_type)) continue;
 
-        const bomQuantity = parseFloat(String(item.quantity_required));
-        const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
-        const requiredQuantity = order.quantity * bomQuantity * (1 + scrapFactor / 100);
+        const requiredQuantity = lineDemand(
+          order.quantity,
+          item.quantity_required,
+          item.scrap_factor,
+        );
 
         const existing = totalMaterialRequirements.get(item.material_id) ?? 0;
         totalMaterialRequirements.set(item.material_id, existing + requiredQuantity);
@@ -1248,7 +1398,7 @@ export class MrpService {
 
     // Get allocations for all orders (for display purposes)
     const allocationsByOrder = new Map<string, Map<string, number>>();
-    for (const order of orders) {
+    for (const order of orders.filter((o) => isRealOrderId(o.id))) {
       const allocations = await this.inventoryService.getAllocationsByOrder(order.id, false);
       const materialMap = new Map<string, number>();
       for (const alloc of allocations) {
@@ -1306,9 +1456,17 @@ export class MrpService {
           continue;
         }
 
-        const bomQuantity = parseFloat(String(item.quantity_required));
-        const scrapFactor = parseFloat(String(item.scrap_factor)) || 0;
-        const requiredQuantity = order.quantity * bomQuantity * (1 + scrapFactor / 100);
+        // Do-not-populate lines never block a build.
+        if (!isProcurable(item.material?.resource_type)) {
+          materialsReady++;
+          continue;
+        }
+
+        const requiredQuantity = lineDemand(
+          order.quantity,
+          item.quantity_required,
+          item.scrap_factor,
+        );
 
         const stock = stockLevels.get(item.material_id) ?? { on_hand: 0, allocated: 0, available: 0 };
         const allocatedToOrder = orderAllocations.get(item.material_id) ?? 0;
