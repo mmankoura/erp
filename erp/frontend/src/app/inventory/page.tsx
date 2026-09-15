@@ -64,11 +64,15 @@ import {
   Pencil,
   Lock,
   LockOpen,
+  Printer,
 } from "lucide-react"
 import { useState, useMemo, useEffect, useRef } from "react"
 import { toast } from "sonner"
 import { useAuth, UserRole } from "@/contexts/auth-context"
 import { EditLotDialog } from "@/components/edit-lot-dialog"
+import { PrintLabelButton } from "@/components/labels/print-label-button"
+import { PrintLabelDialog } from "@/components/labels/print-label-dialog"
+import { MAX_LABEL_BATCH } from "@/lib/dymo/print"
 
 // Transaction type colors
 const transactionTypeConfig: Record<string, { label: string; color: string }> = {
@@ -564,6 +568,14 @@ export default function InventoryPage() {
   // The Lots/Reels sheet is read-only until this is turned on, so a stray
   // keystroke can't move stock.
   const [editUnlocked, setEditUnlocked] = useState(false)
+
+  // Label printing. `visibleLots` tracks the grid's post-filter display order —
+  // VirtualGrid has no row-checkbox selection, so "print what you can see" is
+  // the selection model, the same one /inventory/assign-customer uses.
+  const [visibleLots, setVisibleLots] = useState<InventoryLotWithId[]>([])
+  const [batchPrintOpen, setBatchPrintOpen] = useState(false)
+  const [scanUid, setScanUid] = useState("")
+  const [scanPrintUid, setScanPrintUid] = useState<string | null>(null)
   // A quantity edit moves material on-hand, so the stock tab and summary cards
   // have to refresh alongside the lot list.
   const onLotSaved = () => { refetchLots(); refetch() }
@@ -746,10 +758,11 @@ export default function InventoryPage() {
     // displayed date instead.
     { id: "received", header: "Received", size: 110, sortable: true, accessorFn: (l) => l.received_date || "", copyValue: (l) => l.received_date ? new Date(l.received_date).toLocaleDateString() : "", cell: (l) => <span className="text-muted-foreground tabular-nums">{l.received_date ? new Date(l.received_date).toLocaleDateString() : "\u2014"}</span> },
     {
-      id: "actions", header: "", size: 70, sortable: false, filterable: false, accessorFn: () => "",
+      id: "actions", header: "", size: 95, sortable: false, filterable: false, accessorFn: () => "",
       // Icon buttons are shrunk to fit the 26px spreadsheet row.
       cell: (l) => (
         <div className="flex items-center gap-0.5">
+          <PrintLabelButton lotIds={[l.id]} subject={`${l.uid} — ${l.material?.internal_part_number ?? ""}`} className="h-5 w-5" />
           {/* Only ACTIVE lots are editable — the API rejects the rest. */}
           {canEditLots && l.status === "ACTIVE" && (
             <EditLotDialog
@@ -790,19 +803,24 @@ export default function InventoryPage() {
     { id: "status", header: "Status", size: 100, sortable: true, filterable: true, filterAccessor: (l) => l.status, accessorFn: (l) => l.status, cell: (l) => <Chip tone={l.status === "ACTIVE" ? "success" : l.status === "CONSUMED" ? "muted" : "warning"}>{l.status}</Chip> },
     { id: "location", header: "Stage", size: 90, sortable: true, filterable: true, filterAccessor: (l) => l.location, accessorFn: (l) => l.location, cell: (l) => <span className="text-xs">{l.location}</span> },
     {
-      id: "actions", header: "", size: 60, sortable: false, filterable: false, accessorFn: () => "",
+      id: "actions", header: "", size: 95, sortable: false, filterable: false, accessorFn: () => "",
       cell: (l) => (
-        canEditLots && l.status === "ACTIVE" ? (
-          <EditLotDialog
-            lot={l}
-            onSaved={onLotSaved}
-            trigger={
-              <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit lot">
-                <Pencil className="h-4 w-4" />
-              </Button>
-            }
-          />
-        ) : null
+        <div className="flex items-center gap-0.5">
+          {/* The Receiving Log is the durable view of what came in; the receipt
+              log on /receiving/new only survives the session. */}
+          <PrintLabelButton lotIds={[l.id]} subject={`${l.uid} — ${l.material?.internal_part_number ?? ""}`} className="h-5 w-5" />
+          {canEditLots && l.status === "ACTIVE" ? (
+            <EditLotDialog
+              lot={l}
+              onSaved={onLotSaved}
+              trigger={
+                <Button variant="ghost" size="icon" className="h-5 w-5" title="Edit lot">
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              }
+            />
+          ) : null}
+        </div>
       ),
     },
   ]
@@ -945,23 +963,60 @@ export default function InventoryPage() {
             storageKey="inventory-lots"
             getRowId={(l) => l.id}
             height={620}
+            onVisibleRowsChange={setVisibleLots}
             headerActions={
-              canEditLots ? (
+              <div className="flex items-center gap-2">
+                {/* Reprint a lot whose label was damaged or never printed.
+                    Keyboard-wedge scanners type the UID and press Enter. */}
+                <Input
+                  value={scanUid}
+                  onChange={(e) => setScanUid(e.target.value)}
+                  placeholder="Scan UID to reprint"
+                  className="h-8 w-48 font-mono text-xs"
+                  autoComplete="off"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && scanUid.trim()) {
+                      e.preventDefault()
+                      setScanPrintUid(scanUid.trim())
+                    }
+                  }}
+                />
                 <Button
-                  variant={editUnlocked ? "secondary" : "outline"}
+                  variant="outline"
                   size="sm"
                   className="h-8"
-                  onClick={() => setEditUnlocked((on) => !on)}
-                  title={
-                    editUnlocked
-                      ? "Lock the sheet — cells become read-only"
-                      : "Unlock the sheet — type into quantity, package, PO ref and BIN"
-                  }
+                  disabled={visibleLots.length === 0}
+                  title="Print a label for every lot currently shown, after filters"
+                  onClick={() => {
+                    if (visibleLots.length > MAX_LABEL_BATCH) {
+                      toast.error(
+                        `${visibleLots.length} lots is over the ${MAX_LABEL_BATCH}-label limit. Filter the list down first.`,
+                      )
+                      return
+                    }
+                    setBatchPrintOpen(true)
+                  }}
                 >
-                  {editUnlocked ? <LockOpen className="h-4 w-4 mr-1" /> : <Lock className="h-4 w-4 mr-1" />}
-                  {editUnlocked ? "Editing" : "Locked"}
+                  <Printer className="h-4 w-4 mr-1" />
+                  Print {visibleLots.length}
                 </Button>
-              ) : undefined
+                {canEditLots ? (
+                  <Button
+                    variant={editUnlocked ? "secondary" : "outline"}
+                    size="sm"
+                    className="h-8"
+                    onClick={() => setEditUnlocked((on) => !on)}
+                    title={
+                      editUnlocked
+                        ? "Lock the sheet — cells become read-only"
+                        : "Unlock the sheet — type into quantity, package, PO ref and BIN"
+                    }
+                  >
+                    {editUnlocked ? <LockOpen className="h-4 w-4 mr-1" /> : <Lock className="h-4 w-4 mr-1" />}
+                    {editUnlocked ? "Editing" : "Locked"}
+                  </Button>
+                ) : null}
+              </div>
             }
             searchPlaceholder="Search by UID, IPN, customer, PO ref, or status..."
             searchFn={(lot, q) =>
@@ -973,6 +1028,27 @@ export default function InventoryPage() {
               lot.status.toLowerCase().includes(q))
             }
           />
+
+          {batchPrintOpen && (
+            <PrintLabelDialog
+              open={batchPrintOpen}
+              onOpenChange={setBatchPrintOpen}
+              lotIds={visibleLots.map((l) => l.id)}
+              subject={`${visibleLots.length} lots currently shown`}
+            />
+          )}
+          {scanPrintUid && (
+            <PrintLabelDialog
+              open
+              onOpenChange={(open) => {
+                if (!open) {
+                  setScanPrintUid(null)
+                  setScanUid("")
+                }
+              }}
+              uid={scanPrintUid}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="receiving" className="space-y-4">

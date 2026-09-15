@@ -1,0 +1,1423 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DesktopLabel Version="1">
+  <DYMOLabel Version="4">
+    <Description>DYMO Label</Description>
+    <Orientation>Landscape</Orientation>
+    <LabelName>LargeAddress</LabelName>
+    <InitialLength>0</InitialLength>
+    <BorderStyle>SolidLine</BorderStyle>
+    <DYMORect>
+      <DYMOPoint>
+        <X>0.22333334</X>
+        <Y>0.060000002</Y>
+      </DYMOPoint>
+      <Size>
+        <Width>3.2033331</Width>
+        <Height>1.3066665</Height>
+      </Size>
+    </DYMORect>
+    <BorderColor>
+      <SolidColorBrush>
+        <Color A="1" R="0" G="0" B="0"></Color>
+      </SolidColorBrush>
+    </BorderColor>
+    <BorderThickness>1</BorderThickness>
+    <Show_Border>False</Show_Border>
+    <HasFixedLength>False</HasFixedLength>
+    <FixedLengthValue>0</FixedLengthValue>
+    <DynamicLayoutManager>
+      <RotationBehavior>ClearObjects</RotationBehavior>
+      <LabelObjects>
+        <BarcodeObject>
+          <Name>BarcodeObject0</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="1" R="1" G="1" B="1"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <BarcodeFormat>DataMatrixSquare</BarcodeFormat>
+          <Data>
+            <MultiDataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <DataString></DataString>
+              <MappableDataString>PO# </MappableDataString>
+              <MappableDataString>Customer Reference</MappableDataString>
+              <MappableDataString>Manufacturer Part Number</MappableDataString>
+              <MappableDataString>PO#</MappableDataString>
+              <MappableDataString>AT&amp;A#</MappableDataString>
+              <MappableDataString>UID</MappableDataString>
+              <MappableDataString>QTY</MappableDataString>
+            </MultiDataString>
+          </Data>
+          <HorizontalAlignment>Center</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <Size>AutoFit</Size>
+          <TextPosition>Bottom</TextPosition>
+          <FontInfo>
+            <FontName>Arial</FontName>
+            <FontSize>12</FontSize>
+            <IsBold>False</IsBold>
+            <IsItalic>False</IsItalic>
+            <IsUnderline>False</IsUnderline>
+            <FontBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FontBrush>
+          </FontInfo>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>0.22333334</X>
+              <Y>0.092821404</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>0.67573804</Width>
+              <Height>0.61217856</Height>
+            </Size>
+          </ObjectLayout>
+        </BarcodeObject>
+        <TextObject>
+          <Name>TextObject0</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <DataMappingTextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>20</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Customer Reference</ColumnName>
+              </DataMappingTextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>20</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>20</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>EN9123</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>20</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>AT&amp;A#</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>0.8990716</X>
+              <Y>0.2934363</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>1.3856161</Width>
+              <Height>0.41156366</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject4</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>MPN: </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.9</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.9</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Manufacturer Part Number</ColumnName>
+              </DataMappingTextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.9</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>1898525‎</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.9</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>MPN</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>0.22333331</X>
+              <Y>0.8567899</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>2.152075</Width>
+              <Height>0.1646501</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject3</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>PO#</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.3</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.3</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.3</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>PO# </ColumnName>
+              </DataMappingTextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.3</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>EN8832692</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.3</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>PO#</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>2.3754084</X>
+              <Y>0.09282142</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>1.0101027</Width>
+              <Height>0.18172877</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject7</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>12.7</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>AT000000001</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>12.7</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>UID</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>0.8424869</X>
+              <Y>0.069999866</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>1.2467132</Width>
+              <Height>0.29839492</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject8</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>DESCRIPTION:</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.4</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+            </LineTextSpan>
+            <LineTextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.4</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>TERM BLOCK HDR 16POS 3.81MM</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.4</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Description</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>0.23333335</X>
+              <Y>1.0342994</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>2.715695</Width>
+              <Height>0.31236717</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject5</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>PO QTY: </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Quantity</ColumnName>
+              </DataMappingTextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>5</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>8.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>QTY</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>2.3754082</X>
+              <Y>0.28459877</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>1.031259</Width>
+              <Height>0.16320029</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject6</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>MFR: </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Manufacturer Part Number</ColumnName>
+              </DataMappingTextSpan>
+              <TextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>Phoenix</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>MFR</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>0.22333331</X>
+              <Y>0.705</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>1.6016667</Width>
+              <Height>0.18522616</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject68</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>PACKAGE: </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>7</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>7</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Manufacturer Part Number</ColumnName>
+              </DataMappingTextSpan>
+              <TextSpan>
+                <Text> </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>7</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>Bulk</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>7</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Packaging</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>2.6120346</X>
+              <Y>0.8516459</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>0.79568905</Width>
+              <Height>0.16979405</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject69</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>CUST: </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Manufacturer Part Number</ColumnName>
+              </DataMappingTextSpan>
+              <TextSpan>
+                <Text> </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>ISC</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.8</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Customer</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>2.6120348</X>
+              <Y>1.1776236</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>0.77347726</Width>
+              <Height>0.185226</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+        <TextObject>
+          <Name>TextObject9</Name>
+          <Brushes>
+            <BackgroundBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BackgroundBrush>
+            <BorderBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </BorderBrush>
+            <StrokeBrush>
+              <SolidColorBrush>
+                <Color A="1" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </StrokeBrush>
+            <FillBrush>
+              <SolidColorBrush>
+                <Color A="0" R="0" G="0" B="0"></Color>
+              </SolidColorBrush>
+            </FillBrush>
+          </Brushes>
+          <Rotation>Rotation0</Rotation>
+          <OutlineThickness>1</OutlineThickness>
+          <IsOutlined>False</IsOutlined>
+          <BorderStyle>SolidLine</BorderStyle>
+          <Margin>
+            <DYMOThickness Left="0" Top="0" Right="0" Bottom="0" />
+          </Margin>
+          <HorizontalAlignment>Left</HorizontalAlignment>
+          <VerticalAlignment>Middle</VerticalAlignment>
+          <FitMode>AlwaysFit</FitMode>
+          <IsVertical>False</IsVertical>
+          <FormattedText>
+            <FitMode>AlwaysFit</FitMode>
+            <HorizontalAlignment>Left</HorizontalAlignment>
+            <VerticalAlignment>Middle</VerticalAlignment>
+            <IsVertical>False</IsVertical>
+            <LineTextSpan>
+              <TextSpan>
+                <Text>TYPE: </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.2</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text />
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.2</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Manufacturer Part Number</ColumnName>
+              </DataMappingTextSpan>
+              <TextSpan>
+                <Text> </Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.2</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+              </TextSpan>
+              <DataMappingTextSpan>
+                <Text>TH</Text>
+                <FontInfo>
+                  <FontName>Segoe UI</FontName>
+                  <FontSize>9.2</FontSize>
+                  <IsBold>True</IsBold>
+                  <IsItalic>False</IsItalic>
+                  <IsUnderline>False</IsUnderline>
+                  <FontBrush>
+                    <SolidColorBrush>
+                      <Color A="1" R="0" G="0" B="0"></Color>
+                    </SolidColorBrush>
+                  </FontBrush>
+                </FontInfo>
+                <ColumnName>Mounting Type</ColumnName>
+              </DataMappingTextSpan>
+            </LineTextSpan>
+          </FormattedText>
+          <ObjectLayout>
+            <DYMOPoint>
+              <X>2.6120343</X>
+              <Y>0.67670757</Y>
+            </DYMOPoint>
+            <Size>
+              <Width>0.7271811</Width>
+              <Height>0.17493832</Height>
+            </Size>
+          </ObjectLayout>
+        </TextObject>
+      </LabelObjects>
+    </DynamicLayoutManager>
+  </DYMOLabel>
+  <LabelApplication>Blank</LabelApplication>
+  <DataTable>
+    <Columns>
+      <DataColumn>PO#</DataColumn>
+      <DataColumn>DATE
+(mm/dd/yy)</DataColumn>
+      <DataColumn>SUPPLIER</DataColumn>
+      <DataColumn>AT&amp;A#</DataColumn>
+      <DataColumn>MFR</DataColumn>
+      <DataColumn>MPN</DataColumn>
+      <DataColumn>Description</DataColumn>
+      <DataColumn>UID</DataColumn>
+      <DataColumn>QTY</DataColumn>
+      <DataColumn>Mounting Type</DataColumn>
+      <DataColumn>Packaging</DataColumn>
+      <DataColumn>Customer</DataColumn>
+      <DataColumn>Unit Price</DataColumn>
+      <DataColumn>VALUE
+CDN/US</DataColumn>
+      <DataColumn>COMMENTS</DataColumn>
+    </Columns>
+    <Rows>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN9123</Value>
+        <Value>Phoenix</Value>
+        <Value>1898525‎</Value>
+        <Value>TERM BLOCK HDR 16POS 3.81MM</Value>
+        <Value>AT000000001</Value>
+        <Value>5</Value>
+        <Value>TH</Value>
+        <Value>Bulk</Value>
+        <Value>ISC</Value>
+        <Value>6.64</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN0055 (sample)</Value>
+        <Value>Wurth</Value>
+        <Value>691317510008‎</Value>
+        <Value>5.08 MM TERMINAL BLOCK HEADER, H</Value>
+        <Value>AT000000002</Value>
+        <Value>1</Value>
+        <Value>TH</Value>
+        <Value>Bulk</Value>
+        <Value>ISC</Value>
+        <Value>3.4</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN9079</Value>
+        <Value>Laird-S.</Value>
+        <Value>‎CM3440Z171R-10‎</Value>
+        <Value>CMC 20A 2LN 170 OHM SMD</Value>
+        <Value>AT000000003</Value>
+        <Value>10</Value>
+        <Value>SMT</Value>
+        <Value>CT</Value>
+        <Value>ISC</Value>
+        <Value>2.104</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN9047</Value>
+        <Value>OnSemi</Value>
+        <Value>‎CAT24C04WI-GT3‎</Value>
+        <Value>IC EEPROM 4KBIT I2C 400KHZ 8SOIC</Value>
+        <Value>AT000000004</Value>
+        <Value>100</Value>
+        <Value>SMT</Value>
+        <Value>CT</Value>
+        <Value>ISC</Value>
+        <Value>0.27</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN0031</Value>
+        <Value>PAN</Value>
+        <Value>‎EEV-FK1K331M‎</Value>
+        <Value>CAP ALUM 330UF 20% 80V SMD</Value>
+        <Value>AT000000005</Value>
+        <Value>50</Value>
+        <Value>SMT</Value>
+        <Value>B.CT</Value>
+        <Value>ISC</Value>
+        <Value>1.089</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN0101</Value>
+        <Value>API D.</Value>
+        <Value>4922R-13L‎</Value>
+        <Value>FIXED IND 10UH 2.36A 71 MOHM SMD</Value>
+        <Value>AT000000006</Value>
+        <Value>25</Value>
+        <Value>SMT</Value>
+        <Value>CT</Value>
+        <Value>ISC</Value>
+        <Value>2.816</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN0118</Value>
+        <Value>Vishay</Value>
+        <Value>HVR3700001005JR500‎</Value>
+        <Value>RES 10M OHM 1/2W 5% AXIAL</Value>
+        <Value>AT000000007</Value>
+        <Value>100</Value>
+        <Value>TH</Value>
+        <Value>Bulk</Value>
+        <Value>ISC</Value>
+        <Value>0.17</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN0230</Value>
+        <Value>AVX</Value>
+        <Value>1825HC103KAT1A‎</Value>
+        <Value>CAP CER 10000PF 3KV X7R 1825</Value>
+        <Value>AT000000008</Value>
+        <Value>50</Value>
+        <Value>SMT</Value>
+        <Value>CT</Value>
+        <Value>ISC</Value>
+        <Value>1.387</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+      <DataRow>
+        <Value>EN8832692</Value>
+        <Value>2/25/2025</Value>
+        <Value>Digi</Value>
+        <Value>EN0216</Value>
+        <Value>Bourns</Value>
+        <Value>MF-RX110/72-2‎</Value>
+        <Value>PTC RESET FUSE 72V 1.1A RADIAL</Value>
+        <Value>AT000000009</Value>
+        <Value>50</Value>
+        <Value>TH</Value>
+        <Value>Bulk</Value>
+        <Value>ISC</Value>
+        <Value>0.286</Value>
+        <Value>USD</Value>
+        <Value>Components</Value>
+      </DataRow>
+    </Rows>
+  </DataTable>
+</DesktopLabel>

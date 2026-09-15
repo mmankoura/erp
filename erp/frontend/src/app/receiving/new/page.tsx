@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useApi } from "@/hooks/use-api"
-import { api, type Customer, type PackageType } from "@/lib/api"
+import { api, type Customer, type LotLabelData, type PackageType } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Chip } from "@/components/grid/chip"
 import { Input } from "@/components/ui/input"
@@ -17,10 +17,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, AlertCircle, Loader2, Trash2 } from "lucide-react"
+import { CheckCircle, AlertCircle, Loader2, Trash2, Printer } from "lucide-react"
 import { toast } from "sonner"
 import { VirtualGrid, type VirtualGridColumn } from "@/components/virtual-grid"
 import { useAuth } from "@/contexts/auth-context"
+import { Checkbox } from "@/components/ui/checkbox"
+import { useDymo } from "@/hooks/use-dymo"
+import { printLotLabels } from "@/lib/dymo/print"
+import { PrintLabelButton } from "@/components/labels/print-label-button"
 
 type ReceiptType = "PO" | "CUSTOMER_SUPPLIED" | "STOCK"
 
@@ -50,7 +54,14 @@ function buildReceiptLogColumns(onUndo: (item: ReceivedItem) => void): VirtualGr
     { id: "package", header: "Package", size: 90, sortable: true, filterable: true, filterAccessor: (r) => r.package_type, accessorFn: (r) => r.package_type, cell: (r) => <span>{r.package_type}</span> },
     { id: "type", header: "Type", size: 140, sortable: true, filterable: true, filterAccessor: (r) => r.receipt_type === "PO" ? `PO ${r.po_number ?? ""}` : r.receipt_type === "CUSTOMER_SUPPLIED" ? r.customer_name ?? "Customer" : "Stock", accessorFn: (r) => r.receipt_type, cell: (r) => <Chip>{r.receipt_type === "PO" ? `PO ${r.po_number ?? ""}` : r.receipt_type === "CUSTOMER_SUPPLIED" ? r.customer_name ?? "Customer" : "Stock"}</Chip> },
     { id: "status", header: "Status", size: 100, accessorFn: (r) => r.undone ? "Undone" : r.po_line_updated ? "Received" : "In Stock", cell: (r) => r.undone ? <Chip tone="muted">Undone</Chip> : <span className="text-emerald-600">{r.po_line_updated ? "Received" : "In Stock"}</span> },
-    { id: "actions", header: "", size: 60, accessorFn: () => "", cell: (r) => r.undone ? null : <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Undo receive" onClick={() => onUndo(r)}><Trash2 className="h-3.5 w-3.5" /></Button> },
+    { id: "actions", header: "", size: 90, accessorFn: () => "", cell: (r) => r.undone ? null : (
+      <div className="flex items-center gap-0.5">
+        {/* Reprint covers a jam, a misfeed, or a label that peeled off. This log
+            is session-only, so anything older is reprinted from /inventory. */}
+        <PrintLabelButton lotIds={[r.lot_id]} subject={`${r.uid} — ${r.ipn}`} />
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Undo receive" onClick={() => onUndo(r)}><Trash2 className="h-3.5 w-3.5" /></Button>
+      </div>
+    ) },
   ]
 }
 
@@ -86,6 +97,8 @@ export default function QuickReceivePage() {
   const [receivedItems, setReceivedItems] = useState<ReceivedItem[]>([])
 
   const uidRef = useRef<HTMLInputElement>(null)
+
+  const { available, printers, printer, setPrinter, autoPrint, setAutoPrint, canPrint } = useDymo()
 
   // Fetch customers
   const { data: customers } = useApi<Customer[]>("/customers")
@@ -157,6 +170,24 @@ export default function QuickReceivePage() {
         },
         ...prev,
       ])
+
+      // Auto-print the label for what was just received. Deliberately not
+      // awaited: the receipt is already committed, and making the operator wait
+      // on a printer would break the scan rhythm. A failure is a toast, never a
+      // rollback.
+      if (autoPrint && canPrint) {
+        void (async () => {
+          try {
+            const label = await api.get<LotLabelData>(`/labels/lot/${result.lot.id}`)
+            const { printed } = await printLotLabels(printer, [label])
+            if (printed === 0) {
+              toast.error(`Label did not print for ${result.lot.uid}`)
+            }
+          } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : "Label print failed")
+          }
+        })()
+      }
 
       resetForm()
     } catch (err: unknown) {
@@ -356,6 +387,37 @@ export default function QuickReceivePage() {
               <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-md p-2">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
                 {error}
+              </div>
+            )}
+
+            {/* Printer choice is per-workstation, not per-user: these are
+                shared benches and the printer belongs to the bench. */}
+            {available !== false && (
+              <div className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="auto-print"
+                    checked={autoPrint}
+                    onCheckedChange={(v) => setAutoPrint(v === true)}
+                  />
+                  <Label htmlFor="auto-print" className="flex items-center gap-1.5 font-normal">
+                    <Printer className="h-3.5 w-3.5" />
+                    Auto-print label on receive
+                  </Label>
+                </div>
+                <Select value={printer} onValueChange={setPrinter}>
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="No printer selected" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {printers.map((p) => (
+                      <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {autoPrint && !canPrint && (
+                  <p className="text-xs text-amber-600">Select a printer to auto-print.</p>
+                )}
               </div>
             )}
 

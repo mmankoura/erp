@@ -983,6 +983,31 @@ export interface InventoryLot {
   updated_at: string
 }
 
+// Label printing — GET /labels/lot/:id, /labels/lot/by-uid/:uid, POST /labels/lots.
+// Mirrors LotLabelData in the backend labels module. Assembled server-side so
+// that all four print triggers share one shape and one set of null rules.
+export interface LotLabelData {
+  lot_id: string
+  uid: string
+  ipn: string
+  description: string | null
+  manufacturer: string | null
+  manufacturer_pn: string | null
+  // Drives the template's "Mounting Type" line.
+  resource_type: ResourceType | null
+  quantity: number
+  package_type: PackageType
+  po_reference: string | null
+  // Null on Customer-Supplied and Stock receipts: the lot only gets a supplier
+  // when a purchase order actually resolved at receiving time.
+  supplier_name: string | null
+  owner_type: OwnerType
+  owner_name: string | null
+  received_date: string | null
+  // Null at receipt — assigned later on the Inventory page.
+  bin: string | null
+}
+
 // Customer inventory report types
 export interface CustomerInventorySummaryRow {
   material_id: string
